@@ -1,3 +1,5 @@
+> The original spec this project started from. What has been built since (and the game rules it uses) is in `status.md`.
+
 # Project: Onosendai's Tool - Diablo 4 Database & Theorycraft Engine
 You are an expert frontend developer. Your task is to build a comprehensive, lightning-fast Diablo 4 database and search utility. 
 
