@@ -58,6 +58,19 @@ WIP_TEXT = re.compile(r"^\s*(\{c_\w+\})?\(?(WIP|PH|NEEDS REDESIGN|REDESIGN)\b|I 
 
 POWERTAG_RE = re.compile(r'PowerTag\.([A-Za-z0-9_]+)\."Script Formula \d+"')
 DAMAGE_TYPES = ["Physical", "Fire", "Lightning", "Cold", "Poison", "Shadow"]
+DAMAGE_TYPE_ATTRS = ("Damage_Type", "Resistance", "Proc_Flat_Element_Damage_On_Hit", "Bucketed_Multiplicative_Damage_Type")
+# nParam enums with no name table in the data. Values read off affix ids that name them,
+# e.g. S04_Resource_Per_Second_Fury = 1, UNIQUE_Generic_LuckyHit_Stun = 2, UNIQUE_CritChance_Against_CCd_Fear = 13.
+RESOURCES = {0: "Mana", 1: "Fury", 6: "Essence", 7: "Vigor"}
+DOT_STATES = {0: "Bleeding", 1: "Burning", 4: "Poisoned"}
+PARAM_ENUMS = {
+    "Resource_Regen_Per_Second": RESOURCES, "Resource_Max_Bonus": RESOURCES,
+    "Resource_On_Kill": RESOURCES, "Resource_Cost_Reduction_Percent": RESOURCES,
+    "Damage_Percent_Bonus_Against_Dot_Type": DOT_STATES, "Damage_Percent_Reduction_From_Dotted_Enemy": DOT_STATES,
+    "On_Hit_CC_Proc_Chance": {2: "Stun", 7: "Daze", 13: "Fear"},
+    "Crit_Percent_Bonus_Vs_CC_Target": {2: "Stunned", 7: "Dazed", 13: "Feared"},
+    "Damage_Percent_Bonus_Vs_CC_Target": {2: "Stunned", 7: "Dazed", 13: "Feared"},
+}
 POWER_GROUP = 29
 
 
@@ -123,6 +136,30 @@ def attach_drops(items, path):
     }
 
 
+def load_skill_tags(path, stl_dir):
+    """Skill tag hash (nParam on "per skill tag" stats) -> display name.
+    GameBalance/SkillTags gives hash -> internal name (Skill_Grenade, Skill_Primary_Basic, Tag_Earthquake);
+    the display text is in StringList/SkillTagNames (SKILL_TAG_GRENADE, PRIMARY_TAG_BASIC) or SkillTags (Tag_X_TagName).
+    Falls back to the internal name made readable (Skill_Demonology -> Demonology)."""
+    if not os.path.exists(path):
+        print("! GameBalance/SkillTags.gam.json not found: skill tags on stat lines will be generic.")
+        return {}
+    names = strings(stl_dir, "SkillTagNames")
+    tags = strings(stl_dir, "SkillTags")
+    out = {}
+    for e in load(path)["ptData"][0]["tEntries"]:
+        h = e["tHeader"]
+        n = h["szName"]
+        core = re.sub(r"^(Skill_Primary_|Skill_|Tag_|Subpower_)", "", n)
+        text = (names.get("PRIMARY_TAG_" + core.upper()) if n.startswith("Skill_Primary_") else None) \
+            or names.get("SKILL_TAG_" + core.upper()) or names.get("PRIMARY_TAG_" + core.upper()) \
+            or tags.get(f"Tag_{core}_TagName") or tags.get(f"Keyword_{core}_TagName")
+        if not text:
+            text = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", core).replace("_", " ")
+        out[h["szNameGBIDHash"] & 0xFFFFFFFF] = text
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", default=os.path.join(ROOT, "data"))
@@ -146,6 +183,7 @@ def main():
 
     t0 = time.time()
     attr_desc = strings(stl_dir, "AttributeDescriptions")
+    skill_tags = load_skill_tags(os.path.join(args.d4data, "json", "base", "meta", "GameBalance", "SkillTags.gam.json"), stl_dir)
     toc = load(toc_path) if os.path.exists(toc_path) else {}
     if not toc:
         print("! CoreTOC_flat.json not found: skill names on stat lines will be generic.")
@@ -194,10 +232,12 @@ def main():
             # Generic stat line (implicits / forced stats on uniques)
             param = spec.get("nParam", -1)
             label = None
-            if param not in (-1, 0):
-                label = power_display_name(param)
-                if label is None and attr.startswith("Damage_Type") and 0 <= param < len(DAMAGE_TYPES):
-                    label = DAMAGE_TYPES[param]
+            if attr in PARAM_ENUMS:
+                label = PARAM_ENUMS[attr].get(param)
+            elif attr.startswith(DAMAGE_TYPE_ATTRS) and 0 <= param < len(DAMAGE_TYPES):
+                label = DAMAGE_TYPES[param]
+            elif param not in (-1, 0):
+                label = power_display_name(param) or skill_tags.get(param & 0xFFFFFFFF)
             line = {"t": attr_desc[attr], "a": attr}
             if label:
                 line["p"] = label
