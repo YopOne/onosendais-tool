@@ -63,7 +63,7 @@ def extract(item_dir, stl_dir, recipe_dir, src_path, items):
             if os.path.exists(p):
                 for e in _load(p).get("arStrings", []):
                     if e["szLabel"] == "Name":
-                        name_cache[sno_id] = e["szText"]
+                        name_cache[sno_id] = re.sub(r"\{icon:[^}]*\}\s*", "", e["szText"]).strip()
         return name_cache[sno_id]
 
     # ---------- Runes ----------
@@ -208,6 +208,34 @@ def extract(item_dir, stl_dir, recipe_dir, src_path, items):
                 for i in r["ins"]:
                     if i.get("ref") in runes:
                         runes[i["ref"]]["uses"].append(rid)
+
+    # Horadric Cube: white base -> Unique of that type, then a 900 Unique -> its Mythic.
+    # Every base / slot uses the same materials, so each step is one summary entry listing the bases.
+    def summarize(ids, label_of):
+        parsed = [parse(rid) for rid in ids]
+        mats = [[(i["q"], i.get("ref")) for i in r["ins"] if i.get("ref")] for r in parsed]
+        if any(m != mats[0] for m in mats):
+            print(f"warning: {ids[0].rsplit('_', 1)[0]} recipes use different materials per base", file=sys.stderr)
+        r = parsed[0]
+        r["bases"] = sorted({label_of(rid) for rid in ids})
+        return r
+    uniq_ids = [rid for rid in all_ids if rid.startswith("X2_HoradricCube_UpgradeToUnique_")]
+    myth_ids = [rid for rid in all_ids if rid.startswith("S14_HoradricCube_UpgradeToMythic_")]
+    cube = {}
+    if uniq_ids:
+        base_of = lambda rid: re.sub(r"^([12]H)", r"\1 ", re.sub(r"_(Ancestral|SorcOffhand)", "", rid[len("X2_HoradricCube_UpgradeToUnique_"):]))
+        r = summarize(uniq_ids, base_of)
+        r["ins"][0]["n"] = "white base, no affixes"
+        r["out"] = {"n": "Unique of that base", "derived": True}
+        r["ancestral"] = any(rid.endswith("_Ancestral") or "_Ancestral_" in rid for rid in uniq_ids)
+        cube["unique"] = r
+    if myth_ids:
+        slot_label = {"1H": "1H Weapon", "2H": "2H Weapon", "Glove": "Gloves", "OffHand": "Off-Hand"}
+        r = summarize(myth_ids, lambda rid: slot_label.get(rid.rsplit("_", 1)[-1], rid.rsplit("_", 1)[-1]))
+        r["ins"][0]["n"] = "Unique, item power 900"
+        r["out"] = {"n": "Mythic version of that Unique", "derived": True}
+        cube["mythic"] = r
+    recipes["cube"] = cube
 
     # Season 15 Soul Splinters: 5 of a tier -> next tier, per Prime/Lesser Evil
     chains = {}

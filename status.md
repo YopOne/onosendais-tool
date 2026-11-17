@@ -85,6 +85,7 @@ evaluates formulas · resolves Power script formulas · renders game text · fil
 - **Where the game data corrected Maxroll:** Yul = 1× Moni (not Ur); there are two different "Tal" runes (the Season 15 Ritual is current, the old Invocation is legacy); Shroud of False Death has a Jeweler recipe.
 - **Assumptions:** some recipe outputs are a loot table without a name in the data. The Season 15 chain outputs and Wirt's Coins are named from the recipe file names and marked "output from recipe name". Which runes are "current" comes from Maxroll's list.
 - No recipe crafts the Season 15 uniques; they only drop in the capstone dungeons.
+- **Horadric Cube: Unique → Mythic** section (from `X2_HoradricCube_UpgradeToUnique_*` and `S14_HoradricCube_UpgradeToMythic_*`). Step 1: a white base with no affixes + 1 Enhanced + 10 Raw Primordial Dust → a Unique of that base (25 bases, each with a normal and an Ancestral recipe; an Ancestral 900 base gives a 900 Unique). Step 2: a 900 Unique + 4 Pandemonium Fragments → its Mythic (10 slots). The 900 requirement and "affixes promoted to max" come from the user; the recipe files list `nMinItemPower: 850`.
 
 **Theme:** a hybrid of Monolith Gaming (red `#ff3131`, near-black backgrounds, red grid, Gemunu Libre) and Diablo (Cinzel, rarity colours, in-game tooltips). Slot icons are original line-art SVGs.
 

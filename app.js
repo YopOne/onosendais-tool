@@ -1182,6 +1182,10 @@
     </div>`;
   }
 
+  function cubeStepHTML(n, r, note) {
+    return `<div class="cube-step"><p class="eyebrow">Step ${n}</p>${recipeHTML(r)}<p class="hint mono">${r.bases.length} bases: ${esc(r.bases.join(" · "))}${note ? ` // ${esc(note)}` : ""}</p></div>`;
+  }
+
   function recipesTabHTML() {
     const rc = runeData().recipes;
     const sec = (title, sub, body) => `<section class="rsec"><h2 class="rsec__title">${title}</h2>${sub ? `<p class="hint">${sub}</p>` : ""}${body}</section>`;
@@ -1193,6 +1197,10 @@
       sec("Season 15 rune chain", "Horadric Cube, hidden recipes. Combine runes to climb the chain toward Jah, Ber, Lo and Sol.", rc.runeUpgrades.map(recipeHTML).join("")),
       sec("Legendary rune recipes", "Horadric Cube: one specific rune plus 5 Rare and 5 Legendary runes of any kind gives the rune you want.", rc.legendaryRunes.map(recipeHTML).join("")),
       sec("Mythic crafting", "Resplendent Sparks plus three runes per slot at the Jeweler, or a random Mythic at the Blacksmith (Torment only).", rc.mythic.map(recipeHTML).join("")),
+      rc.cube && rc.cube.unique ? sec("Horadric Cube: Unique → Mythic",
+        "Two steps. A white item with no affixes becomes a Unique of the same base; use an Ancestral (item power 900) base to get a 900 Unique. Only a 900 Unique can be upgraded to Mythic: it keeps all its affixes, promoted to their maximum values, and becomes item power 900.",
+        cubeStepHTML("1", rc.cube.unique, rc.cube.unique.ancestral ? "Each base has a normal and an Ancestral recipe." : "") +
+        (rc.cube.mythic ? cubeStepHTML("2", rc.cube.mythic, "") : "")) : "",
       sec("Unique crafting", "", rc.unique.map(recipeHTML).join("")),
       sec("Season 15 Soul Splinters", "Horadric Cube, hidden recipes: 5 of a tier make the next tier.", splinters + (rc.wirt ? recipeHTML(rc.wirt) : "")),
     ].join("");
