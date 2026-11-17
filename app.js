@@ -21,7 +21,7 @@
   const RAW = { item: "data/Item/", stl: "data/StringList/", power: "data/Power/" };
 
   const CLASS_FILTERS = ["Barbarian", "Druid", "Necromancer", "Paladin", "Rogue", "Sorcerer", "Spiritborn", "Warlock"];
-  const RARITY_FILTERS = ["Unique", "Mythic", "Legendary", "Ancestral"];
+  const RARITY_FILTERS = ["Unique", "Mythic", "Legendary"]; // Ancestral is a View (item power 900), not a rarity
   const SLOT_ORDER = ["Helm", "Chest", "Gloves", "Pants", "Boots", "Amulet", "Ring", "1H Weapon", "2H Weapon", "Off-Hand"];
 
   /**
@@ -103,9 +103,9 @@
   const Engine = (() => {
     let codex = null;
     const UNKNOWN = null;
-    // Item power used for GameBalance stat formulas (gbid tables switch formula at 590/700/750/800/850/900).
-    // Assumption: endgame uniques sit in the 800 band; the Sandbox lets you pick another.
-    const DEFAULT_IP = 800;
+    // Item power for GameBalance stat formulas (gbid tables switch formula at 590/700/750/800/850/900).
+    // At max level: normal uniques 850, Ancestral 900, Mythics (original or crafted) always 900.
+    const DEFAULT_IP = 850;
 
     // ---- Tokenizer ----
     const TOKEN_RE = /\s*(?:(\d+\.?\d*|\.\d+)|("[^"]*")|([A-Za-z_][A-Za-z0-9_]*)|(>=|<=|==|!=|&&|\|\||[-+*/(),.?:#<>!]))/y;
@@ -577,6 +577,8 @@
      2. Records (items + aspects -> searchable cards)
      ========================================================== */
 
+  // Item power at max level: normal unique 850, Ancestral 900, Mythic (original or crafted) 900.
+  const IP = { standard: 850, ancestral: 900, mythic: 900 };
   const RANGE_WORLD = { range: true };
   const state = {
     records: [],
@@ -585,8 +587,8 @@
     mode: null,
     activeCard: null,
     pins: [],
-    sandbox: { t: 1, rank: 16, ip: 800, mythic: [] },
-    view: { mythic: false },
+    sandbox: { t: 1, rank: 16, ip: 850, mythic: [] },
+    view: { mythic: false, ip: IP.standard }, // Database view: Standard 850 / Ancestral 900 / crafted Mythic
     curation: null,
   };
 
@@ -600,14 +602,13 @@
    *   base stats    -> max rolls
    *   + the Mythic bonus lines
    */
-  const MYTHIC_MIN_IP = 850;
-
   function renderItem(it, base, crafted) {
     const orig = it.rarity === "Mythic";
     const c = Boolean(crafted && !orig);
-    const pw = { ...base, mythic: orig, crafted: c, potency: c ? Engine.mythicPotency() : 0 };
-    // The Cube's UpgradeToMythic recipes take a unique of item power >= 850 (nMinItemPower in the recipe).
-    const sw = { ...pw, forceMax: c, ip: c ? Math.max(base.ip || Engine.DEFAULT_IP, MYTHIC_MIN_IP) : base.ip };
+    // Mythics are always item power 900. A crafted Mythic is made in the Cube from the same unique at 900
+    // (Ancestral); it keeps every affix, promoted to its maximum value.
+    const pw = { ...base, mythic: orig, crafted: c, potency: c ? Engine.mythicPotency() : 0, ip: orig || c ? IP.mythic : base.ip };
+    const sw = { ...pw, forceMax: c };
     return {
       crafted: c,
       power: it.power ? Engine.renderAffix(it.power, pw)[0] : null,
@@ -673,7 +674,7 @@
     if (codex.drops && !codex.drops.byId) codex.drops.byId = Object.fromEntries(codex.drops.bosses.map((b) => [b.id, b]));
 
     for (const it of state.curation.visible) {
-      const { power, imp, stats, mythicLines, crafted } = renderItem(it, RANGE_WORLD, state.view.mythic && canCraftMythic(it));
+      const { power, imp, stats, mythicLines, crafted } = renderItem(it, { ...RANGE_WORLD, ip: state.view.ip }, state.view.mythic && canCraftMythic(it));
       records.push({
         crafted, mythicLines,
         key: "i:" + it.id,
@@ -859,7 +860,7 @@
     els.rowSlot.hidden = mode === "codex";
     els.rowView.hidden = mode === "codex";
     els.rowView.querySelectorAll("[data-view]").forEach((b) => {
-      b.setAttribute("aria-pressed", String((b.dataset.view === "mythic") === state.view.mythic));
+      b.setAttribute("aria-pressed", String(b.dataset.view === viewName()));
     });
 
     if (changed) {
@@ -880,11 +881,7 @@
 
     els.filterRarity.innerHTML =
       pill("rarity", "all", "All", recs.length) +
-      RARITY_FILTERS.map((x) => {
-        const n = count((r) => r.rarity === x);
-        const title = x === "Ancestral" && !n ? "Ancestral is a roll tier on dropped items, not a separate entry in the game files" : "";
-        return pill("rarity", x, x, n, !n, title);
-      }).join("");
+      RARITY_FILTERS.map((x) => pill("rarity", x, x, count((r) => r.rarity === x))).join("");
 
     const slotCounts = {};
     for (const r of recs) if (r.slot) slotCounts[r.slot] = (slotCounts[r.slot] || 0) + 1;
@@ -1271,10 +1268,13 @@
     return ["database", "codex", "runes", "sandbox"].includes(h) ? h : "database";
   }
 
-  /** Database-wide switch: show normal uniques as their crafted Mythic version. */
-  function setMythicView(on) {
-    if (state.view.mythic === on) return;
-    state.view.mythic = on;
+  const viewName = () => (state.view.mythic ? "mythic" : state.view.ip === IP.ancestral ? "ancestral" : "standard");
+
+  /** Database-wide switch: Standard (850), Ancestral (900) or every unique as its crafted Mythic. */
+  function setView(name) {
+    if (viewName() === name) return;
+    state.view.mythic = name === "mythic";
+    state.view.ip = IP[name] || IP.standard;
     hideTooltip();
     buildRecords(Engine.codex);
     state.mode = null; // force the grid to re-render with the new numbers
@@ -1346,7 +1346,7 @@
         renderSandbox();
       }
       const view = e.target.closest("[data-view]");
-      if (view) setMythicView(view.dataset.view === "mythic");
+      if (view) setView(view.dataset.view);
     });
 
     // Tooltips: hover, keyboard focus, tap

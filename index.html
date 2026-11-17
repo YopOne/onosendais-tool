@@ -76,10 +76,11 @@
         <div class="filters__row" id="row-view">
           <span class="filters__label mono">VIEW</span>
           <div class="pills">
-            <button type="button" class="pill" data-view="standard" aria-pressed="true">Standard</button>
+            <button type="button" class="pill" data-view="standard" aria-pressed="true" title="Max-level unique, item power 850">Standard 850</button>
+            <button type="button" class="pill" data-view="ancestral" aria-pressed="false" title="Ancestral unique, item power 900">Ancestral 900</button>
             <button type="button" class="pill pill--mythic" data-view="mythic" aria-pressed="false" title="Show every Unique as its crafted Mythic version">Mythic (crafted)</button>
           </div>
-          <span class="hint view-hint">Crafted Mythic: unique power +30% Unique Potency (rolls kept), base stats at max, plus Mythic bonuses.</span>
+          <span class="hint view-hint">Base stats at max level: 850, Ancestral 900. Mythics are always 900. Crafted Mythic: made from the Ancestral unique, affixes promoted to max, unique power +30% Unique Potency, plus Mythic bonuses.</span>
         </div>
       </div>
 
@@ -137,7 +138,7 @@
           <div class="field">
             <label for="sb-roll">Roll quality <output id="sb-roll-out" class="mono"></output></label>
             <input id="sb-roll" type="range" min="0" max="100" step="1" value="100">
-            <p class="hint">0% = minimum roll, 100% = perfect roll. Original Mythics always roll perfectly. Press <span class="mono">MYTHIC</span> on a unique to see its crafted Mythic version (unique power keeps this roll +30% potency; base stats at max).</p>
+            <p class="hint">0% = minimum roll, 100% = perfect roll. Original Mythics always roll perfectly. Press <span class="mono">MYTHIC</span> on a unique to see its crafted Mythic version (made from the Ancestral 900 unique: affixes promoted to max, unique power keeps this roll +30% potency).</p>
           </div>
           <div class="field">
             <label for="sb-rank">Aspect rank <output id="sb-rank-out" class="mono"></output></label>
@@ -146,8 +147,8 @@
           </div>
           <div class="field">
             <label for="sb-ip">Item power <output id="sb-ip-out" class="mono"></output></label>
-            <input id="sb-ip" type="range" min="590" max="900" step="10" value="800">
-            <p class="hint">Sets base stat values (from the game's GameBalance tables, which change formula at 700 / 750 / 800 / 850 / 900). The Database shows item power 800.</p>
+            <input id="sb-ip" type="range" min="590" max="900" step="10" value="850">
+            <p class="hint">Sets base stat values. At max level a unique is 850, an Ancestral one 900. Mythics (original and crafted) always use 900.</p>
           </div>
           <div class="field">
             <label for="sb-add">Add entry</label>

@@ -45,7 +45,7 @@ evaluates formulas · resolves Power script formulas · renders game text · fil
 
 **Formula and text engine (`app.js`)**
 - Evaluates `Affix_Value_N` rolls, static values, links to other affixes, `PowerTag` / `SF_N` script formulas and legendary rank scaling.
-- Evaluates GameBalance stat formulas, including `IPower()` (item power) and `GetTotalAffixBonus()` (= 1, a plain roll). **Item power is 800 by default** (an assumption: the formulas switch at 590/700/750/800/850/900); the Sandbox has an Item Power slider. Crafted Mythics use at least 850, because the Cube's UpgradeToMythic recipes require a unique of 850+.
+- Evaluates GameBalance stat formulas, including `IPower()` (item power) and `GetTotalAffixBonus()` (= 1, a plain roll). **Item power rules (from the user, 17 Nov):** a max-level unique is 850, an Ancestral one 900, and Mythics are always 900. A Mythic is crafted in the Cube from the same unique at 900; it keeps every affix, promoted to its maximum value. The Database View row switches Standard 850 / Ancestral 900 / Mythic (crafted); the Sandbox has an Item Power slider (default 850; Mythics ignore it). Note: the UpgradeToMythic recipe files list `nMinItemPower: 850`, but in-game it needs the 900 copy.
 - Renders colour tags, conditionals and plural forms in the game text, plus `[expr|fmt|]` number formatting (e.g. `x[30 - 50]%`).
 - 1,366 of 1,368 text lines render cleanly. The other 2 have typos in the game data itself.
 
@@ -97,7 +97,7 @@ evaluates formulas · resolves Power script formulas · renders game text · fil
 ## Suggested next steps
 
 1. Push the latest commits so the live site gets them (see Deployment).
-2. In game, compare one crafted Mythic tooltip with the Sandbox (#2) and one unique's base stats at a known item power (#11).
+2. In game, compare one crafted Mythic tooltip with the Sandbox (#2: bonus lines, potency maths, unique power roll).
 3. Optional: show what an `Owner.*` value depends on (e.g. "scales with weapon damage") instead of a bare `#` (#4).
 
 ## Known issues / open items 🔧
@@ -105,16 +105,16 @@ evaluates formulas · resolves Power script formulas · renders game text · fil
 | # | Issue | Status |
 |---|-------|--------|
 | 1 | **Browser testing:** all four views checked headless at 1400px and 390px (no JS errors, no horizontal scroll), plus Sandbox sliders, Mythic toggle, share-link pins and tooltips. | Done (17 Nov) |
-| 2 | **Mythic rules partly assumed:** (a) base stats at max is the user's rule and isn't stated in the data; (b) the data doesn't say whether a mythic gets all 3 bonus lines or 1 of them. The 3 affixes have equal weight (100), which fits a random pick, but Unique Potency is in a different category from the other two; (c) ×1.3 multiplying rather than adding is inferred from 2 explicit formulas. Data-backed: crafting needs a unique of item power 850+, so crafted base stats use 850. | Compare one crafted mythic's tooltip against the game |
+| 2 | **Mythic rules partly assumed:** item power (900) and affixes promoted to max are confirmed by the user. Still open: (b) whether a mythic gets all 3 bonus lines or 1 of them (the 3 affixes have equal weight 100, but Unique Potency is in a different category from the other two); (c) ×1.3 multiplying rather than adding is inferred from 2 explicit formulas; (d) whether the unique power is also promoted to max (currently it keeps its roll, then +30% potency). | Compare one crafted mythic's tooltip against the game |
 | 3 | **Base stat `#` values:** filled from GameBalance AttributeFormulas. Stat lines showing `#` went from 474 to 6: Razorplate and Edge Thorns use `SacredAffixScalarOffense()`, which the data never defines, and `S04_OverpowerDamage` has no value in the data. | Done (17 Nov) |
 | 4 | **About 50 effect values show `#`:** they depend on live character stats (`Owner.*`, e.g. weapon damage). | Expected: can't be computed offline |
 | 5 | **Old and unobtainable items:** now behind the Availability filter (Legacy = 47). Not hidden by default. | Done (17 Nov) |
 | 6 | **Skill-tag names on stat lines:** resolved (skill tags, elements, resources, DoT and CC states). | Done (17 Nov) |
-| 7 | **Ancestral filter is always empty:** Ancestral is a roll quality on drops, not a separate entry in the data. The button is disabled with an explanation. | By design |
+| 7 | **Ancestral:** a quality on drops (item power 900), not a separate entry in the data. It's now a Database View option instead of an always-empty rarity filter. | Done (17 Nov) |
 | 8 | **Tooltip height:** compact layout and full-window placement; checked with the tallest tooltip in a 560px window. | Done (17 Nov) |
 | 9 | **Test and placeholder items:** removed, plus 16 placeholder aspects and 3 placeholder uniques found during testing. | Done (17 Nov) |
 | 10 | **Raw source panels on the live site:** hidden when the raw folders aren't deployed (probe at startup). | Done (17 Nov) |
-| 11 | **Default item power 800 is an assumption.** The data doesn't state the endgame drop item power. The Sandbox slider covers 590 to 900. | Check one item in game |
+| 11 | **Item power:** 850 normal / 900 Ancestral / 900 Mythic, confirmed by the user. | Done (17 Nov) |
 
 ## Files
 
