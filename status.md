@@ -1,6 +1,6 @@
 # Onosendai's Tool: Project Status
 
-_Last updated: 17 Nov 2026 (evening)_
+_Last updated: 17 Nov 2026 (late evening)_
 
 ## Overview
 
@@ -11,7 +11,7 @@ A vanilla HTML/CSS/JS single-page app: a searchable Diablo 4 database of uniques
 ## How it works
 
 ```
-data/Item, data/Power, data/StringList  (+ d4data/json/base/meta/Affix for roll values)
+data/Item, data/Power, data/StringList  (+ d4data Affix roll values, GameBalance stat formulas and skill tags)
         │
         ▼  python3 tools/build_index.py   (~3s, standard library only)
 data/index/codex.json   (~1 MB: raw templates, formulas, static values)
@@ -38,11 +38,14 @@ evaluates formulas · resolves Power script formulas · renders game text · fil
 **Data pipeline**
 - `tools/build_index.py` connects item files to their names and descriptions (StringList), their roll formulas (Affix files) and Power script formulas.
 - Class restrictions come from `fUsableByClass`. The 8-entry order was checked against item filenames.
-- QA/TEST fixtures and placeholder items are dropped.
+- QA/TEST fixtures and placeholder items are dropped: `QA_`/`TEST_`/`zz` ids, `PACTTEST_`, `*_test_*`, `Debug`, `[ph_` names, and any aspect or unique whose text is dev placeholder (`WIP`, `REDESIGN`, "(PH) I need a new design!"), together with that unique's S10 slot-swap copies.
+- **Base stat values** (`gbidFormula`) come from `GameBalance/AttributeFormulas.gam.json`: each stat line keeps its formula's item-power ranges in `codex.gb`, and `app.js` picks the range for the item power.
+- **Stat line labels** ("+2 to {Grenade} Skills", "Cold Resistance", "Fury Regeneration", "Stunned Enemies"): skill tag hashes come from `GameBalance/SkillTags.gam.json` + `StringList/SkillTagNames`; damage type, resource, DoT and CC numbers use small tables in `build_index.py` read off affix ids (e.g. `S04_Resource_Per_Second_Fury` = 1).
 - Charm copies are kept as separate entries, so they can no longer replace the real gear item.
 
 **Formula and text engine (`app.js`)**
 - Evaluates `Affix_Value_N` rolls, static values, links to other affixes, `PowerTag` / `SF_N` script formulas and legendary rank scaling.
+- Evaluates GameBalance stat formulas, including `IPower()` (item power) and `GetTotalAffixBonus()` (= 1, a plain roll). **Item power is 800 by default** (an assumption: the formulas switch at 590/700/750/800/850/900); the Sandbox has an Item Power slider. Crafted Mythics use at least 850, because the Cube's UpgradeToMythic recipes require a unique of 850+.
 - Renders colour tags, conditionals and plural forms in the game text, plus `[expr|fmt|]` number formatting (e.g. `x[30 - 50]%`).
 - 1,366 of 1,368 text lines render cleanly. The other 2 have typos in the game data itself.
 
@@ -52,12 +55,15 @@ evaluates formulas · resolves Power script formulas · renders game text · fil
 - **Filter buttons:** Class (8 classes), Rarity and Slot.
 - **Tooltips:** in-game style on hover, keyboard focus and tap.
 - **Slot mapping:** a `SLOT_MAP` dictionary in `app.js` turns item type IDs into Helm, Chest, Gloves, Pants, Boots, Amulet, Ring, 1H Weapon, 2H Weapon and Off-Hand.
-- **Curation:** 363 uniques are visible; 632 entries are hidden:
+- **Curation:** 357 uniques and 554 aspects are visible; 623 item entries are hidden:
   - 147 charm copies
-  - 406 Season 10 slot swaps
-  - 74 duplicate bases (e.g. Runewords)
-  - 5 non-gear types
-- **Theorycraft Sandbox:** pinned items with roll-quality and aspect-rank sliders, share links, and a viewer for the raw source JSON.
+  - 398 Season 10 slot swaps
+  - 75 duplicate bases (e.g. Runewords)
+  - 3 non-gear types
+- **Availability filter** (Database): All / Obtainable now (864) / Legacy (47). A unique is legacy when neither the boss loot table nor a recipe lists it; aspects are never legacy.
+- **Phone layout:** each filter group is one swipeable row, the nav scrolls to the active tab, long values wrap. Checked at 390px on all four views with no horizontal scroll.
+- **Tooltips** that don't fit the window switch to a compact layout (wider, smaller text, no flavor quote) and may cover the HUD; if still too tall, the bottom fades out.
+- **Theorycraft Sandbox:** pinned items with roll-quality, aspect-rank and item-power sliders, share links, and a viewer for the raw source JSON (hidden automatically when the raw folders aren't deployed, e.g. on GitHub Pages).
 - **Crafted Mythic support:**
   - A Standard / Mythic view switch in the Database and a MYTHIC toggle per Sandbox entry.
   - Unique power gets +30% Unique Potency (`S14_Mythic_UniquePotency`, value read from the data) and keeps its roll. Values that ignore affix bonuses aren't boosted, and items that already apply potency in their own formula aren't boosted twice.
@@ -67,7 +73,7 @@ evaluates formulas · resolves Power script formulas · renders game text · fil
 - `data/sources/boss_loot.json` is maintained by hand from the [Maxroll boss loot cheat sheet](https://maxroll.gg/d4/resources/boss-loot-table-cheat-sheet). The current copy is from Season 15, last updated 14 Oct 2026. It covers 11 bosses, the S15 capstone items with drop rates, Iconic Mythics and world-drop uniques.
 - `build_index.py` tags items by name and warns about any name that matches no item. When it was added, all 298 names matched.
 - In the UI, cards get a drop tag, tooltips get a "DROPS" line (key, location, trophy, Belial note) and there's a **Source** filter row. Boss names are searchable.
-- Coverage: 287 of 363 visible uniques. The 76 "Unlisted" are mostly items you can't currently get: Crucible copies, Runewords, April Fools items and other old or seasonal items.
+- Coverage: 310 of 357 visible uniques (including Craftable). The 47 others are mostly items you can't currently get: Crucible copies, April Fools items and other old or seasonal items. They make up the "Legacy" availability filter.
 - **When Maxroll updates:** edit `boss_loot.json`, then run `python3 tools/build_index.py` again.
 
 **Runes & Recipes view** _(added 17 Nov 2026, nav `03`, `#/runes`)_
@@ -90,25 +96,25 @@ evaluates formulas · resolves Power script formulas · renders game text · fil
 
 ## Suggested next steps
 
-1. Hide the 4 test/placeholder items (#9): quick curation fix.
-2. Browser pass on the Sandbox and phone-width layouts (#1) using `tools/webshot.swift`.
-3. Parse GameBalance item-power tables (#3) to fill in the `#` stat values. This is the biggest remaining data gap.
-4. Optional: hide the raw-file panels on the live site (#10).
+1. Push the latest commits so the live site gets them (see Deployment).
+2. In game, compare one crafted Mythic tooltip with the Sandbox (#2) and one unique's base stats at a known item power (#11).
+3. Optional: show what an `Owner.*` value depends on (e.g. "scales with weapon damage") instead of a bare `#` (#4).
 
 ## Known issues / open items 🔧
 
 | # | Issue | Status |
 |---|-------|--------|
-| 1 | **Only partly tested in a browser.** A headless WebKit harness loaded the Runes & Recipes view (all 3 tabs), the Database Source filter and a hover tooltip with no JS errors. The Sandbox and phone layouts haven't been checked. | Partly done |
-| 2 | **Mythic rules partly assumed:** (a) base stats at max is the user's rule and isn't stated in the data; (b) the data doesn't say whether a mythic gets all 3 bonus lines or 1 of them; (c) ×1.3 multiplying rather than adding is inferred from 2 explicit formulas. | Compare one crafted mythic's tooltip against the game |
-| 3 | **About 314 stat lines show `#`:** their values come from GameBalance item-power tables (`gbidFormula`) that aren't extracted. | Open: needs GameBalance parsing |
-| 4 | **About 106 effect lines show `#`:** they depend on live character stats (`Owner.*`, e.g. weapon damage). | Expected: can't be computed offline |
-| 5 | **Old and unobtainable items are still listed** (e.g. S12 "(Crucible)", S05 Infernal Hordes items, Runewords). There's no "currently obtainable" flag in the data. | Proposed: optional season-prefix filter |
-| 6 | **Skill-tag names on some stat lines** fall back to a generic "Skill", because tag hashes aren't resolved. | Open |
+| 1 | **Browser testing:** all four views checked headless at 1400px and 390px (no JS errors, no horizontal scroll), plus Sandbox sliders, Mythic toggle, share-link pins and tooltips. | Done (17 Nov) |
+| 2 | **Mythic rules partly assumed:** (a) base stats at max is the user's rule and isn't stated in the data; (b) the data doesn't say whether a mythic gets all 3 bonus lines or 1 of them. The 3 affixes have equal weight (100), which fits a random pick, but Unique Potency is in a different category from the other two; (c) ×1.3 multiplying rather than adding is inferred from 2 explicit formulas. Data-backed: crafting needs a unique of item power 850+, so crafted base stats use 850. | Compare one crafted mythic's tooltip against the game |
+| 3 | **Base stat `#` values:** filled from GameBalance AttributeFormulas. Stat lines showing `#` went from 474 to 6: Razorplate and Edge Thorns use `SacredAffixScalarOffense()`, which the data never defines, and `S04_OverpowerDamage` has no value in the data. | Done (17 Nov) |
+| 4 | **About 50 effect values show `#`:** they depend on live character stats (`Owner.*`, e.g. weapon damage). | Expected: can't be computed offline |
+| 5 | **Old and unobtainable items:** now behind the Availability filter (Legacy = 47). Not hidden by default. | Done (17 Nov) |
+| 6 | **Skill-tag names on stat lines:** resolved (skill tags, elements, resources, DoT and CC states). | Done (17 Nov) |
 | 7 | **Ancestral filter is always empty:** Ancestral is a roll quality on drops, not a separate entry in the data. The button is disabled with an explanation. | By design |
-| 10 | **Sandbox "raw source files" panels are empty on the live site:** the raw `data/` folders aren't uploaded, so each panel says "unavailable… Raw folders may not be deployed". It works locally. | By design (too big for GitHub); could hide the panel when the files are missing |
-| 9 | **Test and placeholder items still visible:** Elias mummified finger, PvP Refresher, Pact Amulet (`PACTTEST_`), `[ph_Hope's Respite]`. The "Unlisted" Source filter shows them. | Open: tighten curation |
-| 8 | **Tooltip height:** very long tooltips are cut off at the bottom of the screen. | Minor |
+| 8 | **Tooltip height:** compact layout and full-window placement; checked with the tallest tooltip in a 560px window. | Done (17 Nov) |
+| 9 | **Test and placeholder items:** removed, plus 16 placeholder aspects and 3 placeholder uniques found during testing. | Done (17 Nov) |
+| 10 | **Raw source panels on the live site:** hidden when the raw folders aren't deployed (probe at startup). | Done (17 Nov) |
+| 11 | **Default item power 800 is an assumption.** The data doesn't state the endgame drop item power. The Sandbox slider covers 590 to 900. | Check one item in game |
 
 ## Files
 
@@ -118,7 +124,7 @@ evaluates formulas · resolves Power script formulas · renders game text · fil
 | `tools/build_index.py` | Builds `data/index/codex.json` |
 | `data/Item`, `data/Power`, `data/StringList` | Raw datamined source (Season 15) |
 | `d4data/` | Full datamine repo; Affix roll data and SNO lookup |
-| `tools/webshot.swift` | Headless WebKit screenshot and JS-error check (macOS) |
+| `tools/webshot.swift` | Headless WebKit screenshot and JS-error check (macOS). Python's `http.server` lets WebKit cache `app.js`, so serve with `Cache-Control: no-store` when re-testing edits |
 | `README.md`, `.gitignore` | GitHub readme, and what's kept out of the repo |
 | `tools/runes_recipes.py` | Runes, runewords and recipes for the codex |
 | `data/sources/runes_maxroll.json` | Rune lair drops + current rune list (from Maxroll) |
