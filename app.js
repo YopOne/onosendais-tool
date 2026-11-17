@@ -581,7 +581,7 @@
   const state = {
     records: [],
     byId: new Map(),
-    filters: { q: "", tokens: [], cls: "all", rarity: "all", slot: "all", source: "all" },
+    filters: { q: "", tokens: [], cls: "all", rarity: "all", slot: "all", source: "all", avail: "all" },
     mode: null,
     activeCard: null,
     pins: [],
@@ -730,7 +730,7 @@
     catalogEyebrow: $("catalog-eyebrow"), catalogTitle: $("catalog-title"),
     filterClass: $("filter-class"), filterRarity: $("filter-rarity"), filterSlot: $("filter-slot"),
     rowRarity: $("row-rarity"), rowSlot: $("row-slot"), rowView: $("row-view"),
-    rowSource: $("row-source"), filterSource: $("filter-source"), sourceNote: $("source-note"),
+    rowSource: $("row-source"), filterSource: $("filter-source"), rowAvail: $("row-avail"), filterAvail: $("filter-avail"), sourceNote: $("source-note"),
     viewRunes: $("view-runes"), runeTabs: $("rune-tabs"), rowRuneKind: $("row-rune-kind"), runesBody: $("runes-body"),
     runesCount: $("runes-count"), runesSource: $("runes-source"),
     count: $("result-count"), reset: $("filter-reset"), grid: $("catalog-grid"), empty: $("catalog-empty"),
@@ -904,11 +904,22 @@
         opts.map(([k, label, title]) => pill("source", k, label, count(k === "unknown" ? (r) => !r.drop : has(k)), false, title)).join("");
       els.sourceNote.textContent = `Source: ${drops.sourceName}, updated ${drops.sourceUpdated} (${drops.season}). Belial mirrors the boss you pick.`;
     }
+
+    // Availability: a unique is "obtainable now" when the current drop table or a recipe lists it.
+    els.rowAvail.hidden = state.mode === "codex" || !drops;
+    if (drops) {
+      els.filterAvail.innerHTML = pill("avail", "all", "All", recs.length) +
+        pill("avail", "current", "Obtainable now", count((r) => !isLegacy(r)), false, `Uniques in the ${drops.season} drop table or a recipe, plus all aspects`) +
+        pill("avail", "legacy", "Legacy", count(isLegacy), false, "Uniques no current source lists: old seasonal copies (Crucible, Runewords), event items, retired pieces");
+    }
   }
 
   function pill(group, value, label, n, disabled = false, title = "", icon = "") {
     return `<button type="button" class="pill" data-filter="${group}" data-value="${esc(value)}" aria-pressed="false"${disabled ? " disabled" : ""}${title ? ` title="${esc(title)}"` : ""}>${icon}${esc(label)}<span class="pill__n">${n}</span></button>`;
   }
+
+  /** A unique that neither the drop table nor a recipe lists. Aspects are never legacy. */
+  const isLegacy = (r) => r.kind === "item" && !r.drop;
 
   function matches(r) {
     const f = state.filters;
@@ -917,6 +928,7 @@
       if (f.rarity !== "all" && r.rarity !== f.rarity) return false;
       if (f.slot !== "all" && r.slot !== f.slot) return false;
       if (f.source !== "all" && (f.source === "unknown" ? r.drop : !(r.drop && r.drop.keys.includes(f.source)))) return false;
+      if (f.avail !== "all" && (f.avail === "legacy") !== isLegacy(r)) return false;
     }
     for (const t of f.tokens) if (!r.search.includes(t)) return false;
     return true;
@@ -1312,7 +1324,7 @@
       if (p && !p.disabled) { state.filters[p.dataset.filter] = p.dataset.value; applyFilters(); }
     });
     els.reset.addEventListener("click", () => {
-      Object.assign(state.filters, { q: "", tokens: [], cls: "all", rarity: "all", slot: "all", source: "all" });
+      Object.assign(state.filters, { q: "", tokens: [], cls: "all", rarity: "all", slot: "all", source: "all", avail: "all" });
       els.search.value = "";
       applyFilters();
     });
