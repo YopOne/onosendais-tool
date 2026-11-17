@@ -992,10 +992,10 @@
         <article class="sb-entry sb-entry--${rarityClass(shownRarity(r, rendered))}">
           ${tooltipInner(r, rendered)}
           ${rankNote}
-          <details class="sb-entry__raw" data-raw="${esc(key)}"${openRaw.has(key) ? " open" : ""}${rawCache.has(key) ? ' data-loaded="1"' : ""}>
+          ${rawAvailable === false ? "" : `<details class="sb-entry__raw" data-raw="${esc(key)}"${openRaw.has(key) ? " open" : ""}${rawCache.has(key) ? ' data-loaded="1"' : ""}>
             <summary>RAW SOURCE FILES ▸</summary>
             <div class="raw">${rawCache.get(key) || '<p class="hint mono">loading…</p>'}</div>
-          </details>
+          </details>`}
         </article>`;
     }).join("");
   }
@@ -1371,8 +1371,20 @@
 
   function showAlert(html) { els.alert.innerHTML = html; els.alert.hidden = false; }
 
+  // The raw data/ folders (~575 MB) aren't deployed to GitHub Pages: probe once, hide the panels if absent.
+  let rawAvailable = null; // null = unknown yet (panel shown), true/false after the probe
+  function probeRaw() {
+    fetch(RAW.stl + "AttributeDescriptions.stl.json", { method: "HEAD" })
+      .then((res) => res.ok, () => false)
+      .then((ok) => {
+        rawAvailable = ok;
+        if (!ok && !els.viewSandbox.hidden) renderSandbox();
+      });
+  }
+
   async function boot() {
     bindEvents();
+    probeRaw();
     let codex;
     try {
       const res = await fetch(INDEX_URL, { cache: "no-cache" });
