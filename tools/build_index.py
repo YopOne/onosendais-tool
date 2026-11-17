@@ -243,7 +243,11 @@ def main():
                 line["p"] = label
             # gbidFormula = value comes from a GameBalance AttributeFormulas entry (per item power range)
             gbid = (spec.get("gbidFormula") or {}).get("name")
-            if gbid:
+            if attr + "_Unscaled_By_Player_Health" in attr_desc:
+                # Stats with an "_Unscaled_By_Player_Health" twin (Thorns_Flat, Flat_Hitpoints_Max_Bonus,
+                # Flat_Hitpoints_On_Hit) store a fraction the game scales with player health at runtime.
+                line["s"] = 1
+            elif gbid:
                 line["g"] = gbid
                 gb_used.add(gbid)
             elif formula not in ("", "0"):
@@ -258,6 +262,8 @@ def main():
             rec["nb"] = no_bonus
         if raw.get("eMagicType") == 2:
             rec["u"] = 1  # Unique-type affix: boosted by Item_Affix_Bonus_Per_Magic_Type(2)
+        elif raw.get("eMagicType") == 1:
+            rec["lg"] = 1  # Legendary affix (aspect): amulet x1.5 / 2H weapon x2 (flLegendaryAffix*Bonus)
         sv = raw.get("arStaticValues") or []
         if sv:
             rec["sv"] = sv
@@ -417,6 +423,19 @@ def main():
     else:
         print("! GameBalance/AttributeFormulas.gam.json not found: base stat values will show as #.")
 
+    # ---------- Global affix constants (Global/globals.glo.json) ----------
+    # flLegendaryAffixAmuletBonus 0.5 (amulet x1.5), flLegendaryAffixTwoHandBonus 1 (2H x2),
+    # flSacred/AncestralAffixScalarOffense (used by some stat formulas).
+    globals_out = {}
+    glo_path = os.path.join(args.d4data, "json", "base", "meta", "Global", "globals.glo.json")
+    if os.path.exists(glo_path):
+        txt = open(glo_path, encoding="utf-8").read()
+        for key in ("flLegendaryAffixAmuletBonus", "flLegendaryAffixTwoHandBonus", "flSacredAffixScalarOffense",
+                    "flAncestralAffixScalarOffense", "flSacredAffixScalarDefense", "flAncestralAffixScalarDefense"):
+            m = re.search(r'"%s":\s*([-0-9.eE]+)' % key, txt)
+            if m:
+                globals_out[key] = float(m.group(1))
+
     drops = attach_drops(items, os.path.join(ROOT, "data", "sources", "boss_loot.json"))
     runes = extract_runes(item_dir, stl_dir, os.path.join(args.d4data, "json", "base", "meta", "Recipe"),
                           os.path.join(ROOT, "data", "sources", "runes_maxroll.json"), items)
@@ -434,6 +453,7 @@ def main():
         "powers": powers,
         "mythic": mythic,
         "gb": gb,
+        "globals": globals_out,
         "drops": drops,
         "runes": runes,
     }

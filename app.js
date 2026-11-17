@@ -215,6 +215,8 @@
     const rollT = (w) => (w.mythic || w.forceMax ? 1 : w.t);
     const roll = (ctx, lo, hi) => (lo === UNKNOWN || hi === UNKNOWN ? UNKNOWN : lo + (hi - lo) * rollT(ctx.world));
 
+    const glob = (k) => { const v = codex.globals && codex.globals[k]; return typeof v === "number" ? v : UNKNOWN; };
+
     const FUNCS = {
       FloatRandomRangeWithIntervalUniqueAffixPityBonus: (c, a) => roll(c, a[1], a[2]),
       FloatRangeWithIntervalUniqueAffixPityBonus: (c, a) => roll(c, a[2], a[3]),
@@ -226,6 +228,10 @@
       IPower: (c) => c.world.ip || DEFAULT_IP,
       // Greater-affix / masterwork multipliers on a roll: a plain drop has none.
       GetTotalAffixBonus: () => 1,
+      SacredAffixScalarOffense: () => glob("flSacredAffixScalarOffense"),
+      AncestralAffixScalarOffense: () => glob("flAncestralAffixScalarOffense"),
+      SacredAffixScalarDefense: () => glob("flSacredAffixScalarDefense"),
+      AncestralAffixScalarDefense: () => glob("flAncestralAffixScalarDefense"),
       CurrentLegendaryRank: (c) => {
         const max = (codex.affixes[c.affix] || {}).rk || c.world.rank;
         return Math.max(1, Math.min(c.world.rank, max));
@@ -298,10 +304,14 @@
         if (!a || !a.v || a.v[head] == null) return UNKNOWN;
         const formula = a.v[head];
         const v = evalFormula(formula, { ...ctx, affix: id });
-        // Mythic Unique Potency: Item_Affix_Bonus_Per_Magic_Type(2) boosts Unique-type affix values,
-        // except values flagged bIgnoreAffixBonuses, and formulas that already apply potency themselves.
-        const p = ctx.world.potency || 0;
-        if (v === UNKNOWN || !p || !a.u || (a.nb && a.nb.includes(head)) || /UniquePotency/.test(formula)) return v;
+        // Affix bonuses (never on values flagged bIgnoreAffixBonuses):
+        //   Legendary aspects: slot bonus, amulet +50% / 2H weapon +100% (flLegendaryAffix*Bonus)
+        //   Unique powers: Mythic Unique Potency, Item_Affix_Bonus_Per_Magic_Type(2) = x1.3,
+        //   unless the formula applies it itself.
+        if (v === UNKNOWN || (a.nb && a.nb.includes(head))) return v;
+        if (a.lg) return v * (1 + (ctx.world.slotBonus || 0));
+        if (!a.u) return v;
+        const p = /UniquePotency/.test(formula) ? 0 : ctx.world.potency || 0;
         return v * (1 + p);
       }
 
@@ -451,7 +461,7 @@
 
     /** Expand an AttributeDescriptions stat line into a template we can render. */
     function statLineTemplate(line, ip) {
-      const f = line.f || gbFormula(line.g, ip);
+      const f = line.s ? null : line.f || gbFormula(line.g, ip); // s: scaled by player health in game
       const val = f ? `(${f})` : "__unknown__";
       const label = line.p || "Skill";
       // Inside [..] any {VALUE}/{VALUE1}/{VALUE2} is the number (the data also spells it {vALUE});
@@ -587,7 +597,7 @@
     mode: null,
     activeCard: null,
     pins: [],
-    sandbox: { t: 1, rank: 16, ip: 850, mythic: [] },
+    sandbox: { t: 1, rank: 16, ip: 850, mythic: [], slot: {} }, // slot: aspect key -> "amulet" | "2h"
     view: { mythic: false, ip: IP.standard }, // Database view: Standard 850 / Ancestral 900 / crafted Mythic
     curation: null,
   };
@@ -602,13 +612,21 @@
    *   base stats    -> max rolls
    *   + the Mythic bonus lines
    */
+  /** Aspect slot bonus from game globals: amulet +50% (150%), 2H weapon +100% (200%). */
+  const ASPECT_SLOTS = { amulet: ["AMULET ×1.5", "flLegendaryAffixAmuletBonus"], "2h": ["2H ×2", "flLegendaryAffixTwoHandBonus"] };
+  function aspectSlotBonus(slot) {
+    const g = (Engine.codex.globals || {})[(ASPECT_SLOTS[slot] || [])[1]];
+    return typeof g === "number" ? g : 0;
+  }
+
   function renderItem(it, base, crafted) {
     const orig = it.rarity === "Mythic";
     const c = Boolean(crafted && !orig);
     // Mythics are always item power 900. A crafted Mythic is made in the Cube from the same unique at 900
     // (Ancestral); it keeps every affix, promoted to its maximum value.
-    const pw = { ...base, mythic: orig, crafted: c, potency: c ? Engine.mythicPotency() : 0, ip: orig || c ? IP.mythic : base.ip };
-    const sw = { ...pw, forceMax: c };
+    // Crafted: every affix, including the unique power, is promoted to its maximum value.
+    const pw = { ...base, mythic: orig, crafted: c, forceMax: c, potency: c ? Engine.mythicPotency() : 0, ip: orig || c ? IP.mythic : base.ip };
+    const sw = pw;
     return {
       crafted: c,
       power: it.power ? Engine.renderAffix(it.power, pw)[0] : null,
@@ -786,6 +804,7 @@
       r.kind === "item" ? ["SLOT", r.slot] : null,
       r.kind === "item" ? ["SOURCE", r.drop ? r.drop.text : "Unknown: not in the boss loot table or any recipe"] : null,
       r.maxRank ? ["RANKS", `1–${r.maxRank}`] : null,
+      r.kind === "aspect" ? ["SLOT", "Amulet 150% · 2H weapon 200% (set it in the Sandbox)"] : null,
       rendered.crafted ? ["MYTHIC", "Crafted: base stats at max, unique power +Unique Potency"] : null,
       ["ID", r.id],
     ].filter(Boolean);
@@ -964,6 +983,7 @@
     try { state.pins = (JSON.parse(localStorage.getItem(PIN_KEY)) || []).filter((k) => state.byId.has(k)); } catch { state.pins = []; }
     try { Object.assign(state.sandbox, JSON.parse(localStorage.getItem(SB_KEY)) || {}); } catch { /* ignore */ }
     if (!Array.isArray(state.sandbox.mythic)) state.sandbox.mythic = [];
+    if (!state.sandbox.slot || typeof state.sandbox.slot !== "object") state.sandbox.slot = {};
   }
 
   function savePins() {
@@ -991,7 +1011,8 @@
 
   function renderedAt(r, world) {
     if (r.kind === "aspect") {
-      return { power: Engine.renderAffix(r.id, world)[0] || null, imp: [], stats: [], mythicLines: [], crafted: false };
+      const slotBonus = aspectSlotBonus(state.sandbox.slot[r.key]);
+      return { power: Engine.renderAffix(r.id, { ...world, slotBonus })[0] || null, imp: [], stats: [], mythicLines: [], crafted: false };
     }
     return renderItem(r.raw, world, state.sandbox.mythic.includes(r.key) && canCraftMythic(r));
   }
@@ -1021,7 +1042,10 @@
       const mythicBtn = canCraftMythic(r)
         ? `<button type="button" class="btn btn--mythic mono" data-mythic="${esc(key)}" aria-pressed="${rendered.crafted}" title="View the crafted Mythic version">MYTHIC</button>`
         : "";
-      rendered.tools = `<div class="sb-entry__tools">${mythicBtn}<button type="button" class="btn btn--ghost mono" data-unpin="${esc(key)}">REMOVE</button></div>`;
+      const slotBtns = r.kind === "aspect"
+        ? Object.entries(ASPECT_SLOTS).map(([s, [label]]) => `<button type="button" class="btn btn--ghost mono" data-aslot="${s}" data-akey="${esc(key)}" aria-pressed="${state.sandbox.slot[key] === s}" title="Imprinted on ${s === "amulet" ? "an amulet (150%)" : "a two-handed weapon (200%)"}">${label}</button>`).join("")
+        : "";
+      rendered.tools = `<div class="sb-entry__tools">${slotBtns}${mythicBtn}<button type="button" class="btn btn--ghost mono" data-unpin="${esc(key)}">REMOVE</button></div>`;
       const rankNote = r.maxRank ? `<p class="hint mono" style="padding:0 16px 8px">RANK ${Math.min(rank, r.maxRank)} / ${r.maxRank}</p>` : "";
       return `
         <article class="sb-entry sb-entry--${rarityClass(shownRarity(r, rendered))}">
@@ -1347,6 +1371,14 @@
       if (pin) { e.stopPropagation(); togglePin(pin.dataset.pin); return; }
       const unpin = e.target.closest("[data-unpin]");
       if (unpin) togglePin(unpin.dataset.unpin);
+      const aslot = e.target.closest("[data-aslot]");
+      if (aslot) {
+        const k = aslot.dataset.akey, s = aslot.dataset.aslot;
+        if (state.sandbox.slot[k] === s) delete state.sandbox.slot[k]; else state.sandbox.slot[k] = s;
+        try { localStorage.setItem(SB_KEY, JSON.stringify(state.sandbox)); } catch { /* ignore */ }
+        renderSandbox();
+        return;
+      }
       const myth = e.target.closest("[data-mythic]");
       if (myth) {
         const k = myth.dataset.mythic, list = state.sandbox.mythic, i = list.indexOf(k);
