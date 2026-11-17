@@ -47,8 +47,12 @@ CLASSES = ["Sorcerer", "Druid", "Barbarian", "Rogue", "Necromancer", "Spiritborn
 MAGIC_TYPES = {1: "Legendary", 2: "Unique", 4: "Mythic"}
 
 EXCLUDED_TYPES = re.compile(r"^(Fish|CollectiblePower|ReputationCache|Quest.*|Cache.*|Junk|.*Bad Data)$")
-TEST_ID = re.compile(r"^(QA|TEST|DEBUG)_", re.I)  # QA fixtures; can share names with real items
-JUNK_NAME = re.compile(r"\[(PH|WIP)\]|\((PH|DEBUG|DNS)\)|^\[PH\]|Performance Test|^Boost |^Legendary .+ \d+$|^Something Super Cool$|^\s*$", re.I)
+# QA fixtures (can share names with real items): QA_/TEST_/DEBUG_/zz prefixes, PACTTEST_, *_test_*, *Debug*
+TEST_ID = re.compile(r"^(QA|TEST|DEBUG)_|^zz|TEST_|_test(_|$)|Debug", re.I)
+JUNK_NAME = re.compile(r"\[(PH|WIP)\]|^\[ph_|\((PH|DEBUG|DNS)\)|^\[PH\]|Performance Test|^Boost |^Legendary .+ \d+$|^Something Super Cool$|^\s*$", re.I)
+
+# Dev placeholder text: "WIP", "(WIP) ...", "{c_red}(REDESIGN)...", "{c_red}NEEDS REDESIGN"
+WIP_TEXT = re.compile(r"^\s*(\{c_\w+\})?\(?(WIP|PH|NEEDS REDESIGN|REDESIGN)\b|I need a new design")
 
 POWERTAG_RE = re.compile(r'PowerTag\.([A-Za-z0-9_]+)\."Script Formula \d+"')
 DAMAGE_TYPES = ["Physical", "Fire", "Lightning", "Cold", "Poison", "Shadow"]
@@ -239,7 +243,7 @@ def main():
             continue
         s = strings(stl_dir, "Item_" + item_id)
         name = s.get("Name", "")
-        if JUNK_NAME.search(name) or JUNK_NAME.search(item_id) or "Boost" in item_id or TEST_ID.match(item_id):
+        if JUNK_NAME.search(name) or JUNK_NAME.search(item_id) or "Boost" in item_id or TEST_ID.search(item_id):
             continue
 
         type_name = strings(stl_dir, "ItemType_" + type_id).get("Name") or type_id
@@ -280,6 +284,13 @@ def main():
 
     items = sorted((r for _, r in items_by_name.values()), key=lambda r: r["name"])
 
+    # Items whose unique power is dev placeholder text ("(PH) I need a new design!"), plus their
+    # Season 10 slot-swap copies (S10_<id>_<slot>), which would otherwise stand in on a random slot.
+    wip_ids = {r["id"] for r in items if r.get("power") and WIP_TEXT.search(affixes[r["power"]].get("t", ""))}
+    if wip_ids:
+        swap_of = re.compile(r"^S10_(" + "|".join(map(re.escape, wip_ids)) + r")_")
+        items = [r for r in items if r["id"] not in wip_ids and not swap_of.match(r["id"])]
+
     # ---------- Legendary aspects ----------
     if os.path.isdir(aspect_dir):
         aspect_affixes = []
@@ -298,7 +309,7 @@ def main():
             continue
         rec = affixes[a]
         raw_name = rec.get("n")
-        if not raw_name or not rec.get("t") or JUNK_NAME.search(raw_name):
+        if not raw_name or not rec.get("t") or JUNK_NAME.search(raw_name) or WIP_TEXT.search(rec["t"]):
             continue
         name = f"Aspect {raw_name}" if raw_name.lower().startswith("of ") else f"{raw_name} Aspect"
         key = (name, tuple(rec.get("c", [])))

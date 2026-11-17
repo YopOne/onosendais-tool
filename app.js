@@ -798,10 +798,16 @@
 
   function positionTooltip(card) {
     const r = card.getBoundingClientRect();
-    const t = els.tooltip.getBoundingClientRect();
     const gap = 12, pad = 8;
     const vw = document.documentElement.clientWidth, vh = window.innerHeight;
-    const top0 = document.querySelector(".hud").offsetHeight + pad;
+    const tip = els.tooltip;
+    // Clear below the HUD when there's room; tall tooltips may cover it (it's transient).
+    const hud = document.querySelector(".hud").offsetHeight + pad;
+    tip.classList.remove("tooltip--compact", "tooltip--clipped");
+    if (tip.scrollHeight > vh - 2 * pad) tip.classList.add("tooltip--compact"); // wider, smaller text, no flavor
+    if (tip.scrollHeight > vh - 2 * pad) tip.classList.add("tooltip--clipped"); // still too tall: fade the cut
+    const t = tip.getBoundingClientRect();
+    const top0 = t.height <= vh - hud - pad ? hud : pad;
 
     let left = r.right + gap;
     let top = r.top;
@@ -1243,6 +1249,13 @@
     document.querySelectorAll("[data-nav]").forEach((a) => {
       if (a.dataset.nav === view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
+    // On narrow screens the nav scrolls sideways: keep the active tab visible.
+    setTimeout(() => {
+      const nav = document.querySelector(".nav"), cur = nav && nav.querySelector('[aria-current="page"]');
+      if (!nav || !cur || nav.scrollWidth <= nav.clientWidth) return;
+      const n = nav.getBoundingClientRect(), c = cur.getBoundingClientRect();
+      nav.scrollLeft += c.left - n.left - (n.width - c.width) / 2;
+    }, 0);
     els.viewCatalog.hidden = view === "sandbox" || view === "runes";
     els.viewSandbox.hidden = view !== "sandbox";
     els.viewRunes.hidden = view !== "runes";

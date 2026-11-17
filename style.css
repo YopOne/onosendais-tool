@@ -239,6 +239,24 @@ h1, h2, h3 { margin: 0; }
 .filters__label { flex: none; width: 58px; padding-top: 5px; font: 600 0.74rem var(--font-ui); letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint); }
 
 .pills { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+
+/* Phones: each filter group is one swipeable line, label on top, so cards start near the top. */
+@media (max-width: 640px) {
+  .filters { gap: 12px; padding: 14px; grid-template-columns: minmax(0, 1fr); }
+  .filters__row { flex-direction: column; gap: 6px; min-width: 0; }
+  .filters__row > .pills { flex: none; max-width: 100%; }
+  .filters__label { width: auto; padding-top: 0; }
+  #filter-source { flex: 1 1 100%; }
+  .filters__row > .pills:not(:has(> .pills)), #filter-source {
+    width: 100%; min-width: 0;
+    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .filters__row > .pills::-webkit-scrollbar, #filter-source::-webkit-scrollbar { display: none; }
+  .filters .pill { flex: none; }
+  .filters__row .view-hint { flex: none; align-self: stretch; }
+  body .gt-val { white-space: normal; }
+}
 .pill {
   display: inline-flex; align-items: center;
   font: 600 0.86rem var(--font-ui);
@@ -393,7 +411,7 @@ h1, h2, h3 { margin: 0; }
   --rarity: var(--r-unique);
   position: fixed; z-index: 100;
   width: 380px; max-width: calc(100vw - 16px);
-  max-height: calc(100vh - 24px); overflow: hidden;
+  max-height: calc(100vh - 16px); overflow: hidden;
   padding: 0;
   background: #0a0a0c;
   border: 1px solid color-mix(in srgb, var(--rarity) 55%, #000);
@@ -411,6 +429,12 @@ h1, h2, h3 { margin: 0; }
 .tooltip::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
 .tooltip::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
 .tooltip[hidden] { display: none; }
+/* Too tall for the window: widen, tighten, drop the flavor quote; then fade the bottom if it still won't fit. */
+.tooltip--compact { width: 540px; font-size: 0.8rem; line-height: 1.4; }
+.tooltip--compact .tt__flavor, .tooltip--compact .tt__sep:has(+ .tt__flavor) { display: none; }
+.tooltip--compact .tt__body { padding: 10px 14px 12px; }
+.tooltip--compact .tt__sep { margin: 7px 0; }
+.tooltip--clipped { -webkit-mask-image: linear-gradient(#000 calc(100% - 48px), transparent); mask-image: linear-gradient(#000 calc(100% - 48px), transparent); }
 .tooltip--mythic { --rarity: var(--r-mythic); }
 .tooltip--legendary { --rarity: var(--r-legendary); }
 
