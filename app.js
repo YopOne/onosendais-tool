@@ -804,7 +804,7 @@
       r.kind === "item" ? ["SLOT", r.slot] : null,
       r.kind === "item" ? ["SOURCE", r.drop ? r.drop.text : "Unknown: not in the boss loot table or any recipe"] : null,
       r.maxRank ? ["RANKS", `1–${r.maxRank}`] : null,
-      r.kind === "aspect" ? ["SLOT", "Amulet 150% · 2H weapon 200% (set it in the Sandbox)"] : null,
+      r.kind === "aspect" ? ["IMPRINT", "Non-unique gear via the Codex of Power (salvage at the Blacksmith). Amulet 150% · 2H weapon 200% (try it in the Sandbox)"] : null,
       rendered.crafted ? ["MYTHIC", "Crafted: base stats at max, unique power +Unique Potency"] : null,
       ["ID", r.id],
     ].filter(Boolean);
@@ -875,6 +875,9 @@
     state.mode = mode;
     els.catalogEyebrow.textContent = mode === "codex" ? "// ASPECT CODEX" : "// DATABASE";
     els.catalogTitle.textContent = mode === "codex" ? "Aspect Codex" : "Database";
+    $("catalog-sub").textContent = mode === "codex"
+      ? "Legendary aspects. Salvage a legendary item at the Blacksmith to save its aspect to the Codex of Power, then imprint it on any non-unique item: 150% on an amulet, 200% on a two-handed weapon. Unique powers can't be imprinted."
+      : "Uniques, Mythics and legendary aspects. A unique's power stays on that unique; only legendary aspects can be saved to the Codex of Power and imprinted on other gear.";
     els.rowRarity.hidden = mode === "codex";
     els.rowSlot.hidden = mode === "codex";
     els.rowView.hidden = mode === "codex";
@@ -1043,7 +1046,7 @@
         ? `<button type="button" class="btn btn--mythic mono" data-mythic="${esc(key)}" aria-pressed="${rendered.crafted}" title="View the crafted Mythic version">MYTHIC</button>`
         : "";
       const slotBtns = r.kind === "aspect"
-        ? Object.entries(ASPECT_SLOTS).map(([s, [label]]) => `<button type="button" class="btn btn--ghost mono" data-aslot="${s}" data-akey="${esc(key)}" aria-pressed="${state.sandbox.slot[key] === s}" title="Imprinted on ${s === "amulet" ? "an amulet (150%)" : "a two-handed weapon (200%)"}">${label}</button>`).join("")
+        ? Object.entries(ASPECT_SLOTS).map(([s, [label]]) => `<button type="button" class="btn btn--ghost mono" data-aslot="${s}" data-akey="${esc(key)}" aria-pressed="${state.sandbox.slot[key] === s}" title="Imprinted on a non-unique ${s === "amulet" ? "amulet (150%)" : "two-handed weapon (200%)"}">${label}</button>`).join("")
         : "";
       rendered.tools = `<div class="sb-entry__tools">${slotBtns}${mythicBtn}<button type="button" class="btn btn--ghost mono" data-unpin="${esc(key)}">REMOVE</button></div>`;
       const rankNote = r.maxRank ? `<p class="hint mono" style="padding:0 16px 8px">RANK ${Math.min(rank, r.maxRank)} / ${r.maxRank}</p>` : "";
