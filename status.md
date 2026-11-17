@@ -1,6 +1,6 @@
 # Onosendai's Tool: Project Status
 
-_Last updated: 17 Nov 2026_
+_Last updated: 17 Nov 2026 (evening)_
 
 ## Overview
 
@@ -23,6 +23,15 @@ evaluates formulas · resolves Power script formulas · renders game text · fil
 - **Run locally:** `python3 -m http.server`, then open http://localhost:8000.
 - **After replacing the `/data` folders:** run `python3 tools/build_index.py` again.
 - **For GitHub Pages:** the site only needs `index.html`, `style.css`, `app.js` and `data/index/`. The raw folders (~575 MB) are only used by the Sandbox's "raw source files" viewer.
+
+## Deployment 🚀
+
+- **Repo:** https://github.com/YopOne/onosendais-tool (public, branch `main`)
+- **Live site:** https://yopone.github.io/onosendais-tool/ (GitHub Pages from `main` /, rebuilds about a minute after each push)
+- **Publishing a change:** `git add -A && git commit -m "…" && git push`. `gh` is installed at `/opt/homebrew/bin/gh` and signed in as `YopOne`. Commits use the GitHub noreply email (set in this repo's git config).
+- **What's uploaded:** site files, `data/index/`, `data/sources/`, `tools/` and the docs (~1.2 MB). `.gitignore` excludes `d4data/` (31 GB), raw `data/Item`, `data/Power`, `data/StringList`, and the old scraper files.
+- **After a data rebuild:** commit the new `data/index/codex.json` too, or the live site keeps the old data.
+- **Browser testing:** `tools/webshot.swift` is a headless WebKit tool that loads a page, reports JS errors and saves a screenshot. Usage notes are at the top of the file.
 
 ## Built so far ✅
 
@@ -79,6 +88,13 @@ evaluates formulas · resolves Power script formulas · renders game text · fil
 - Rare formula functions in lowercase (`min`/`max`) now evaluate.
 - The Sandbox's raw-file panels no longer collapse when the sliders move.
 
+## Suggested next steps
+
+1. Hide the 4 test/placeholder items (#9): quick curation fix.
+2. Browser pass on the Sandbox and phone-width layouts (#1) using `tools/webshot.swift`.
+3. Parse GameBalance item-power tables (#3) to fill in the `#` stat values. This is the biggest remaining data gap.
+4. Optional: hide the raw-file panels on the live site (#10).
+
 ## Known issues / open items 🔧
 
 | # | Issue | Status |
@@ -90,6 +106,7 @@ evaluates formulas · resolves Power script formulas · renders game text · fil
 | 5 | **Old and unobtainable items are still listed** (e.g. S12 "(Crucible)", S05 Infernal Hordes items, Runewords). There's no "currently obtainable" flag in the data. | Proposed: optional season-prefix filter |
 | 6 | **Skill-tag names on some stat lines** fall back to a generic "Skill", because tag hashes aren't resolved. | Open |
 | 7 | **Ancestral filter is always empty:** Ancestral is a roll quality on drops, not a separate entry in the data. The button is disabled with an explanation. | By design |
+| 10 | **Sandbox "raw source files" panels are empty on the live site:** the raw `data/` folders aren't uploaded, so each panel says "unavailable… Raw folders may not be deployed". It works locally. | By design (too big for GitHub); could hide the panel when the files are missing |
 | 9 | **Test and placeholder items still visible:** Elias mummified finger, PvP Refresher, Pact Amulet (`PACTTEST_`), `[ph_Hope's Respite]`. The "Unlisted" Source filter shows them. | Open: tighten curation |
 | 8 | **Tooltip height:** very long tooltips are cut off at the bottom of the screen. | Minor |
 
@@ -101,6 +118,8 @@ evaluates formulas · resolves Power script formulas · renders game text · fil
 | `tools/build_index.py` | Builds `data/index/codex.json` |
 | `data/Item`, `data/Power`, `data/StringList` | Raw datamined source (Season 15) |
 | `d4data/` | Full datamine repo; Affix roll data and SNO lookup |
+| `tools/webshot.swift` | Headless WebKit screenshot and JS-error check (macOS) |
+| `README.md`, `.gitignore` | GitHub readme, and what's kept out of the repo |
 | `tools/runes_recipes.py` | Runes, runewords and recipes for the codex |
 | `data/sources/runes_maxroll.json` | Rune lair drops + current rune list (from Maxroll) |
 | `data/sources/boss_loot.json` | Boss drop table (from Maxroll; hand-maintained) |
