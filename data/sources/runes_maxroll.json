@@ -1,0 +1,27 @@
+{
+  "source": "https://maxroll.gg/d4/resources/runewords-overview",
+  "sourceName": "Maxroll Runewords Overview + Boss Loot Table Cheat Sheet",
+  "sourceUpdated": "2026-10-14",
+  "retrieved": "2026-11-17",
+  "notes": [
+    "Runes go in 2-socket Helms, Chest Armor, Pants and 2H Weapons: one Rune of Ritual plus one Rune of Invocation makes a runeword.",
+    "A character can have at most 2 runewords. You can't repeat a rune, pair two runes of the same type, or mix gems and runes in one item.",
+    "Classic runewords (Enigma, Grief...) are crafted in the Horadric Cube from a normal-quality base item plus runes. An Ancestral base gives an Ancestral runeword."
+  ],
+  "lairRunes": {
+    "varshan": ["Kry", "Thul", "Tam"],
+    "grigoire": ["Yax", "Poc", "Bac"],
+    "beast": ["Moni", "Nagu", "Jah"],
+    "zir": ["Ner", "Kel", "Eom"],
+    "urivar": ["Tzic", "Mot", "Yul"],
+    "duriel": ["Noc", "Tam"],
+    "andariel": ["Cem", "Zan", "Igni"],
+    "harbinger": ["Teb", "Wat", "Yom"],
+    "butcher": ["Qua", "Que", "Vex"]
+  },
+  "otherSources": ["World Bosses", "Kurast Undercity (Tribute of Harmony)", "Helltide chests", "Tree of Whispers rewards"],
+  "current": {
+    "Ritual": ["Bac", "Igni", "Tam", "Yul", "Nagu", "Neo", "Noc", "Poc", "Zan", "Cem", "Cir", "Moni", "Yax", "Amn", "Eth", "Mal", "Ort", "Tal"],
+    "Invocation": ["Eom", "Jah", "Ohm", "Vex", "Yom", "Kel", "Lac", "Mot", "Que", "Thul", "Wat", "Ceh", "Gar", "Kry", "Ner", "Prid", "Qua", "Teb", "Tzic", "Ber", "Ist", "Ith", "Lo", "Ral", "Sol", "Tir"]
+  }
+}

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Onosendai's Tool · D4 Codex</title>
+  <meta name="description" content="Onosendai's Tool: a fast, searchable Diablo 4 database of uniques and legendary aspects, built from datamined game files.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Gemunu+Libre:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="scanlines" aria-hidden="true"></div>
+
+  <header class="hud">
+    <div class="hud__inner">
+      <a class="brand" href="#/database" aria-label="Onosendai's Tool home">
+        <span class="brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 7l4.5 2.5v5L12 17l-4.5-2.5v-5z" fill="currentColor" opacity=".35"/></svg>
+        </span>
+        <span class="brand__text">ONOSENDAI<span class="brand__sub">'s Tool</span></span>
+      </a>
+
+      <nav class="nav" aria-label="Main">
+        <a href="#/database" data-nav="database"><span class="nav__idx">01</span>Database</a>
+        <a href="#/codex" data-nav="codex"><span class="nav__idx">02</span>Aspect Codex</a>
+        <a href="#/runes" data-nav="runes"><span class="nav__idx">03</span>Runes &amp; Recipes</a>
+        <a href="#/sandbox" data-nav="sandbox"><span class="nav__idx">04</span>Theorycraft Sandbox<span id="pin-count" class="nav__badge" hidden></span></a>
+      </nav>
+
+      <label class="search">
+        <span class="visually-hidden">Search items, aspects and effect text</span>
+        <span class="search__prompt" aria-hidden="true">&gt;_</span>
+        <input id="search" type="search" placeholder="query items, aspects, effects…" autocomplete="off" spellcheck="false">
+        <kbd class="search__kbd" aria-hidden="true">/</kbd>
+      </label>
+    </div>
+    <div class="hud__status mono" id="hud-status">BOOTING DECK…</div>
+  </header>
+
+  <div id="alert" class="alert" role="alert" hidden></div>
+
+  <main class="container">
+    <!-- Database + Aspect Codex share this view -->
+    <section id="view-catalog" class="view" hidden>
+      <div class="view__head">
+        <p class="eyebrow mono" id="catalog-eyebrow">// DATABASE</p>
+        <h1 class="view__title" id="catalog-title">Database</h1>
+      </div>
+
+      <div class="filters" role="group" aria-label="Filters">
+        <div class="filters__row">
+          <span class="filters__label mono">CLASS</span>
+          <div id="filter-class" class="pills"></div>
+        </div>
+        <div class="filters__row" id="row-rarity">
+          <span class="filters__label mono">RARITY</span>
+          <div id="filter-rarity" class="pills"></div>
+        </div>
+        <div class="filters__row" id="row-slot">
+          <span class="filters__label mono">SLOT</span>
+          <div id="filter-slot" class="pills"></div>
+        </div>
+        <div class="filters__row" id="row-source" hidden>
+          <span class="filters__label mono">SOURCE</span>
+          <div class="pills">
+            <div id="filter-source" class="pills"></div>
+            <p id="source-note" class="hint source-note"></p>
+          </div>
+        </div>
+        <div class="filters__row" id="row-view">
+          <span class="filters__label mono">VIEW</span>
+          <div class="pills">
+            <button type="button" class="pill" data-view="standard" aria-pressed="true">Standard</button>
+            <button type="button" class="pill pill--mythic" data-view="mythic" aria-pressed="false" title="Show every Unique as its crafted Mythic version">Mythic (crafted)</button>
+          </div>
+          <span class="hint view-hint">Crafted Mythic: unique power +30% Unique Potency (rolls kept), base stats at max, plus Mythic bonuses.</span>
+        </div>
+      </div>
+
+      <div class="resultbar">
+        <p id="result-count" class="mono" aria-live="polite"></p>
+        <button id="filter-reset" class="btn btn--ghost mono" type="button">RESET</button>
+      </div>
+      <div id="catalog-grid" class="grid"></div>
+      <p id="catalog-empty" class="empty mono" hidden>NO MATCHES // shorten the query or reset filters</p>
+    </section>
+
+    <!-- Runes & Recipes -->
+    <section id="view-runes" class="view" hidden>
+      <div class="view__head">
+        <p class="eyebrow mono">// RUNES &amp; RECIPES</p>
+        <h1 class="view__title">Runes &amp; Recipes</h1>
+        <p class="view__sub">Every rune, the Season 15 runewords and the crafting recipes behind them, read straight from the game's recipe files.</p>
+      </div>
+      <div class="filters" role="group" aria-label="Rune filters">
+        <div class="filters__row">
+          <span class="filters__label mono">SHOW</span>
+          <div id="rune-tabs" class="pills">
+            <button type="button" class="pill" data-rtab="runes" aria-pressed="true">Runes</button>
+            <button type="button" class="pill" data-rtab="runewords" aria-pressed="false">Runewords</button>
+            <button type="button" class="pill" data-rtab="recipes" aria-pressed="false">Recipes</button>
+          </div>
+        </div>
+        <div class="filters__row" id="row-rune-kind">
+          <span class="filters__label mono">TYPE</span>
+          <div class="pills">
+            <button type="button" class="pill" data-rkind="all" aria-pressed="true">All</button>
+            <button type="button" class="pill" data-rkind="Ritual" aria-pressed="false">Ritual</button>
+            <button type="button" class="pill" data-rkind="Invocation" aria-pressed="false">Invocation</button>
+            <button type="button" class="pill" data-rkind="s15" aria-pressed="false">Season 15</button>
+            <button type="button" class="pill" data-rkind="legacy" aria-pressed="false" title="Runes in the game files that Maxroll no longer lists">Legacy</button>
+          </div>
+        </div>
+        <p id="runes-source" class="hint"></p>
+      </div>
+      <div class="resultbar"><p id="runes-count" class="mono" aria-live="polite"></p></div>
+      <div id="runes-body"></div>
+    </section>
+
+    <!-- Theorycraft Sandbox -->
+    <section id="view-sandbox" class="view" hidden>
+      <div class="view__head">
+        <p class="eyebrow mono">// THEORYCRAFT SANDBOX</p>
+        <h1 class="view__title">Theorycraft Sandbox</h1>
+        <p class="view__sub">Pin uniques and aspects, then dial in roll quality and aspect rank to see the exact in-game numbers instead of ranges.</p>
+      </div>
+
+      <div class="sandbox">
+        <aside class="panel sandbox__controls">
+          <h2 class="panel__title mono">PARAMETERS</h2>
+          <div class="field">
+            <label for="sb-roll">Roll quality <output id="sb-roll-out" class="mono"></output></label>
+            <input id="sb-roll" type="range" min="0" max="100" step="1" value="100">
+            <p class="hint">0% = minimum roll, 100% = perfect roll. Original Mythics always roll perfectly. Press <span class="mono">MYTHIC</span> on a unique to see its crafted Mythic version (unique power keeps this roll +30% potency; base stats at max).</p>
+          </div>
+          <div class="field">
+            <label for="sb-rank">Aspect rank <output id="sb-rank-out" class="mono"></output></label>
+            <input id="sb-rank" type="range" min="1" max="21" step="1" value="16">
+            <p class="hint">Clamped to each aspect's own max rank.</p>
+          </div>
+          <div class="field">
+            <label for="sb-add">Add entry</label>
+            <input id="sb-add" class="input mono" type="search" list="sb-options" placeholder="type a name…" autocomplete="off">
+            <datalist id="sb-options"></datalist>
+            <p class="hint">Or press <span class="mono">+</span> on any card in the Database.</p>
+          </div>
+          <div class="sandbox__actions">
+            <button id="sb-share" class="btn mono" type="button">COPY LINK</button>
+            <button id="sb-clear" class="btn btn--ghost mono" type="button">CLEAR</button>
+          </div>
+        </aside>
+        <div id="sb-list" class="sandbox__list"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer mono">
+    ONOSENDAI'S TOOL // fan-made, not affiliated with Blizzard Entertainment // game text &amp; data © Blizzard // boss drops: <a href="https://maxroll.gg/d4/resources/boss-loot-table-cheat-sheet" target="_blank" rel="noopener">Maxroll cheat sheet</a>
+  </footer>
+
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

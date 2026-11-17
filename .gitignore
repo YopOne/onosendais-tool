@@ -1,0 +1,16 @@
+# Raw datamine: far too large for GitHub (~32 GB). Re-download and run tools/build_index.py.
+/d4data/
+/data/Item/
+/data/Power/
+/data/StringList/
+
+# Earlier experiments, not used by the site
+/maxroll-d4-scraper/
+/scraper.py
+/database1.json
+/untitled folder/
+
+# OS / Python clutter
+.DS_Store
+__pycache__/
+*.pyc

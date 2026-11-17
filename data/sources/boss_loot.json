@@ -1,0 +1,45 @@
+{
+  "source": "https://maxroll.gg/d4/resources/boss-loot-table-cheat-sheet",
+  "sourceName": "Maxroll Boss Loot Table Cheat Sheet",
+  "season": "Season 15 (Hell's Legacy)",
+  "sourceUpdated": "2026-10-14",
+  "retrieved": "2026-11-17",
+  "rules": [
+    "All lair bosses require Torment 1 or higher.",
+    "Any unique drop can roll as Mythic quality.",
+    "Iconic Mythics can drop from every boss.",
+    "Belial, Lord of Lies mirrors the loot table of whichever boss you select.",
+    "Season 15 uniques drop from the Baal, Mephisto and Diablo capstone dungeons, not from lair bosses."
+  ],
+  "bosses": [
+    { "id": "varshan", "name": "Echo of Varshan", "key": "Lair Key", "location": "Malignant Burrow, Hawezar (Tree of Whispers)", "trophy": "Malignant Heart",
+      "items": ["100,000 Steps","Overkill","Autumnal Crown","Greatstaff of the Crone","Stone of Vehemen","Hangman's Hand","The Hand of Naz","Seal of the Second Trumpet","Wreath of Auric Laurel","Death's Pavane","Eaglehorn","Pitfighter's Gull","Levin Grasp","Onyx Soul","Raiment of the Sea","Balazan's Maxtlatl","Wound Drinker","Ae'grom's Schism","Seal of the Ophanim","Thrice-Woven Nightmare","Shard of Verathiel","Shroud of False Death"] },
+    { "id": "grigoire", "name": "Grigoire, the Galvanic Saint", "key": "Lair Key", "location": "Hall of the Penitent, Dry Steppes", "trophy": "Living Steel",
+      "items": ["Gohr's Devastating Grips","Might of Qual-Kehk","Hunter's Zenith","The Basilisk","Will of Stone","Deathgrip","The Mortacrux","Bastion of Sir Matthias","Sunbrand","Desperate March","The Maestro","Strike of Stormhorn","The Oculus","Vision of the Firestorm","Peacemonger's Signet","Sunstained War-Crozier","Cage of Madness","Hands of the Worldbreaker","Seed of Horazon","Sire of Sin","Paingorger's Gauntlets","Tyrael's Might"] },
+    { "id": "beast", "name": "The Beast in the Ice", "key": "Lair Key", "location": "Glacial Fissure, Fractured Peaks", "trophy": "Distilled Fear",
+      "items": ["Ring of the Ravenous","The Relentless Heart","Accord of the Wilds","Airidah's Inexorable Will","Malefic Crescent","Deathless Visage","Howl from Below","Light's Rebuke","Sanctis of Kethamar","Orphan Maker","Saboteur's Signet","Gift of Frost","Starfall Coronet","Vox Omnium","Protection of the Prime","Scorn of the Earth","Hellhound's Sabatons","Kabraxis' Will","The Eightfold Idol","Signet of Pelghain","Doombringer"] },
+    { "id": "zir", "name": "Lord Zir", "key": "Lair Key", "location": "The Darkened Way, Fractured Peaks", "trophy": "Exquisite Blood",
+      "items": ["Fields of Crimson","Twin Strikes","Gathlen's Birthright","Unsung Ascetic's Wraps","Waxing Gibbous","Cruor's Embrace","Sanguivor, Blade of Zir","Judgment of Auriel","Judicant's Glaivehelm","Shroud of Khanduras","Skyhunter","The Umbracrux","Fang of the Vipermagi","Rimeblood","Staff of Lam Esen","Ring of the Midday Hunt","Ring of Writhing Moon","Dirge of Odium","Elegy","Fleshwrit Carapace","X'Fal's Corroded Signet","El'Druin, Sword of Justice"] },
+    { "id": "urivar", "name": "Urivar", "key": "Lair Key", "location": "Nahantu, near Kichuk", "trophy": "Judicator's Mask",
+      "items": ["Mantle of Mountain's Fury","Unbroken Chain","Dark Howl","Dolmen Stone","Kilt of Blackwing","Gospel of the Devotee","Will of Rathma","Cathedral's Song","Herald's Morningstar","Cassia's Grace","Windforce","Writhing Band of Trickery","Flamescar","Iceheart Brais","Molten Band","Band of First Breath","Sunbird's Gorget","Cowl of Malefic Torment","Infernal Homunculus","The Blade of Sight Aflame","Yen's Blessing","The Grandfather"] },
+    { "id": "duriel", "name": "Duriel, King of Maggots", "key": "Greater Lair Key", "location": "Gaping Crevasse, Kehjistan", "trophy": "Shard of Agony",
+      "items": ["Dark Stalker's Medallion","Rage of Harrogath","Sabre of Tsasgal","Fractured Runestone","Greenwalker's Oath","Mark of the Old Wolf","Mutilator Plate","Path of Trag'Oul","The Undercrown","Supplication","Ward of the White Dove","Bands of Ichorous Rose","Condemnation","Sea Lord's Fine Gloves","Blue Rose","Galvanic Azurite","Staff of Endless Rage","Widow's Web","Wushe Nak Pa","Gauntlets of Sheol","Morlu Fleshward","Rictus of Terror","Scourge of Duriel","Razorplate","Melted Heart of Selig"] },
+    { "id": "andariel", "name": "Andariel, Maiden of Anguish", "key": "Greater Lair Key", "location": "Hanged Man's Hall, Kehjistan", "trophy": "Pincushioned Doll",
+      "items": ["Ancients' Oath","Emblem of Staalbreak","Hellhammer","Greenwalker's Signet","Insatiable Fury","Storm's Companion","Ebonpiercer","Kessime's Legacy","Lidless Wall","Argent Veil","Dawnfire","Assassin's Stride","Beastfall Boots","Deathmask of Nirmitruq","Drognan's Anguish","Esadora's Overflowing Cameo","Orsivane","Craze of the Dead God","Jacinth Shell","Anathema of the Primes","Night Terror","Scepter of the Three","Godslayer Crown","Andariel's Visage"] },
+    { "id": "harbinger", "name": "Harbinger of Hatred", "key": "Greater Lair Key", "location": "Nahantu, near Kurast Docks", "trophy": "Abhorrent Heart",
+      "items": ["Bane of Ahjad-Den","Nomad's Longing Heart","Ugly Bastard Helm","Fleshrender","Ifeh's Dire Totem","Might of the Ursine","Blood Wake","Pact of Bone","The Gloom Ward","Gate of the Red Dawn","Mantle of the Grey","Etna's Lost Dagger","Scoundrel's Leathers","Shrouded Gift","Flameweaver","Sidhe Bindings","Tal Rasha's Iridescent Loop","Protean Heart","Sepazontec","Bridle of Tor'Baalos","Spine of Tathamet","The Fecund Seal","Temerity","Heir of Perdition"] },
+    { "id": "butcher", "name": "The Butcher", "key": "Greater Lair Key", "location": "Gea Kul", "trophy": "Fresh Meat",
+      "items": ["Chainscourged Mail","Ramaladni's Magnum Opus","Ring of Red Furor","Fury of the Wilds","Heart of Azgar","Purified Lightbringer","Mace of King Leoric","Red Blessing","Vengeful Sinew","March of the Stalwart Soul","Red Sermon","Cowl of the Nameless","Fist of the Iron Rose","Scoundrel's Kiss","Emberfury","Shanar's Resonance","Staff of Zerae","Hesha e Kesungi","Path of the Emissary","Hellbrand Signet","Lurid Pact","Moloch's Beating Flame","Nails of the Gore-Crowned","The Butcher's Cleaver","Harlequin Crest"] },
+    { "id": "astaroth", "name": "Astaroth", "key": "Escalation Sigil", "location": "End of Escalating Nightmare Dungeons", "trophy": "Ash of the Charred Duke",
+      "items": ["Battle Trance","Hooves of the Mountain God","The Third Blade","Dirge of Airidah","Mad Wolf's Glee","Wildheart Hunger","Blood Moon Breeches","Bloodless Scream","Ring of the Sacrilegious Soul","Griswold's Opus","Herald of Zakarum","Asheara's Khanjar","Eyes in the Dark","Gladiator's Triumph","Esu's Heirloom","Fractured Winterglass","Hail of Verglas","Echo of Kwatli","Ring of the Midnight Sun","Rod of Kepeleke","Bindings of Attrition","Footfalls of the Waning World","Hecaton Chasm","Litany of Sable","Crown of Lucion","Ring of Starless Skies"] },
+    { "id": "bartuc", "name": "Bartuc", "key": "Infernal Hordes Compass", "location": "Infernal Hordes, Kehjistan (666 Burning Aether)", "trophy": "Chaotic Essence",
+      "items": ["Arreat's Bearing","The Open Eye of Gorgorra","Tuskhelm of Joritz the Mighty","Earthbreaker","Khamsin Steppewalkers","Mjölnic Ryng","Gravewalker's Hand","Omen of Pain","The Unmaker","Arcadia","Sundered Night","Grasp of Shadow","Misericorde","Word of Hakan","Axial Conduit","Ophidian Iris","Raiment of the Infinite","Harmony of Ebewaka","Loyalty's Mantle","Eye of Baal","Hand of Apotheosis","Sashes of the Wretched","The Hemat Stone","Azurewrath","Shattered Vow"] }
+  ],
+  "capstone": {
+    "name": "Capstone dungeons (Baal, Mephisto, Diablo)",
+    "note": "Season 15 uniques can drop from any of the three capstone bosses; Baal is the fastest farm.",
+    "items": { "Arioc's Needle": "common", "Henri's Perquisition": "common", "Leoric's Crown": "common", "Messerschmidt's Reaver": "common", "Nemesis Bracers": "common", "The Furnace": "common", "In-Geom": "uncommon", "Squirt's Blouse": "uncommon", "Stone of Jordan": "rare" }
+  },
+  "iconicMythics": ["Andariel's Visage","Ahavarion, Spear of Lycander","Doombringer","El'Druin, Sword of Justice","Harlequin Crest","Heir of Perdition","Melted Heart of Selig","Nesekem, the Herald","Ring of Starless Skies","Shattered Vow","Shroud of False Death","The Grandfather","Tyrael's Might"],
+  "noBoss": ["Banished Lord's Talisman","Blood-Mad Idol","Endurant Faith","Fists of Fate","Flickerstep","Frostburn","Locran's Talisman","Mother's Embrace","Penitent Greaves","Rakanoth's Wake","Rustbitten Dirk","Soulbrand","Tassets of the Dawning Sky","Thousand-Eye Reaver","Thundergod's Blessing","Tibault's Will","Wendigo Brand","Wyrdskin"]
+}
