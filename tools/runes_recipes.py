@@ -220,7 +220,8 @@ def extract(item_dir, stl_dir, recipe_dir, src_path, items):
         r["bases"] = sorted({label_of(rid) for rid in ids})
         return r
     uniq_ids = [rid for rid in all_ids if rid.startswith("X2_HoradricCube_UpgradeToUnique_")]
-    myth_ids = [rid for rid in all_ids if rid.startswith("S14_HoradricCube_UpgradeToMythic_")]
+    # Current upgrade: X2_HoradricCube_Bundle_UpgradeToMythic (Ancestral Unique + 5 Resplendent Sparks, any slot).
+    # The S14_HoradricCube_UpgradeToMythic_* recipes (Pandemonium Fragments) are Season 14 leftovers.
     cube = {}
     if uniq_ids:
         base_of = lambda rid: re.sub(r"^([12]H)", r"\1 ", re.sub(r"_(Ancestral|SorcOffhand)", "", rid[len("X2_HoradricCube_UpgradeToUnique_"):]))
@@ -229,10 +230,10 @@ def extract(item_dir, stl_dir, recipe_dir, src_path, items):
         r["out"] = {"n": "Unique of that base", "derived": True}
         r["ancestral"] = any(rid.endswith("_Ancestral") or "_Ancestral_" in rid for rid in uniq_ids)
         cube["unique"] = r
-    if myth_ids:
-        slot_label = {"1H": "1H Weapon", "2H": "2H Weapon", "Glove": "Gloves", "OffHand": "Off-Hand"}
-        r = summarize(myth_ids, lambda rid: slot_label.get(rid.rsplit("_", 1)[-1], rid.rsplit("_", 1)[-1]))
-        r["ins"][0]["n"] = "Unique, item power 900"
+    if "X2_HoradricCube_Bundle_UpgradeToMythic" in all_ids:
+        r = parse("X2_HoradricCube_Bundle_UpgradeToMythic")
+        r["bases"] = []  # one recipe for every slot
+        r["ins"][0]["n"] = "Ancestral Unique (item power 900)"
         r["out"] = {"n": "Mythic version of that Unique", "derived": True}
         cube["mythic"] = r
     recipes["cube"] = cube

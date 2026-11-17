@@ -1183,7 +1183,8 @@
   }
 
   function cubeStepHTML(n, r, note) {
-    return `<div class="cube-step"><p class="eyebrow">Step ${n}</p>${recipeHTML(r)}<p class="hint mono">${r.bases.length} bases: ${esc(r.bases.join(" · "))}${note ? ` // ${esc(note)}` : ""}</p></div>`;
+    const bases = r.bases.length ? `${r.bases.length} bases: ${r.bases.join(" · ")}` : "Any slot";
+    return `<div class="cube-step"><p class="eyebrow">Step ${n}</p>${recipeHTML(r)}<p class="hint mono">${esc(bases)}${note ? ` // ${esc(note)}` : ""}</p></div>`;
   }
 
   function recipesTabHTML() {
