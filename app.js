@@ -600,11 +600,14 @@
    *   base stats    -> max rolls
    *   + the Mythic bonus lines
    */
+  const MYTHIC_MIN_IP = 850;
+
   function renderItem(it, base, crafted) {
     const orig = it.rarity === "Mythic";
     const c = Boolean(crafted && !orig);
     const pw = { ...base, mythic: orig, crafted: c, potency: c ? Engine.mythicPotency() : 0 };
-    const sw = { ...pw, forceMax: c };
+    // The Cube's UpgradeToMythic recipes take a unique of item power >= 850 (nMinItemPower in the recipe).
+    const sw = { ...pw, forceMax: c, ip: c ? Math.max(base.ip || Engine.DEFAULT_IP, MYTHIC_MIN_IP) : base.ip };
     return {
       crafted: c,
       power: it.power ? Engine.renderAffix(it.power, pw)[0] : null,
