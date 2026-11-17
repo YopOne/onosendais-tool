@@ -19,6 +19,8 @@ Sources:
   d4data/json/base/meta/Affix      roll formulas, static values and ranks (not in data/)
   d4data/json/base/meta/Aspect     authoritative list of legendary aspects
   d4data/json/CoreTOC_flat.json    SNO id -> name lookup (resolves skill names on stat lines)
+  d4data/json/base/meta/GameBalance/AttributeFormulas.gam.json
+                                   stat roll formulas by item power (gbidFormula on affix attributes)
   data/sources/boss_loot.json      which boss drops each unique (hand-maintained from Maxroll)
   d4data/json/base/meta/Recipe     runeword, rune and Mythic crafting recipes (see runes_recipes.py)
   data/sources/runes_maxroll.json  rune drop locations + which runes are current (from Maxroll)
@@ -149,6 +151,7 @@ def main():
         print("! CoreTOC_flat.json not found: skill names on stat lines will be generic.")
 
     affixes = {}
+    gb_used = set()
     powertags = set()
     power_name_cache = {}
 
@@ -198,8 +201,12 @@ def main():
             line = {"t": attr_desc[attr], "a": attr}
             if label:
                 line["p"] = label
-            # gbidFormula = value comes from item-power balance tables we don't have
-            if spec.get("gbidFormula") is None and formula not in ("", "0"):
+            # gbidFormula = value comes from a GameBalance AttributeFormulas entry (per item power range)
+            gbid = (spec.get("gbidFormula") or {}).get("name")
+            if gbid:
+                line["g"] = gbid
+                gb_used.add(gbid)
+            elif formula not in ("", "0"):
                 line["f"] = formula
             lines.append(line)
 
@@ -355,6 +362,21 @@ def main():
                 entry["t"] = "{c_mythic}{i}Mythic:{/i}{/c} " + entry["t"]
             mythic.append(entry)
 
+    # ---------- GameBalance stat formulas (gbidFormula -> [[item power start, formula], ...]) ----------
+    gb = {}
+    gb_path = os.path.join(args.d4data, "json", "base", "meta", "GameBalance", "AttributeFormulas.gam.json")
+    if os.path.exists(gb_path):
+        used_gb = {l["g"] for a in out_affixes.values() for l in a.get("l", []) if l.get("g")}
+        for e in load(gb_path)["ptData"][0]["tEntries"]:
+            name = e["tHeader"]["szName"]
+            if name in used_gb:
+                gb[name] = sorted([r["nItemPowerRangeStart"], r["tFormula"]["value"]] for r in e.get("arRanges", []))
+        missing = used_gb - gb.keys()
+        if missing:
+            print(f"warning: {len(missing)} gbid formulas not found: {sorted(missing)[:5]}", file=sys.stderr)
+    else:
+        print("! GameBalance/AttributeFormulas.gam.json not found: base stat values will show as #.")
+
     drops = attach_drops(items, os.path.join(ROOT, "data", "sources", "boss_loot.json"))
     runes = extract_runes(item_dir, stl_dir, os.path.join(args.d4data, "json", "base", "meta", "Recipe"),
                           os.path.join(ROOT, "data", "sources", "runes_maxroll.json"), items)
@@ -371,6 +393,7 @@ def main():
         "affixes": out_affixes,
         "powers": powers,
         "mythic": mythic,
+        "gb": gb,
         "drops": drops,
         "runes": runes,
     }

@@ -103,6 +103,9 @@
   const Engine = (() => {
     let codex = null;
     const UNKNOWN = null;
+    // Item power used for GameBalance stat formulas (gbid tables switch formula at 590/700/750/800/850/900).
+    // Assumption: endgame uniques sit in the 800 band; the Sandbox lets you pick another.
+    const DEFAULT_IP = 800;
 
     // ---- Tokenizer ----
     const TOKEN_RE = /\s*(?:(\d+\.?\d*|\.\d+)|("[^"]*")|([A-Za-z_][A-Za-z0-9_]*)|(>=|<=|==|!=|&&|\|\||[-+*/(),.?:#<>!]))/y;
@@ -205,7 +208,7 @@
 
     // ---- Evaluator ----
     // ctx: { affix: id, power: name, world: { t: 0..1 roll, rank: n, mythic: bool }, depth }
-    // world: { t, rank, range, mythic, forceMax, crafted, potency }
+    // world: { t, rank, range, mythic, forceMax, crafted, potency, ip }
     //   mythic   = original Mythic unique (eMagicType 4): always perfect rolls
     //   forceMax = crafted mythic base stats: perfect rolls
     //   crafted  = crafted Mythic version of a normal unique: shows mythic text + Unique Potency
@@ -220,6 +223,9 @@
       RandomFloat: (c, a) => roll(c, a[0], a[1]),
       RandomInt: (c, a) => { const v = roll(c, a[0], a[1]); return v === UNKNOWN ? v : Math.round(v); },
       SharedRandomFloat: (c) => rollT(c.world),
+      IPower: (c) => c.world.ip || DEFAULT_IP,
+      // Greater-affix / masterwork multipliers on a roll: a plain drop has none.
+      GetTotalAffixBonus: () => 1,
       CurrentLegendaryRank: (c) => {
         const max = (codex.affixes[c.affix] || {}).rk || c.world.rank;
         return Math.max(1, Math.min(c.world.rank, max));
@@ -431,7 +437,7 @@
           const [expr, fmt = ""] = inner.split("|");
           const res = evalToken(expr.trim(), fmt, ctx);
           const cls = res.unknown ? "gt-unk" : res.range ? "gt-val gt-val--range" : "gt-val";
-          const title = res.unknown ? ` title="Scales with live character stats or item power. Not in the extracted data."` : "";
+          const title = res.unknown ? ` title="Depends on live character stats, or the game data has no value for it."` : "";
           html += `<span class="${cls}"${title}>${esc(res.text)}</span>`;
           plain += res.text;
           continue;
@@ -444,12 +450,25 @@
     }
 
     /** Expand an AttributeDescriptions stat line into a template we can render. */
-    function statLineTemplate(line) {
-      const val = line.f ? `(${line.f})` : "__unknown__";
+    function statLineTemplate(line, ip) {
+      const f = line.f || gbFormula(line.g, ip);
+      const val = f ? `(${f})` : "__unknown__";
       const label = line.p || "Skill";
-      let t = line.t.replace(/\[([^\[\]]*)\]/g, (m) => m.replace(/\{VALUE2?\}/g, val));
-      t = t.replace(/\{VALUE2?\}/g, `[${val}]`).replace(/\{VALUE1\}/g, label);
+      // Inside [..] any {VALUE}/{VALUE1}/{VALUE2} is the number (the data also spells it {vALUE});
+      // outside, {VALUE1} is the skill/tag label.
+      let t = line.t.replace(/\[([^\[\]]*)\]/g, (m) => m.replace(/\{VALUE[12]?\}/gi, val));
+      t = t.replace(/\{VALUE2?\}/gi, `[${val}]`).replace(/\{VALUE1\}/gi, label);
       return t;
+    }
+
+    /** GameBalance formula for a stat line at an item power: the last range starting at or below it. */
+    function gbFormula(name, ip) {
+      const ranges = name && codex.gb && codex.gb[name];
+      if (!ranges) return null;
+      const at = ip || DEFAULT_IP;
+      let f = null;
+      for (const [start, formula] of ranges) if (start <= at) f = formula;
+      return f;
     }
 
     function maxRankOf(affixId) {
@@ -462,7 +481,7 @@
       if (!a) return [];
       const ctx = { affix: affixId, world: { ...world, maxRank: maxRankOf(affixId) }, depth: 0 };
       if (a.t) return [render(a.t, ctx)];
-      return (a.l || []).map((l) => render(statLineTemplate(l), ctx));
+      return (a.l || []).map((l) => render(statLineTemplate(l, world.ip), ctx));
     }
 
     /** The Mythic bonus lines (Unique Potency, CDR, +All Skills) from S14_Mythic_* affixes. */
@@ -486,6 +505,7 @@
       /** Render a plain game-text template (no affix context), e.g. rune descriptions. */
       renderText: (t) => render(t, { affix: null, world: { t: 1, rank: 1 }, depth: 0 }),
       maxRankOf,
+      DEFAULT_IP,
       esc,
     };
   })();
@@ -565,7 +585,7 @@
     mode: null,
     activeCard: null,
     pins: [],
-    sandbox: { t: 1, rank: 16, mythic: [] },
+    sandbox: { t: 1, rank: 16, ip: 800, mythic: [] },
     view: { mythic: false },
     curation: null,
   };
@@ -715,7 +735,7 @@
     runesCount: $("runes-count"), runesSource: $("runes-source"),
     count: $("result-count"), reset: $("filter-reset"), grid: $("catalog-grid"), empty: $("catalog-empty"),
     tooltip: $("tooltip"),
-    sbRoll: $("sb-roll"), sbRollOut: $("sb-roll-out"), sbRank: $("sb-rank"), sbRankOut: $("sb-rank-out"),
+    sbRoll: $("sb-roll"), sbRollOut: $("sb-roll-out"), sbRank: $("sb-rank"), sbRankOut: $("sb-rank-out"), sbIp: $("sb-ip"), sbIpOut: $("sb-ip-out"),
     sbAdd: $("sb-add"), sbOptions: $("sb-options"), sbList: $("sb-list"), sbShare: $("sb-share"), sbClear: $("sb-clear"),
   };
   const esc = Engine.esc;
@@ -968,11 +988,14 @@
 
   function renderSandbox() {
     const { t, rank } = state.sandbox;
+    const ip = state.sandbox.ip || Engine.DEFAULT_IP;
     const openRaw = new Set([...els.sbList.querySelectorAll("details[data-raw][open]")].map((d) => d.dataset.raw));
     els.sbRoll.value = Math.round(t * 100);
     els.sbRank.value = rank;
     els.sbRollOut.textContent = `${Math.round(t * 100)}%`;
     els.sbRankOut.textContent = rank;
+    els.sbIp.value = ip;
+    els.sbIpOut.textContent = ip;
 
     if (!state.pins.length) {
       els.sbList.innerHTML = `<div class="sb-empty">NO ENTRIES PINNED<br>// press + on a card in the Database or Aspect Codex, or add one by name</div>`;
@@ -982,7 +1005,7 @@
     els.sbList.innerHTML = state.pins.map((key) => {
       const r = state.byId.get(key);
       if (!r) return "";
-      const rendered = renderedAt(r, { t, rank });
+      const rendered = renderedAt(r, { t, rank, ip });
       const mythicBtn = canCraftMythic(r)
         ? `<button type="button" class="btn btn--mythic mono" data-mythic="${esc(key)}" aria-pressed="${rendered.crafted}" title="View the crafted Mythic version">MYTHIC</button>`
         : "";
@@ -1345,6 +1368,7 @@
     const saveSb = () => { try { localStorage.setItem(SB_KEY, JSON.stringify(state.sandbox)); } catch { /* ignore */ } };
     els.sbRoll.addEventListener("input", () => { state.sandbox.t = +els.sbRoll.value / 100; saveSb(); renderSandbox(); });
     els.sbRank.addEventListener("input", () => { state.sandbox.rank = +els.sbRank.value; saveSb(); renderSandbox(); });
+    els.sbIp.addEventListener("input", () => { state.sandbox.ip = +els.sbIp.value; saveSb(); renderSandbox(); });
     els.sbAdd.addEventListener("change", () => {
       const v = els.sbAdd.value.trim();
       const r = state.records.find((x) => optionLabel(x) === v) || state.records.find((x) => x.name.toLowerCase() === v.toLowerCase());

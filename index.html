@@ -141,6 +141,11 @@
             <p class="hint">Clamped to each aspect's own max rank.</p>
           </div>
           <div class="field">
+            <label for="sb-ip">Item power <output id="sb-ip-out" class="mono"></output></label>
+            <input id="sb-ip" type="range" min="590" max="900" step="10" value="800">
+            <p class="hint">Sets base stat values (from the game's GameBalance tables, which change formula at 700 / 750 / 800 / 850 / 900). The Database shows item power 800.</p>
+          </div>
+          <div class="field">
             <label for="sb-add">Add entry</label>
             <input id="sb-add" class="input mono" type="search" list="sb-options" placeholder="type a name…" autocomplete="off">
             <datalist id="sb-options"></datalist>
