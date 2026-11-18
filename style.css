@@ -375,6 +375,19 @@ h1, h2, h3 { margin: 0; }
 .ico { width: 100%; height: 100%; object-fit: contain; display: block; filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8)); user-select: none; }
 .ico-well .ico { width: calc(100% - 4px); height: calc(100% - 4px); }
 .card:hover .ico-well, .card:focus-visible .ico-well, .card.is-active .ico-well { border-color: color-mix(in srgb, var(--rarity) 60%, transparent); }
+/* Uniques: a soft grey well. Mythics: a purple-pink glow. */
+:is(.card--unique, .tooltip--unique, .sb-cell--unique, .sb-entry--unique, .picker__item--unique) .ico-well {
+  background: radial-gradient(ellipse at 50% 55%, rgba(190, 190, 200, 0.24), rgba(120, 120, 130, 0.10) 70%), #1a1a1e;
+  border-color: color-mix(in srgb, #9a9aa4 40%, var(--line));
+}
+:is(.card--mythic, .tooltip--mythic, .sb-cell--mythic, .sb-entry--mythic, .picker__item--mythic) .ico-well {
+  background: radial-gradient(ellipse at 50% 55%, rgba(255, 110, 200, 0.34), rgba(160, 90, 255, 0.22) 55%, transparent 80%), #120a18;
+  border-color: rgba(220, 130, 255, 0.6);
+  box-shadow: 0 0 10px rgba(225, 110, 230, 0.45), inset 0 0 12px rgba(190, 100, 255, 0.35);
+}
+:is(.card--mythic, .tooltip--mythic, .sb-cell--mythic, .sb-entry--mythic, .picker__item--mythic) .ico-well .ico {
+  filter: drop-shadow(0 0 5px rgba(240, 120, 220, 0.7)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
+}
 .ico-well--tt { width: 52px; height: 74px; margin: 0; }
 .ico-well--rune { width: 40px; height: 54px; margin: 0; }
 .sb-seal__ico { width: 40px; height: 40px; margin: 0; flex: none; }
