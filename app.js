@@ -1212,6 +1212,137 @@
     return true;
   }
 
+  /* ---------- Build editor: slots, picker ---------- */
+
+  /** Which pinned item is in which slot: { weapons: {slot: key}, unfitWeapons, gear: {Helm: [keys]}, overGear }. */
+  function sbLayout() {
+    const cls = sandboxClass();
+    const weapons = state.pins.filter((k) => !isCharm(k) && isWeapon(state.byId.get(k)));
+    const { used, unfit } = fitWeapons(weapons, cls);
+    const gear = {}, overGear = [];
+    for (const slot of Object.keys(GEAR_LIMIT)) {
+      const ks = state.pins.filter((k) => !isCharm(k) && (state.byId.get(k) || {}).slot === slot);
+      gear[slot] = ks.slice(0, GEAR_LIMIT[slot]);
+      overGear.push(...ks.slice(GEAR_LIMIT[slot]));
+    }
+    return { weapons: used, unfitWeapons: unfit, gear, overGear };
+  }
+
+  const classOk = (r, cls) => !cls || !r.classes.length || r.classes.includes(cls);
+
+  /** Candidates for a slot spec: "w:<slot>", "g:<Slot>:<i>", "c:<i>" (charm), "aspect". */
+  function pickCandidates(spec) {
+    const cls = sandboxClass();
+    const [kind, a] = spec.split(":");
+    const item = (r, sub) => ({ value: r.key, name: r.name, sub, icon: r.icon, rarity: rarityClass(r.rarity) });
+    if (kind === "w") {
+      const rule = weaponRule(cls);
+      return state.records.filter((r) => r.kind === "item" && isWeapon(r) && classOk(r, cls) && (rule.fits(r.raw.typeId) || []).some((set) => set.includes(a)))
+        .map((r) => item(r, `${r.rarity} ${r.type}${r.classes.length ? " · " + r.classLabel : ""}`));
+    }
+    if (kind === "g") {
+      return state.records.filter((r) => r.kind === "item" && r.slot === a && classOk(r, cls))
+        .map((r) => item(r, `${r.rarity} ${r.type}${r.classes.length ? " · " + r.classLabel : ""}`));
+    }
+    if (kind === "c") {
+      const T = talismanIdx();
+      const sets = T.sets.filter((st) => !cls || !st.c.length || st.c.includes(cls));
+      return [
+        ...sets.flatMap((st) => st.pieces.map((p) => ({ value: "s:" + p.id, name: p.name, sub: `Set charm · ${st.name} · ${p.type}${st.c.length === 1 ? " · " + st.c[0] : ""}`, icon: p.ic, rarity: "set" }))),
+        ...state.records.filter((r) => r.kind === "item" && charmOf(r) && classOk(r, cls))
+          .map((r) => ({ value: "u:" + r.key, name: r.name, sub: `Unique charm (${r.slot}): unique power only`, icon: r.icon, rarity: rarityClass(r.rarity) })),
+      ];
+    }
+    return state.records.filter((r) => r.kind === "aspect" && classOk(r, cls)).map((r) => item(r, `Legendary Aspect · ${r.classLabel}`));
+  }
+
+  function syncPinButtons() {
+    document.querySelectorAll(".pin[data-pin]").forEach((b) => {
+      const on = state.pins.includes(b.dataset.pin);
+      b.setAttribute("aria-pressed", String(on));
+      b.textContent = on ? "✓" : "+";
+      b.title = `${on ? "Remove from" : "Add to"} Theorycraft Sandbox`;
+    });
+  }
+
+  /** Remove `old` keys and put `key` where the first of them was (keeps slot order), else at the end. */
+  function replacePins(old, key) {
+    const pos = Math.min(...old.map((k) => state.pins.indexOf(k)).filter((i) => i >= 0), Infinity);
+    state.pins = state.pins.filter((k) => k !== key && !old.includes(k));
+    state.sandbox.charms = state.sandbox.charms.filter((k) => k !== key && !old.includes(k));
+    if (Number.isFinite(pos)) state.pins.splice(Math.min(pos, state.pins.length), 0, key); else state.pins.push(key);
+  }
+
+  function applyPick(spec, value) {
+    const [kind, a, b] = spec.split(":");
+    const L = sbLayout();
+    if (kind === "g") {
+      const occ = L.gear[a][+b];
+      if (occ !== value) replacePins(occ ? [occ] : [], value);
+    } else if (kind === "w") {
+      const r = state.byId.get(value), cls = sandboxClass();
+      if (cls && r.classes.length && !r.classes.includes(cls)) { toast(`${r.name} can't be equipped by a ${cls}.`); return; }
+      const choice = (weaponRule(cls).fits(r.raw.typeId) || []).find((set) => set.includes(a)) || [a];
+      replacePins([...new Set(choice.map((sl) => L.weapons[sl]).filter(Boolean))], value);
+    } else if (kind === "c") {
+      const i = +a, occ = [...state.sandbox.charms.map((k) => ({ k })), ...state.sandbox.sets.map((x) => ({ x }))][i];
+      if (occ && occ.k) { state.sandbox.charms = state.sandbox.charms.filter((k) => k !== occ.k); state.pins = state.pins.filter((k) => k !== occ.k); }
+      if (occ && occ.x) state.sandbox.sets.splice(state.sandbox.sets.indexOf(occ.x), 1);
+      if (talismanUsed() >= charmSlots()) { toast(`The Talisman is full (${charmSlots()} charm slots).`); }
+      else if (value.startsWith("s:")) state.sandbox.sets.push({ p: value.slice(2), a: ["", ""] });
+      else {
+        const key = value.slice(2);
+        if (!state.pins.includes(key)) state.pins.push(key);
+        if (!state.sandbox.charms.includes(key)) state.sandbox.charms.push(key);
+      }
+    } else if (kind === "aspect" && !state.pins.includes(value)) state.pins.push(value);
+    savePins(); saveSandbox(); syncPinButtons(); renderSandbox();
+  }
+
+  const PICK_TITLES = { aspect: "Add a legendary aspect" };
+  let pickerSpec = "";
+  function openPicker(spec, label) {
+    let el = document.getElementById("picker");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "picker"; el.className = "picker"; el.hidden = true;
+      el.innerHTML = `<div class="picker__panel" role="dialog" aria-modal="true" aria-labelledby="picker-title">
+        <div class="picker__head"><h3 id="picker-title" class="picker__title"></h3><button type="button" class="btn btn--ghost mono" data-pclose aria-label="Close">×</button></div>
+        <input class="input mono picker__search" type="search" placeholder="search name, set, type…" aria-label="Search">
+        <ul class="picker__list" role="listbox"></ul></div>`;
+      document.body.appendChild(el);
+      const list = el.querySelector(".picker__list"), search = el.querySelector(".picker__search");
+      const draw = () => {
+        const q = search.value.trim().toLowerCase();
+        const all = el._items || [];
+        const hits = (q ? all.filter((c) => (c.name + " " + c.sub).toLowerCase().includes(q)) : all).slice(0, 250);
+        list.innerHTML = hits.length ? hits.map((c) => `<li><button type="button" class="picker__item picker__item--${esc(c.rarity)}" data-pval="${esc(c.value)}">
+            <span class="picker__ico">${itemIcon(c.icon)}</span><span class="picker__text"><span class="picker__name">${esc(c.name)}</span><span class="picker__sub">${esc(c.sub)}</span></span></button></li>`).join("")
+          : `<li class="hint" style="padding:12px">Nothing fits this slot${sandboxClass() ? " for a " + esc(sandboxClass()) : ""}.</li>`;
+      };
+      el._draw = draw;
+      search.addEventListener("input", draw);
+      el.addEventListener("click", (e) => {
+        const v = e.target.closest("[data-pval]");
+        if (v) { closePicker(); applyPick(pickerSpec, v.dataset.pval); return; }
+        if (e.target === el || e.target.closest("[data-pclose]")) closePicker();
+      });
+      el.addEventListener("keydown", (e) => { if (e.key === "Escape") closePicker(); });
+    }
+    pickerSpec = spec;
+    el._items = pickCandidates(spec).sort((x, y) => x.name.localeCompare(y.name));
+    el.querySelector(".picker__title").textContent = PICK_TITLES[spec] || `Choose: ${label}`;
+    const search = el.querySelector(".picker__search");
+    search.value = "";
+    el._draw();
+    el.hidden = false;
+    search.focus();
+  }
+  function closePicker() {
+    const el = document.getElementById("picker");
+    if (el) el.hidden = true;
+  }
+
   function togglePin(key) {
     const i = state.pins.indexOf(key);
     if (i >= 0) { state.pins.splice(i, 1); state.sandbox.charms = state.sandbox.charms.filter((k) => k !== key); saveSandbox(); }
@@ -1254,69 +1385,64 @@
     const auto = !state.sandbox.cls && sandboxClass();
     els.sbClass.options[0].textContent = auto ? `Auto (${auto})` : "Auto";
 
-    if (!state.pins.length && !state.sandbox.sets.length) {
-      els.sbList.innerHTML = `<div class="sb-empty">NO ENTRIES PINNED<br>// press + on a card in the Database or Aspect Codex, or add one by name</div>`;
-      return;
-    }
-
     // Only 1 crafted Mythic can be equipped; dropped Iconic Mythics and bought random Mythics don't count.
     const craftedN = state.pins.filter((k) => !isCharm(k) && state.sandbox.mythic.includes(k) && canCraftMythic(state.byId.get(k) || {})).length;
     const limitNote = craftedN > 1
       ? `<p class="sb-note mono">${craftedN} CRAFTED MYTHICS // only 1 can be equipped at a time. Iconic Mythics (boss drops) and random Mythics from the Blacksmith or Jeweler don't count toward the limit.</p>`
       : "";
-    // Weapon loadout: which pinned weapon sits in which slot, and any that can't be equipped together.
     const cls = sandboxClass();
     const rule = weaponRule(cls);
-    const weapons = state.pins.filter((k) => !isCharm(k) && isWeapon(state.byId.get(k)));
-    let loadout = "";
-    if (weapons.length) {
-      const { used, unfit } = fitWeapons(weapons, cls);
-      const cells = Object.entries(rule.slots).map(([sl, label]) => {
-        const k = used[sl];
-        const twoHand = k && Object.values(used).filter((x) => x === k).length > 1;
-        if (twoHand && sl !== "main") return "";
-        return `<div class="sb-slot${k ? "" : " sb-slot--empty"}"><dt>${esc(twoHand ? "Both Hands" : label)}</dt><dd>${k ? esc(state.byId.get(k).name) : "empty"}</dd></div>`;
-      }).join("");
-      loadout = `<section class="sb-loadout"><h3 class="sb-loadout__title mono">WEAPONS // ${esc(cls || "any class")}</h3><dl class="sb-loadout__slots">${cells}</dl>
-        <p class="hint">${esc(rule.text.replace(/^[a-z]/, (c) => c.toUpperCase()))}.${state.sandbox.cls ? "" : cls ? " Class taken from your pinned items." : " Pick a class to use Barbarian or Rogue weapon rules."}</p>
-        ${unfit.length ? `<p class="sb-note mono">CAN'T BE EQUIPPED TOGETHER // ${esc(unfit.map((k) => state.byId.get(k).name).join(", "))}. Remove one, or change the class.</p>` : ""}</section>`;
-    }
-    // Gear slots (1 each, 2 rings) and the Talisman (seal + charm slots).
+    const L = sbLayout();
+    const cell = (slot, label, k, extra = "", emptyText = "choose…") => {
+      const r = k && state.byId.get(k);
+      return `<div class="sb-cell${r ? " sb-cell--" + rarityClass(shownRarity(r, { crafted: state.sandbox.mythic.includes(k) && canCraftMythic(r) })) : " sb-cell--empty"}">
+        <button type="button" class="sb-cell__pick" data-pick="${esc(slot)}" title="${r ? "Change" : "Choose"} ${esc(label)}">
+          <span class="sb-cell__ico">${r && r.icon ? itemIcon(r.icon) : '<span class="sb-cell__plus" aria-hidden="true">+</span>'}</span>
+          <span class="sb-cell__text"><span class="sb-cell__label mono">${esc(label)}${extra}</span><span class="sb-cell__name">${r ? esc(r.name) : esc(emptyText)}</span></span>
+        </button>
+        ${r ? `<button type="button" class="sb-cell__clear" data-unpin="${esc(k)}" aria-label="Remove ${esc(r.name)}" title="Remove">×</button>` : ""}
+      </div>`;
+    };
+
+    // Weapons (class rules), armor, jewelry.
+    const wCells = Object.entries(rule.slots).map(([sl, label]) => {
+      const k = L.weapons[sl];
+      const twoHand = k && Object.entries(L.weapons).filter(([, x]) => x === k).length > 1;
+      // The off-hand stays clickable under a 2H: picking a 1H or off-hand there swaps the 2H out.
+      if (twoHand && sl !== "main") return cell("w:" + sl, label, null, "", "held by the 2H weapon");
+      return cell("w:" + sl, twoHand ? `${label} (2H)` : label, k);
+    }).join("");
+    const gCells = Object.entries(GEAR_LIMIT).flatMap(([slot, n]) =>
+      Array.from({ length: n }, (_, i) => cell(`g:${slot}:${i}`, n > 1 ? `${slot} ${i + 1}` : slot, L.gear[slot][i]))).join("");
+    const overflow = [...L.unfitWeapons, ...L.overGear];
+    const build = `<section class="sb-build">
+      <div class="sb-build__head"><h3 class="sb-loadout__title mono">BUILD // ${esc(cls || "any class")}</h3>
+        <span class="hint">${esc(rule.text.replace(/^[a-z]/, (c) => c.toUpperCase()))}.${state.sandbox.cls ? "" : cls ? " Class taken from your items." : " Set a class to use its weapon rules."}</span></div>
+      <h4 class="sb-build__sub mono">WEAPONS</h4><div class="sb-cells">${wCells}</div>
+      <h4 class="sb-build__sub mono">ARMOR &amp; JEWELRY</h4><div class="sb-cells">${gCells}</div>
+      ${overflow.length ? `<p class="sb-note mono">NOT EQUIPPED // ${overflow.map((k) => esc(state.byId.get(k).name)).join(", ")}: no free slot. Remove it, or press CHARM below to move it to the Talisman.</p>` : ""}
+    </section>`;
+
     const nameOf = (k) => esc(state.byId.get(k).name);
-    const gearPins = state.pins.filter((k) => !isCharm(k) && isGear(state.byId.get(k)));
-    let gear = "";
-    if (gearPins.length) {
-      const over = [];
-      const cells = Object.entries(GEAR_LIMIT).flatMap(([slot, n]) => {
-        const ks = gearPins.filter((k) => state.byId.get(k).slot === slot);
-        over.push(...ks.slice(n));
-        return Array.from({ length: n }, (_, i) => `<div class="sb-slot${ks[i] ? "" : " sb-slot--empty"}"><dt>${slot}${n > 1 ? " " + (i + 1) : ""}</dt><dd>${ks[i] ? nameOf(ks[i]) : "empty"}</dd></div>`);
-      }).join("");
-      gear = `<section class="sb-loadout"><h3 class="sb-loadout__title mono">GEAR</h3><dl class="sb-loadout__slots">${cells}</dl>
-        ${over.length ? `<p class="sb-note mono">SLOT FULL // ${over.map(nameOf).join(", ")}: remove one, or press CHARM to move it to the Talisman.</p>` : ""}</section>`;
-    }
     const [sealName, nSlots] = sealOf();
     const charms = state.sandbox.charms;
     const T = talismanIdx();
     const setCh = state.sandbox.sets.map((x, i) => ({ ...x, i, piece: T.piece.get(x.p) }));
-    const occupants = [...charms.map((k) => ({ label: nameOf(k), kind: "unique" })), ...setCh.map((x) => ({ label: esc(x.piece.name), kind: "set" }))];
     const sealOpts = Object.entries(SEALS).map(([id, [label, n]]) => `<option value="${id}"${(state.sandbox.seal || "legendary") === id ? " selected" : ""}>${esc(label)} · ${n} slots</option>`).join("");
-    const slotCells = Array.from({ length: 6 }, (_, i) => i >= nSlots
-      ? `<div class="sb-slot sb-slot--locked"><dt>Charm ${i + 1}</dt><dd>locked by seal</dd></div>`
-      : `<div class="sb-slot${occupants[i] ? " sb-slot--" + (occupants[i].kind === "set" ? "set" : "charm") : " sb-slot--empty"}"><dt>Charm ${i + 1}${occupants[i] && occupants[i].kind === "set" ? " · set" : ""}</dt><dd>${occupants[i] ? occupants[i].label : "empty"}</dd></div>`).join("");
+    const occupants = [...charms.map((k) => ({ k })), ...setCh.map((x) => ({ x }))];
+    const charmCells = Array.from({ length: 6 }, (_, i) => {
+      if (i >= nSlots) return `<div class="sb-cell sb-cell--locked"><span class="sb-cell__pick" aria-disabled="true"><span class="sb-cell__ico"></span><span class="sb-cell__text"><span class="sb-cell__label mono">Charm ${i + 1}</span><span class="sb-cell__name">locked by seal</span></span></span></div>`;
+      const o = occupants[i];
+      if (o && o.x) {
+        return `<div class="sb-cell sb-cell--set"><button type="button" class="sb-cell__pick" data-pick="c:${i}" title="Change charm ${i + 1}">
+          <span class="sb-cell__ico">${o.x.piece.ic ? itemIcon(o.x.piece.ic) : '<span class="sb-cell__plus" aria-hidden="true">◆</span>'}</span>
+          <span class="sb-cell__text"><span class="sb-cell__label mono">Charm ${i + 1} · ${esc(o.x.piece.type)}</span><span class="sb-cell__name">${esc(o.x.piece.name)}</span></span></button>
+          <button type="button" class="sb-cell__clear" data-setremove="${o.x.i}" aria-label="Remove ${esc(o.x.piece.name)}" title="Remove">×</button></div>`;
+      }
+      return cell(`c:${i}`, `Charm ${i + 1}${o ? " · unique" : ""}`, o ? o.k : null);
+    }).join("");
 
-    // "Add set charm": the build's class sets first, then generic sets.
-    const buildCls = cls;
-    const setGroups = {};
-    for (const st of T.sets) {
-      const g = st.c.length === 1 ? st.c[0] : "Generic";
-      if (buildCls && g !== buildCls && g !== "Generic") continue;
-      (setGroups[g] = setGroups[g] || []).push(st);
-    }
-    const addOpts = Object.entries(setGroups).sort(([a], [b]) => (a === "Generic") - (b === "Generic") || a.localeCompare(b)).map(([g, sts]) =>
-      `<optgroup label="${esc(g)}">${sts.map((st) => st.pieces.map((p) => `<option value="${esc(p.id)}">${esc(st.name)} · ${esc(p.type)}</option>`).join("")).join("")}</optgroup>`).join("");
-
-    // Set bonuses: count different types per set; a duplicate type doesn't count.
+    // Set bonuses: count different types per set; a duplicate type (same set) doesn't count.
     const bySet = new Map();
     for (const x of setCh) {
       const b = bySet.get(x.piece.set.id) || { set: x.piece.set, types: new Map() };
@@ -1330,29 +1456,36 @@
       return `<div class="sb-set"><p class="sb-set__name">${esc(st.name)} <span class="mono">${n} / ${total}</span>${st.c.length === 1 ? ` <span class="sb-set__cls mono">${esc(st.c[0])}</span>` : ""}</p>
         <p class="sb-set__types mono">${st.pieces.map((p) => `<span class="${types.has(p.type) ? "on" : ""}">${esc(p.type)}</span>`).join("")}</p>
         <ul class="sb-set__tiers">${st.tiers.map((tr) => `<li class="${n >= tr.n ? "is-on" : ""}"><span class="mono">(${tr.n})</span> ${(Engine.renderAffix(tr.a, world)[0] || { html: "" }).html}</li>`).join("")}</ul>
-        ${dups.length ? `<p class="sb-note mono">DUPLICATE ${esc(dups.join(", ").toUpperCase())} // only one of each type counts. Reroll the duplicate in the Horadric Cube to look for a missing type.</p>` : ""}</div>`;
+        ${dups.length ? `<p class="sb-note mono">DUPLICATE ${esc(dups.join(", ").toUpperCase())} // only one of each type counts per set. Reroll the duplicate in the Horadric Cube to look for a missing type.</p>` : ""}</div>`;
     }).join("");
-
     const setRows = setCh.map((x) => {
-      const pool = poolFor(x.piece.set.c.length === 1 ? x.piece.set.c[0] : buildCls);
-      const sel = (j) => `<select class="input mono" data-setaffix="${x.i}" data-slot="${j}" aria-label="Affix ${j + 1}"><option value="">— affix ${j + 1} —</option>${pool.map((id) => `<option value="${esc(id)}"${x.a[j] === id ? " selected" : ""}>${esc(plainAffix(id))}</option>`).join("")}</select>`;
+      const pool = poolFor(x.piece.set.c.length === 1 ? x.piece.set.c[0] : cls);
+      const sel = (j) => `<select class="input mono" data-setaffix="${x.i}" data-slot="${j}" aria-label="${esc(x.piece.name)} affix ${j + 1}"><option value="">— affix ${j + 1} —</option>${pool.map((id) => `<option value="${esc(id)}"${x.a[j] === id ? " selected" : ""}>${esc(plainAffix(id))}</option>`).join("")}</select>`;
       const dup = (bySet.get(x.piece.set.id).types.get(x.piece.type) || 0) > 1;
       return `<div class="sb-setcharm${dup ? " is-dup" : ""}">
-        <div class="sb-setcharm__head"><span class="sb-setcharm__name">${esc(x.piece.name)}</span><span class="mono sb-setcharm__type">${esc(x.piece.type)}${dup ? " · DUPLICATE" : ""}</span>
-          <button type="button" class="btn btn--ghost mono" data-setremove="${x.i}">REMOVE</button></div>
+        <div class="sb-setcharm__head"><span class="sb-setcharm__name">${esc(x.piece.name)}</span><span class="mono sb-setcharm__type">${esc(x.piece.type)}${dup ? " · DUPLICATE" : ""}</span></div>
         <div class="sb-setcharm__affixes">${sel(0)}${sel(1)}</div></div>`;
     }).join("");
 
-    const talisman = `<section class="sb-loadout"><h3 class="sb-loadout__title mono">TALISMAN // ${talismanUsed()} / ${nSlots} CHARMS</h3>
-      <label class="sb-seal"><span class="mono">SEAL</span><select class="input mono" data-seal aria-label="Talisman seal">${sealOpts}</select></label>
-      <dl class="sb-loadout__slots">${slotCells}</dl>
+    const talisman = `<section class="sb-build">
+      <div class="sb-build__head"><h3 class="sb-loadout__title mono">TALISMAN // ${talismanUsed()} / ${nSlots} CHARMS</h3>
+        <label class="sb-seal"><span class="mono">SEAL</span><select class="input mono" data-seal aria-label="Talisman seal">${sealOpts}</select></label></div>
+      <div class="sb-cells">${charmCells}</div>
       ${talismanUsed() > nSlots ? `<p class="sb-note mono">TALISMAN FULL // ${talismanUsed() - nSlots} charm${talismanUsed() - nSlots > 1 ? "s" : ""} don't fit the ${esc(sealName)}.</p>` : ""}
-      <label class="sb-seal"><span class="mono">ADD SET CHARM</span><select class="input mono" data-addset aria-label="Add a set charm"><option value="">— pick a set and type —</option>${addOpts}</select></label>
-      ${setRows ? `<div class="sb-setcharms">${setRows}</div>` : ""}
-      ${bonusHTML ? `<div class="sb-sets"><h4 class="sb-loadout__title mono">SET BONUSES</h4>${bonusHTML}</div>` : ""}
-      <p class="hint">The seal unlocks charm slots: Magic 3, Rare 4, Legendary 5 (6 with the extra charm slot affix), Annihilus and Mythic seals 6. Unique charms keep only their unique power. Set charms come in 5 types (Phoba, Fer, Mlor, Linta, Berú); a set's bonuses unlock at 2, 3 and 5 different types, and sets can be mixed (e.g. a 3-set + a 2-set, or three 2-sets). Each set charm rolls 2 affixes. Affix values use your roll quality. Seal affixes aren't modelled yet.</p></section>`;
+      ${setRows ? `<h4 class="sb-build__sub mono">SET CHARM AFFIXES</h4><div class="sb-setcharms">${setRows}</div>` : ""}
+      ${bonusHTML ? `<div class="sb-sets"><h4 class="sb-build__sub mono">SET BONUSES</h4>${bonusHTML}</div>` : ""}
+      <p class="hint">Click a charm slot to add a set charm (5 types per set: Phoba, Fer, Mlor, Linta, Berú; bonuses at 2, 3 and 5; sets can be mixed) or a unique's charm (unique power only). The seal sets the slots: Magic 3, Rare 4, Legendary 5 (6 with the extra slot affix), Annihilus and Mythic seals 6.</p>
+    </section>`;
 
-    els.sbList.innerHTML = limitNote + loadout + gear + talisman + state.pins.map((key) => {
+    const aspectKeys = state.pins.filter((k) => (state.byId.get(k) || {}).kind === "aspect");
+    const aspects = `<section class="sb-build">
+      <div class="sb-build__head"><h3 class="sb-loadout__title mono">ASPECTS // ${aspectKeys.length}</h3>
+        <button type="button" class="btn mono" data-pick="aspect">+ ADD ASPECT</button></div>
+      ${aspectKeys.length ? "" : '<p class="hint">Legendary aspects to compare. Use AMULET ×1.5 / 2H ×2 on each one below to see it imprinted on those slots.</p>'}
+    </section>`;
+
+    const details = state.pins.length ? `<h3 class="sb-details mono">DETAILS // tooltips at your roll quality and item power</h3>` : "";
+    els.sbList.innerHTML = limitNote + build + talisman + aspects + details + state.pins.map((key) => {
       const r0 = state.byId.get(key);
       if (!r0) return "";
       const asCharm = isCharm(key) && charmOf(r0);
@@ -1702,6 +1835,12 @@
         if (state.sandbox.slot[k] === s) delete state.sandbox.slot[k]; else state.sandbox.slot[k] = s;
         try { localStorage.setItem(SB_KEY, JSON.stringify(state.sandbox)); } catch { /* ignore */ }
         renderSandbox();
+        return;
+      }
+      const pk = e.target.closest("[data-pick]");
+      if (pk && !pk.closest("#picker")) {
+        const label = (pk.querySelector(".sb-cell__label") || pk).textContent.trim();
+        openPicker(pk.dataset.pick, label);
         return;
       }
       const setRm = e.target.closest("[data-setremove]");

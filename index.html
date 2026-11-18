@@ -130,12 +130,17 @@
       <div class="view__head">
         <p class="eyebrow mono">// THEORYCRAFT SANDBOX</p>
         <h1 class="view__title">Theorycraft Sandbox</h1>
-        <p class="view__sub">Pin uniques and aspects, then dial in roll quality and aspect rank to see the exact in-game numbers instead of ranges.</p>
+        <p class="view__sub">Build a character: pick a class, click a slot to equip a unique, fill the Talisman with charms, then dial in roll quality to see the exact in-game numbers.</p>
       </div>
 
       <div class="sandbox">
         <aside class="panel sandbox__controls">
           <h2 class="panel__title mono">PARAMETERS</h2>
+          <div class="field">
+            <label for="sb-class">Class</label>
+            <select id="sb-class" class="input mono"></select>
+            <p class="hint">Sets the weapon rules. Barbarian: 2H bludgeoning + 2H slashing + two 1H. Rogue: bow or crossbow + two daggers or swords. Others: a 2H, or a 1H + an off-hand.</p>
+          </div>
           <div class="field">
             <label for="sb-roll">Roll quality <output id="sb-roll-out" class="mono"></output></label>
             <input id="sb-roll" type="range" min="0" max="100" step="1" value="100">
@@ -152,15 +157,10 @@
             <p class="hint">Sets base stat values. At max level a unique is 850, an Ancestral one 900. Mythics (original and crafted) always use 900.</p>
           </div>
           <div class="field">
-            <label for="sb-class">Class</label>
-            <select id="sb-class" class="input mono"></select>
-            <p class="hint">Sets the weapon rules. Barbarian: 2H bludgeoning + 2H slashing + two 1H. Rogue: bow or crossbow + two daggers or swords. Others: a 2H, or a 1H + an off-hand.</p>
-          </div>
-          <div class="field">
-            <label for="sb-add">Add entry</label>
+            <label for="sb-add">Quick add by name</label>
             <input id="sb-add" class="input mono" type="search" list="sb-options" placeholder="type a name…" autocomplete="off">
             <datalist id="sb-options"></datalist>
-            <p class="hint">Or press <span class="mono">+</span> on any card in the Database.</p>
+            <p class="hint">Or click any slot in the build to choose from what fits it, or press <span class="mono">+</span> on a Database card.</p>
           </div>
           <div class="sandbox__actions">
             <button id="sb-share" class="btn mono" type="button">COPY LINK</button>
