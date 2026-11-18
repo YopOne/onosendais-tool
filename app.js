@@ -1956,7 +1956,7 @@
     // Tooltips: hover, keyboard focus, tap
     document.addEventListener("mouseover", (e) => {
       const card = e.target.closest("[data-key]");
-      if (card && card !== state.activeCard) showTooltip(card);
+      if (card && (card !== state.activeCard || els.tooltip.hidden)) showTooltip(card);
     });
     document.addEventListener("mouseout", (e) => {
       const card = e.target.closest("[data-key]");

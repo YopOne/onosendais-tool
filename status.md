@@ -34,6 +34,7 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 - **Publishing a change:** `git add -A && git commit -m "…" && git push`. `gh` is installed at `/opt/homebrew/bin/gh` and signed in as `YopOne`. Commits use the GitHub noreply email (set in this repo's git config). `gh api repos/YopOne/onosendais-tool/pages/builds/latest` shows the Pages build status.
 - **What's uploaded:** site files, `data/index/`, `data/sources/`, `tools/` and the docs (~1.2 MB). `.gitignore` excludes `d4data/` (31 GB), raw `data/Item`, `data/Power`, `data/StringList`, and the old scraper files.
 - **After a data rebuild:** commit the new `data/index/codex.json` too, or the live site keeps the old data.
+- **Cache busting:** GitHub Pages sends `Cache-Control: max-age=600`, so browsers may keep an old `app.js`/`style.css` for 10 minutes. `index.html` loads them as `app.js?v=…` / `style.css?v=…`: **bump the `v=` value in `index.html` whenever `app.js` or `style.css` change.** (`codex.json` is fetched with `cache: "no-cache"`.)
 - **Browser testing:** `tools/webshot.swift` is a headless WebKit tool that loads a page, runs JS, reports JS errors and saves a screenshot (usage at the top of the file). Python's `http.server` lets WebKit cache `app.js` between runs, so when re-testing edits serve with a `Cache-Control: no-store` header. `requestAnimationFrame` and CSS transitions don't run in its hidden window.
 
 ## Game rules used (confirmed by the user, 17–18 Nov)
