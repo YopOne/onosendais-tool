@@ -471,6 +471,22 @@ def main():
     ui = {"bg": 3261546786, "socket": 1588005082, "active": 693456443, "locked": 2243541645,
           "seal": 3814032020, "sealActive": 3168201781}
     talisman["ui"] = {k: v for k, v in ((k, icons and icons.for_handle(h)) for k, h in ui.items()) if v}
+
+    # Paperdoll art (2DUI_InventoryGrid slot frames, 2DUI_PaperDoll_EmptySlotIcons, class sigils from
+    # 2DUI_ClassIcons_Rendered / _X2_Rendered). The figures themselves are original SVGs in data/figures/.
+    pd_frames = {"slot": 512199407, "small": 3647096516, "gold": 1364076039, "blocked": 2149698886}
+    pd_empty = {"Amulet": 2202388031, "Boots": 3582054718, "Gloves": 3588665509, "Helm": 2061009597, "Pants": 3598153405,
+                "Ring": 2061373383, "Shield": 2900456848, "Weapon": 3602502790, "Chest": 3580974264, "Bow": 1093193533}
+    pd_sigil = {"Barbarian": 1787428350, "Druid": 3153547071, "Necromancer": 3164919806, "Rogue": 3170027305,
+                "Sorcerer": 1788054526, "Spiritborn": 2990931923, "Paladin": 1492518897, "Warlock": 2079130405}
+    paperdoll = {}
+    if icons:
+        paperdoll = {"frames": {k: icons.for_handle(h) for k, h in pd_frames.items()},
+                     "empty": {k: icons.for_handle(h) for k, h in pd_empty.items()},
+                     "sigil": {k: icons.for_handle(h, 360) for k, h in pd_sigil.items()}}
+        for grp in paperdoll.values():
+            for k in [k for k, v in grp.items() if not v]:
+                del grp[k]
     talisman["sets"] = sorted((x for x in sets_by_id.values() if x["tiers"]), key=lambda x: (x["c"][:1] or ["~"], x["name"]))
     if have_affix:
         for path in sorted(glob.glob(os.path.join(affix_dir, "Talisman_Charm_*.aff.json"))):
@@ -598,6 +614,7 @@ def main():
         "drops": drops,
         "runes": runes,
         "talisman": talisman,
+        "paperdoll": paperdoll,
         "itemTypes": item_types,
     }
 

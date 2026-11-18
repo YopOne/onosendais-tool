@@ -115,10 +115,15 @@ class Icons:
             self._actor[name] = v
         return self._actor[name]
 
-    def _use(self, handle):
+    def _use(self, handle, size=None):
         if handle in self.frames:
             key = "%08x" % handle
-            self.used[key] = self.frames[handle]
+            src = self.frames[handle]
+            # size: longest side for a sheet crop (big art such as class sigils); keyed separately.
+            if size and isinstance(src, tuple):
+                key += "-%d" % size
+                src = src + (size,)
+            self.used[key] = src
             return key
         return None
 
@@ -155,8 +160,8 @@ class Icons:
         # items it often points at a generic image.
         return self.for_handle(j.get("unk_75d565b"))
 
-    def for_handle(self, handle):
-        return self._use(handle) if handle else None
+    def for_handle(self, handle, size=None):
+        return self._use(handle, size) if handle else None
 
     def write(self):
         """Copy used icons to out_dir; remove ones no longer used. Returns (count, KB)."""
@@ -169,8 +174,11 @@ class Icons:
             dst = os.path.join(self.out_dir, key + ".webp")
             if isinstance(src, tuple):  # cut from a whole sheet (only when missing: delete to redo)
                 if not os.path.exists(dst):
-                    png, x, y, w, h = src
-                    subprocess.run(["cwebp", "-quiet", "-q", "85", "-alpha_q", "100", "-crop", str(x), str(y), str(w), str(h), png, "-o", dst], check=True)
+                    png, x, y, w, h = src[:5]
+                    resize = []
+                    if len(src) > 5 and max(w, h) > src[5]:
+                        resize = ["-resize", str(src[5]), "0"] if w >= h else ["-resize", "0", str(src[5])]
+                    subprocess.run(["cwebp", "-quiet", "-q", "85", "-alpha_q", "100", "-crop", str(x), str(y), str(w), str(h), *resize, png, "-o", dst], check=True)
                 total += os.path.getsize(dst)
                 continue
             size = os.path.getsize(src)

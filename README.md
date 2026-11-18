@@ -26,7 +26,7 @@ The site reads one prebuilt file, `data/index/codex.json`. To rebuild it after a
 
 1. Get the datamine ([d4data](https://github.com/DiabloTools/d4data)) into `d4data/`, and copy its `Item`, `Power` and `StringList` JSON folders into `data/`. The build also reads `d4data/json/base/meta/` Affix, Aspect, Recipe, GameBalance and Global files.
 2. Update the hand-maintained sources in `data/sources/` if needed (boss drops and rune locations from Maxroll).
-3. Optional, for icons: put the exported inventory atlases (`.webp` frames named `<atlas> [<snoID>] - <frame> <name>.webp`) in `webp_icons/`. The build copies the ones it uses to `data/icons/`. Whole atlas sheets (`<atlas> [<snoID>].png`, e.g. the `2DUI_Aspect_*` and `2DUI_Talisman*` sheets) go in `2DUI/`; the build cuts the frames it needs with `cwebp` (Homebrew `webp`).
+3. Optional, for icons: put the exported inventory atlases (`.webp` frames named `<atlas> [<snoID>] - <frame> <name>.webp`) in `webp_icons/`. The build copies the ones it uses to `data/icons/`. Whole atlas sheets (`<atlas> [<snoID>].png`, e.g. the `2DUI_Aspect_*` and `2DUI_Talisman*` sheets) go in `2DUI/`; the build cuts the frames it needs with `cwebp` (Homebrew `webp`). The Sandbox's class figures are original SVGs: `python3 tools/figures.py` rewrites `data/figures/`.
 4. Run `python3 tools/build_index.py` (standard library only), then commit the new `data/index/codex.json` and `data/icons/`.
 
 See `status.md` for current progress and known issues, and `blueprint.md` for the original spec.

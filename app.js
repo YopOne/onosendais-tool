@@ -1636,11 +1636,67 @@
         return (!L.gear[slot][i] && legCell(spec, label)) || cell(spec, label, L.gear[slot][i]);
       })).join("");
     const overflow = [...L.unfitWeapons, ...L.overGear];
+
+    // Paperdoll: the game's slot frames and empty-slot icons around an original class figure.
+    // Panel units 600×860: armor down the left, jewelry down the right, weapons along the bottom.
+    const PD = Engine.codex.paperdoll || {};
+    const slotData = (spec, label, k, blocked) => {
+      if (blocked) return { blocked: true, label };
+      if (!k) {
+        const e = state.sandbox.leg[spec], r = e && state.byId.get(e.a);
+        if (r) {
+          const bonus = legBonusSlot(spec, e);
+          const t2 = spec === "w:main" && !INHERENT_2H.has(spec) && !WEAPON_RULES[cls] && !only2H()
+            ? `<button type="button" class="sb-cell__toggle mono pd__toggle" data-leg2h="${spec}" aria-pressed="${Boolean(e.two)}" title="Two-handed weapon: aspect ×2, no off-hand">2H</button>` : "";
+          return { label, key: "leg:" + spec, ic: r.icon, name: r.name, rar: "legendary", sub: "Legendary · " + r.name + (bonus === "amulet" ? " ×1.5" : bonus === "2h" ? " ×2" : ""),
+            clear: `data-legremove="${esc(spec)}"`, extra: t2 };
+        }
+        return { label };
+      }
+      const r = state.byId.get(k);
+      if (!r) return { label };
+      const crafted = !isCharm(k) && state.sandbox.mythic.includes(k) && canCraftMythic(r);
+      return { label, key: isCharm(k) ? "charm:" + k : k, ic: r.icon, name: r.name, rar: rarityClass(shownRarity(r, { crafted })), clear: `data-unpin="${esc(k)}"` };
+    };
+    const offIsShield = classOffhands(cls).some((t) => /Shield/.test(t));
+    const emptyFor = (slot) => ({ ranged: "Bow", off: WEAPON_RULES[cls] ? "Weapon" : offIsShield ? "Shield" : "Weapon" })[slot] || "Weapon";
+    const pdSlots = [];
+    [["Helm", 90], ["Chest", 230], ["Gloves", 370], ["Pants", 510], ["Boots", 650]].forEach(([slot, y]) =>
+      pdSlots.push({ spec: `g:${slot}:0`, x: 66, y, w: 96, h: 128, empty: slot, ...slotData(`g:${slot}:0`, slot, L.gear[slot][0]) }));
+    [["Amulet", 0, 100], ["Ring", 0, 214], ["Ring", 1, 328]].forEach(([slot, i, y]) =>
+      pdSlots.push({ spec: `g:${slot}:${i}`, x: 534, y, w: 86, h: 96, small: true, empty: slot, ...slotData(`g:${slot}:${i}`, slot === "Ring" ? `Ring ${i + 1}` : slot, L.gear[slot][i]) }));
+    const wEntries = Object.entries(rule.slots);
+    wEntries.forEach(([sl, label], i) => {
+      const k = L.weapons[sl];
+      const twoHand = k && Object.entries(L.weapons).filter(([, x]) => x === k).length > 1;
+      const blocked = (twoHand || (mainLeg2h && !WEAPON_RULES[cls])) && sl !== "main";
+      pdSlots.push({ spec: "w:" + sl, x: 300 + (i - (wEntries.length - 1) / 2) * 112, y: 790, w: 96, h: 128, empty: emptyFor(sl), weapon: true,
+        ...slotData("w:" + sl, twoHand && sl === "main" ? `${label} (2H)` : label, blocked ? null : k, blocked) });
+    });
+    const figCls = (cls || "any").toLowerCase();
+    const pdHTML = PD.frames && PD.frames.slot ? (() => {
+      const u = (v, total) => ((v / total) * 100).toFixed(3) + "%";
+      const cellHTML = (d) => {
+        const pos = `left:${u(d.x, 600)};top:${u(d.y, 860)};width:${u(d.w, 600)};height:${u(d.h, 860)}`;
+        const frame = d.blocked ? PD.frames.blocked : d.name ? (PD.frames.gold && ["unique", "mythic", "legendary"].includes(d.rar) ? PD.frames.gold : PD.frames.slot) : d.small ? PD.frames.small || PD.frames.slot : PD.frames.slot;
+        const emptyIc = (PD.empty || {})[d.empty];
+        if (d.blocked) return `<div class="pd__slot is-blocked" style="${pos}" title="${esc(d.label)}: held by the 2H weapon">${itemIcon(frame, "pd__frame")}</div>`;
+        return `<div class="pd__slot${d.name ? " is-full pd__slot--" + d.rar : ""}${d.weapon ? " pd__slot--weapon" : ""}" style="${pos}"${d.key ? ` data-key="${esc(d.key)}"` : ""}>
+          <button type="button" class="pd__pick" data-pick="${esc(d.spec)}" aria-label="${esc(d.label)}: ${d.name ? esc(d.name) + ". Change" : "empty. Choose an item"}">${itemIcon(frame, "pd__frame")}${d.ic ? itemIcon(d.ic, "pd__item") : emptyIc ? itemIcon(emptyIc, "pd__empty") : ""}</button>
+          ${d.name ? `<button type="button" class="sb-cell__clear pd__clear" ${d.clear} aria-label="Remove ${esc(d.name)}" title="Remove">×</button>` : ""}${d.extra || ""}</div>`;
+      };
+      const sigil = cls && (PD.sigil || {})[cls];
+      return `<div class="pd-wrap"><div class="pd pd--${esc(figCls)}">
+          ${sigil ? `<img class="pd__sigil" src="data/icons/${sigil}.webp" alt="" draggable="false">` : ""}
+          <img class="pd__fig" src="data/figures/${esc(figCls)}.svg" alt="${esc(cls || "Wanderer")} figure" draggable="false">
+          ${pdSlots.map(cellHTML).join("")}</div>
+        <ul class="pd__list">${pdSlots.map((d) => `<li class="${d.blocked ? "is-blocked" : d.name ? "pd__li--" + d.rar : "is-empty"}"><span class="mono">${esc(d.label)}</span> ${d.blocked ? "held by the 2H weapon" : d.name ? esc(d.name) : "empty"}</li>`).join("")}</ul></div>`;
+    })() : "";
     const build = `<section class="sb-build">
       <div class="sb-build__head"><h3 class="sb-loadout__title mono">BUILD // ${esc(cls || "any class")}</h3>
         <span class="hint">${esc(rule.text.replace(/^[a-z]/, (c) => c.toUpperCase()))}.${state.sandbox.cls ? "" : cls ? " Class taken from your items." : " Set a class to use its weapon rules."}</span></div>
-      <h4 class="sb-build__sub mono">WEAPONS</h4><div class="sb-cells">${wCells}</div>
-      <h4 class="sb-build__sub mono">ARMOR &amp; JEWELRY</h4><div class="sb-cells">${gCells}</div>
+      ${pdHTML || `<h4 class="sb-build__sub mono">WEAPONS</h4><div class="sb-cells">${wCells}</div>
+      <h4 class="sb-build__sub mono">ARMOR &amp; JEWELRY</h4><div class="sb-cells">${gCells}</div>`}
       ${overflow.length ? `<p class="sb-note mono">NOT EQUIPPED // ${overflow.map((k) => esc(state.byId.get(k).name)).join(", ")}: no free slot. Remove it, or press CHARM below to move it to the Talisman.</p>` : ""}
     </section>`;
 

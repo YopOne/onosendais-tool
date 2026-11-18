@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 600" role="img">
+<defs>
+  <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="20" x2="0" y2="600">
+    <stop offset="0" stop-color="#3a342d"/><stop offset=".45" stop-color="#1d1a17"/><stop offset="1" stop-color="#0b0a09"/>
+  </linearGradient>
+  <radialGradient id="floor" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#000" stop-opacity=".7"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
+  <filter id="rim" x="-20%" y="-20%" width="140%" height="140%">
+    <feMorphology in="SourceAlpha" operator="dilate" radius="1.6" result="d"/>
+    <feFlood flood-color="#f0d27a" flood-opacity=".5"/><feComposite in2="d" operator="in" result="edge"/>
+    <feGaussianBlur in="edge" stdDeviation="2.4" result="glow"/>
+    <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+  <filter id="blur" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="6"/></filter>
+  <filter id="blur2" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="1.4"/></filter>
+  <style>
+    .fig polygon, .fig path, .fig ellipse { fill: url(#g); }
+    .fig .s { fill: none; stroke: url(#g); stroke-linecap: round; stroke-linejoin: round; }
+    .fig .void { fill: #050505; }
+    .det .d { fill: none; stroke: #f3dfbd; stroke-linecap: round; stroke-linejoin: round; }
+  </style>
+</defs>
+<ellipse cx="150" cy="586" rx="110" ry="12" fill="url(#floor)"/>
+<g class="fig" filter="url(#rim)">
+<ellipse cx="150" cy="80" rx="20" ry="25"/>
+<polyline class="s" points="150,98 150,118" stroke-width="22"/>
+<path d="M98,120 Q150,110 202,120 Q214,126 210,150 Q204,200 190,252 Q192,290 190,330 L110,330 Q108,290 110,252 Q96,200 90,150 Q86,126 98,120 Z"/>
+<ellipse cx="96" cy="134" rx="18" ry="16"/>
+<ellipse cx="204" cy="134" rx="18" ry="16"/>
+<polyline class="s" points="94,140 78,226 98,280" stroke-width="30"/>
+<ellipse cx="98" cy="280" rx="13.8" ry="15.0"/>
+<polyline class="s" points="206,140 224,230 220,310" stroke-width="30"/>
+<ellipse cx="220" cy="310" rx="13.8" ry="15.0"/>
+<polyline class="s" points="123,322 116,452 112,562" stroke-width="34"/>
+<polygon points="98,556 126,556 98,584 96,584"/>
+<polyline class="s" points="177,322 184,452 188,562" stroke-width="34"/>
+<polygon points="174,556 202,556 202,584 172,584"/>
+<path d="M126,108 L124,62 C124,46 176,46 176,62 L174,108 Z"/>
+<path d="M150,48 C160,24 186,16 204,28 C186,30 172,40 162,58 Z"/>
+<ellipse cx="88" cy="146" rx="28" ry="22"/>
+<ellipse cx="212" cy="146" rx="28" ry="22"/>
+<polygon points="128,200 172,200 176,420 150,440 124,420"/>
+<path d="M50,196 L132,196 L130,296 C126,342 104,370 90,388 C76,370 54,342 52,296 Z"/>
+<polygon points="216,322 224,322 222,480 220,492 218,480"/>
+<polyline class="s" points="204,318 236,318" stroke-width="6"/>
+<polyline class="s" points="220,312 220,296" stroke-width="6"/>
+</g>
+<g class="det">
+<polyline class="d" points="90,210 90,370" stroke-width="3" opacity="0.3"/>
+<polyline class="d" points="58,262 124,262" stroke-width="3" opacity="0.3"/>
+<polyline class="d" points="132,82 168,82" stroke-width="3" opacity="0.35"/>
+<polyline class="d" points="150,66 150,104" stroke-width="2" opacity="0.25"/>
+<polyline class="d" points="150,210 150,420" stroke-width="1.5" opacity="0.15"/>
+<circle cx="90" cy="262" r="8.8" fill="#f0d27a" opacity=".18" filter="url(#blur)"/><circle cx="90" cy="262" r="4" fill="#f0d27a" opacity=".85" filter="url(#blur2)"/>
+</g>
+</svg>
