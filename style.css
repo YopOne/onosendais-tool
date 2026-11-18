@@ -861,3 +861,5 @@ h1, h2, h3 { margin: 0; }
 .dm__list .is-off { opacity: 0.45; }
 .dm__list .is-off .dm__v { text-decoration: line-through; }
 @media (max-width: 760px) { .dm__list label { grid-template-columns: auto 5em 1fr; } .dm__ctx { grid-column: 2 / -1; } }
+.pin.pin--blocked { opacity: 0.45; border-style: dashed; cursor: not-allowed; }
+.pin.pin--blocked:hover { opacity: 0.8; }

@@ -793,6 +793,7 @@
   function cardHTML(r) {
     const meta = r.kind === "aspect" ? `Legendary Aspect${r.cats.length ? " · " + r.cats.join(" / ") : ""}` : `${r.crafted ? "Mythic (crafted)" : r.rarity} · ${r.slot}`;
     const pinned = state.pins.includes(r.key);
+    const blocked = !pinned && state.byId.size && classBlock(r);
     return `
       <article class="card card--${rarityClass(shownRarity(r))}" tabindex="0" data-key="${esc(r.key)}" aria-describedby="tooltip">
         <span class="card__meta">${r.kind === "item" ? slotIcon(r.slot) : ""}${esc(meta)}</span>
@@ -809,7 +810,7 @@
           ${r.kind === "aspect" && r.aslots.length ? `<span class="tag" title="Can be imprinted on: ${esc(r.aslots.join(", "))}">${esc(aspectSlotsShort(r.aslots))}</span>` : ""}
           ${r.drop ? `<span class="tag tag--drop" title="${esc(r.drop.text)}">${esc(r.drop.tag)}</span>` : ""}
         </span>
-        <button type="button" class="pin" data-pin="${esc(r.key)}" aria-pressed="${pinned}" title="${pinned ? "Remove from" : "Add to"} Theorycraft Sandbox" aria-label="${pinned ? "Remove from" : "Add to"} sandbox">${pinned ? "✓" : "+"}</button>
+        <button type="button" class="pin${blocked ? " pin--blocked" : ""}" data-pin="${esc(r.key)}" aria-pressed="${pinned}" title="${esc(blocked || `${pinned ? "Remove from" : "Add to"} Theorycraft Sandbox`)}" aria-label="${pinned ? "Remove from sandbox" : blocked ? esc(blocked) : "Add to sandbox"}">${pinned ? "✓" : blocked ? "⊘" : "+"}</button>
       </article>`;
   }
 
@@ -1094,6 +1095,12 @@
       const sc = /[?&]sets=([^&]+)/.exec(location.hash);
       state.sandbox.sets = sc ? decodeURIComponent(sc[1]).split(",").map((x) => { const [p, a1, a2] = x.split("~"); return { p, a: [a1 || "", a2 || ""] }; }).filter((x) => talismanIdx().piece.has(x.p)) : [];
       state.sandbox.cls = cls && Engine.codex.meta.classes.includes(decodeURIComponent(cls[1])) ? decodeURIComponent(cls[1]) : "";
+      if (state.sandbox.cls) {
+        const keep = (k) => classOk(state.byId.get(k), state.sandbox.cls);
+        state.pins = state.pins.filter(keep);
+        state.sandbox.charms = state.sandbox.charms.filter(keep);
+        for (const [sp, e] of Object.entries(state.sandbox.leg)) if (!keep(e.a)) delete state.sandbox.leg[sp];
+      }
       const so = /[?&]sock=([^&]+)/.exec(location.hash), gt = /[?&]gt=(\d)/.exec(location.hash);
       state.sandbox.sock = {};
       if (so) for (const x of decodeURIComponent(so[1]).split(",")) { const [sp, ...v] = x.split("~"); if (/^(g|w):/.test(sp)) state.sandbox.sock[sp] = v.map((y) => (/^(g|r):/.test(y) ? y : "")); }
@@ -1313,14 +1320,20 @@
   }
 
   /** Put `key` in its gear or weapon slot. preferCharm: if that slot is full, try the Talisman first. */
+  /** Why a record can't join the Sandbox build: its class tags (fUsableByClass) exclude the build's class
+   * (the Class setting, or in Auto the class the other items imply). null when it fits. */
+  function classBlock(r, cls = sandboxClass()) {
+    if (!r || !cls || !r.classes.length || r.classes.includes(cls)) return null;
+    const what = r.kind === "aspect" ? "aspect" : r.slot ? r.slot.replace(/Weapon|Helm|Chest|Gloves|Pants|Boots|Amulet|Ring|Off-Hand/, (m) => m.toLowerCase()) : "item";
+    return `${r.name} is a ${r.classLabel} ${what}: it can't go in a ${cls} build.${state.sandbox.cls ? "" : " (Class is Auto: set it to start a different class.)"}`;
+  }
+
   function equip(key, preferCharm) {
     const r = state.byId.get(key);
+    const blocked = classBlock(r);
+    if (blocked) { toast(blocked); return false; }
     if (isWeapon(r)) {
       const current = sandboxClass();
-      if (current && r.classes.length && !r.classes.includes(current)) {
-        toast(`${r.name} can't be equipped by a ${current} (${r.classLabel} only).`);
-        return false;
-      }
       const cls = current || sandboxClass([...state.pins, key]);
       const rule = weaponRule(cls);
       if (!rule.fits(r.raw.typeId)) { toast(`${r.name} can't be equipped: ${rule.text}.`); return false; }
@@ -1515,11 +1528,14 @@
   }
 
   function syncPinButtons() {
+    const cls = sandboxClass();
     document.querySelectorAll(".pin[data-pin]").forEach((b) => {
       const on = state.pins.includes(b.dataset.pin);
+      const blocked = !on && classBlock(state.byId.get(b.dataset.pin), cls);
       b.setAttribute("aria-pressed", String(on));
-      b.textContent = on ? "✓" : "+";
-      b.title = `${on ? "Remove from" : "Add to"} Theorycraft Sandbox`;
+      b.classList.toggle("pin--blocked", Boolean(blocked));
+      b.textContent = on ? "✓" : blocked ? "⊘" : "+";
+      b.title = blocked || `${on ? "Remove from" : "Add to"} Theorycraft Sandbox`;
     });
   }
 
@@ -1547,6 +1563,9 @@
     const [kind, a, b] = spec.split(":");
     const L = sbLayout();
     const leg = state.sandbox.leg;
+    const pickedKey = value.startsWith("L:") || value.startsWith("u:") ? value.slice(2) : value;
+    const blocked = state.byId.has(pickedKey) && classBlock(state.byId.get(pickedKey));
+    if (blocked) { toast(blocked); return; }
     if (value.startsWith("L:") && (kind === "g" || kind === "w")) {
       // Legendary item with an aspect: clear the unique(s) in that slot.
       const key = value.slice(2);
@@ -1647,12 +1666,7 @@
     if (i >= 0) { state.pins.splice(i, 1); state.sandbox.charms = state.sandbox.charms.filter((k) => k !== key); saveSandbox(); }
     else if (equip(key, true)) { state.pins.push(key); saveSandbox(); }
     savePins();
-    document.querySelectorAll(`.pin[data-pin="${CSS.escape(key)}"]`).forEach((b) => {
-      const on = state.pins.includes(key);
-      b.setAttribute("aria-pressed", String(on));
-      b.textContent = on ? "✓" : "+";
-      b.title = `${on ? "Remove from" : "Add to"} Theorycraft Sandbox`;
-    });
+    syncPinButtons();
     if (!els.viewSandbox.hidden) renderSandbox();
   }
 
@@ -1668,6 +1682,8 @@
   const rawCache = new Map(); // key -> rendered raw-files HTML
 
   function renderSandbox() {
+    fillQuickAdd();
+    syncPinButtons();
     const { t, rank } = state.sandbox;
     const ip = state.sandbox.ip || Engine.DEFAULT_IP;
     const openRaw = new Set([...els.sbList.querySelectorAll("details[data-raw][open]")].map((d) => d.dataset.raw));
@@ -2508,7 +2524,9 @@
     els.sbIp.addEventListener("input", () => { state.sandbox.ip = +els.sbIp.value; saveSb(); renderSandbox(); });
     els.sbAdd.addEventListener("change", () => {
       const v = els.sbAdd.value.trim();
-      const r = state.records.find((x) => optionLabel(x) === v) || state.records.find((x) => x.name.toLowerCase() === v.toLowerCase());
+      const cls = sandboxClass();
+      const r = state.records.find((x) => optionLabel(x) === v) || state.records.find((x) => x.name.toLowerCase() === v.toLowerCase() && classOk(x, cls))
+        || state.records.find((x) => x.name.toLowerCase() === v.toLowerCase());
       if (r && !state.pins.includes(r.key)) togglePin(r.key);
       els.sbAdd.value = "";
     });
@@ -2571,6 +2589,15 @@
     }, true);
   }
 
+  /** Quick-add suggestions: only what the build's class can use. */
+  let quickAddCls = null;
+  function fillQuickAdd() {
+    const cls = sandboxClass();
+    if (cls === quickAddCls) return;
+    quickAddCls = cls;
+    els.sbOptions.innerHTML = state.records.filter((r) => classOk(r, cls)).map((r) => `<option value="${esc(optionLabel(r))}">`).join("");
+    els.sbAdd.placeholder = cls ? `type a name (${cls} and all-class items)…` : "type a name…";
+  }
   const optionLabel = (r) => `${r.name} (${r.kind === "aspect" ? "Aspect" : r.rarity}${r.classes.length ? ", " + r.classLabel : ""})`;
 
   /* ==========================================================
@@ -2612,7 +2639,7 @@
     Engine.load(codex);
     buildRecords(codex);
     loadPins();
-    els.sbOptions.innerHTML = state.records.map((r) => `<option value="${esc(optionLabel(r))}">`).join("");
+    fillQuickAdd();
     const ms = Math.round(performance.now() - t0);
 
     const c = codex.meta.counts;
