@@ -1223,10 +1223,10 @@
   // Mythic seal powers from Talisman_SealAffix_Ancestral_0N: Diamond Mind -1 charm per set bonus (min 2),
   // Golden Epiphany 3 unique charms, Severed Finger 2 unique charms but at most 5 slots. Others allow 1.
   const SEALS = {
-    magic: ["Magic seal", 3, { uniques: 1 }],
-    rare: ["Rare seal", 4, { uniques: 1 }],
-    legendary: ["Legendary seal", 5, { uniques: 1 }],
-    legendary6: ["Legendary seal + extra charm slot", 6, { uniques: 1 }],
+    magic: ["Magic seal", 3, { uniques: 1, icon: "Talisman_Seal_Magic" }],
+    rare: ["Rare seal", 4, { uniques: 1, icon: "Talisman_Seal_Rare" }],
+    legendary: ["Legendary seal", 5, { uniques: 1, icon: "Talisman_Seal_Legendary" }],
+    legendary6: ["Legendary seal + extra charm slot", 6, { uniques: 1, icon: "Talisman_Seal_Legendary" }],
     annihilus: ["Annihilus (Season 15)", 6, { uniques: 1, item: "S15_Charm_Unique_Annihilus" }],
     mythic1: ["Seal of the Diamond Mind (Mythic)", 6, { uniques: 1, setReduce: 1, item: "Talisman_Seal_MythicUnique_03" }],
     mythic2: ["Seal of the Golden Epiphany (Mythic)", 6, { uniques: 3, item: "Talisman_Seal_MythicUnique_02" }],
@@ -1696,12 +1696,13 @@
     }).join("");
 
     const sealItem = sealOf()[2].item && codexItem(sealOf()[2].item);
+    const sealIc = (sealItem && sealItem.ic) || ((Engine.codex.talisman || {}).seals || {})[sealOf()[2].icon];
     const linesOf = (it) => { if (!it) return []; const r = renderItem(it, { t: state.sandbox.t, rank: 1, ip: 900 }, false); return [r.power, ...r.imp, ...r.stats].filter(Boolean); };
     const powerBlock = (title, it) => { const ls = linesOf(it); return ls.length ? `<div class="sb-sealpower"><span class="mono">${esc(title)}</span><ul>${ls.map((l) => `<li>${l.html}</li>`).join("")}</ul></div>` : ""; };
     const sealPowers = powerBlock(sealName, sealItem) + (state.sandbox.torch ? powerBlock("Hellfire Torch", codexItem(TORCH_ID)) : "");
     const talisman = `<section class="sb-build">
       <div class="sb-build__head"><h3 class="sb-loadout__title mono">TALISMAN // ${talismanUsed()} / ${nSlots} CHARMS</h3>
-        <label class="sb-seal"><span class="mono">SEAL</span><select class="input mono" data-seal aria-label="Talisman seal">${sealOpts}</select></label></div>
+        <label class="sb-seal"><span class="mono">SEAL</span>${sealIc ? `<span class="ico-well sb-seal__ico">${itemIcon(sealIc)}</span>` : ""}<select class="input mono" data-seal aria-label="Talisman seal">${sealOpts}</select></label></div>
       ${sealPowers}
       <div class="sb-cells">${charmCells}</div>
       <p class="hint mono sb-uniq">UNIQUE CHARMS ${uniqueCount()} / ${uniqueLimit()}${sealOf()[2].setReduce ? " // SET BONUSES NEED 1 FEWER CHARM (MIN 2)" : ""}</p>

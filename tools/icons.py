@@ -119,8 +119,13 @@ class Icons:
             p = os.path.join(item_dir, base + ".itm.json")
             if os.path.exists(p):
                 with open(p, encoding="utf-8") as fh:
-                    return self.for_item(json.load(fh), classes, item_dir, _depth + 1)
-        return None
+                    key = self.for_item(json.load(fh), classes, item_dir, _depth + 1)
+                if key:
+                    return key
+        # Unnamed item field holding the inventory image for charms and seals, which have no
+        # tInvImages and share a generic actor (Generic_Charm_Flippy). Last resort only: on other
+        # items it often points at a generic image.
+        return self.for_handle(j.get("unk_75d565b"))
 
     def for_handle(self, handle):
         return self._use(handle) if handle else None

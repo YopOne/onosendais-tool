@@ -377,6 +377,7 @@ h1, h2, h3 { margin: 0; }
 .card:hover .ico-well, .card:focus-visible .ico-well, .card.is-active .ico-well { border-color: color-mix(in srgb, var(--rarity) 60%, transparent); }
 .ico-well--tt { width: 52px; height: 74px; margin: 0; }
 .ico-well--rune { width: 40px; height: 54px; margin: 0; }
+.sb-seal__ico { width: 40px; height: 40px; margin: 0; flex: none; }
 .ico--chip { width: 14px; height: 20px; margin: -2px 0 -2px -4px; filter: none; }
 
 .card__name { font: 700 1.02rem var(--font-display); letter-spacing: 0.02em; line-height: 1.25; color: var(--text); padding-right: 24px; }

@@ -454,10 +454,17 @@ def main():
         piece = {"id": cid, "name": name, "type": name.split(" of ")[0].strip()}
         if cs.get("Flavor"):
             piece["flavor"] = cs["Flavor"]
-        ic = icons and (icons.for_handle((j.get("hSetCharmIcon") or {}).get("hImageHandle")) or icons.for_item(j))
+        ic = icons and (icons.for_item(j) or icons.for_handle((j.get("hSetCharmIcon") or {}).get("hImageHandle")))
         if ic:
             piece["ic"] = ic
         st["pieces"].append(piece)
+    # Plain seals aren't codex items; keep just their icons for the Sandbox's seal picker.
+    talisman["seals"] = {}
+    for sid in ("Talisman_Seal_Magic", "Talisman_Seal_Rare", "Talisman_Seal_Legendary"):
+        sp = os.path.join(item_dir, sid + ".itm.json")
+        ic = icons and os.path.exists(sp) and icons.for_item(load(sp))
+        if ic:
+            talisman["seals"][sid] = ic
     talisman["sets"] = sorted((x for x in sets_by_id.values() if x["tiers"]), key=lambda x: (x["c"][:1] or ["~"], x["name"]))
     if have_affix:
         for path in sorted(glob.glob(os.path.join(affix_dir, "Talisman_Charm_*.aff.json"))):
