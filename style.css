@@ -800,3 +800,8 @@ h1, h2, h3 { margin: 0; }
 .pd__list .pd__li--legendary { color: var(--r-legendary); }
 .pd__list .pd__li--ancestral { color: var(--r-ancestral); }
 @media (max-width: 760px) { .pd-wrap { grid-template-columns: 1fr; } .pd { max-width: 460px; margin: 0 auto; } .pd__list .mono { min-width: 8em; } }
+/* Class portrait from the Season 15 battle pass armor art, faded into the panel. */
+.pd__photo { position: absolute; left: 50%; top: 0; width: 64%; height: 86%; transform: translateX(-50%); object-fit: cover; object-position: 50% 12%; pointer-events: none;
+  -webkit-mask-image: radial-gradient(ellipse 50% 55% at 50% 45%, #000 62%, transparent 100%); mask-image: radial-gradient(ellipse 50% 55% at 50% 45%, #000 62%, transparent 100%); }
+.pd__badge { position: absolute; left: 50%; top: 86.5%; width: 12%; transform: translate(-50%, -50%); opacity: 0.55; filter: invert(1) sepia(1) saturate(0.7) brightness(0.85); pointer-events: none; }
+.pd__photo--group { width: 70%; object-position: 50% 30%; }

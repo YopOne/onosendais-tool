@@ -1686,9 +1686,12 @@
           ${d.name ? `<button type="button" class="sb-cell__clear pd__clear" ${d.clear} aria-label="Remove ${esc(d.name)}" title="Remove">×</button>` : ""}${d.extra || ""}</div>`;
       };
       const sigil = cls && (PD.sigil || {})[cls];
+      const photo = (PD.portrait || {})[cls || "any"];
       return `<div class="pd-wrap"><div class="pd pd--${esc(figCls)}">
-          ${sigil ? `<img class="pd__sigil" src="data/icons/${sigil}.webp" alt="" draggable="false">` : ""}
-          <img class="pd__fig" src="data/figures/${esc(figCls)}.svg" alt="${esc(cls || "Wanderer")} figure" draggable="false">
+          ${photo ? `<img class="pd__photo${cls ? "" : " pd__photo--group"}" src="${esc(photo)}" alt="${esc(cls || "All classes")} in shop / battle pass armor" draggable="false">`
+            : `${sigil ? `<img class="pd__sigil" src="data/icons/${sigil}.webp" alt="" draggable="false">` : ""}
+          <img class="pd__fig" src="data/figures/${esc(figCls)}.svg" alt="${esc(cls || "Wanderer")} figure" draggable="false">`}
+          ${photo && sigil ? `<img class="pd__badge" src="data/icons/${sigil}.webp" alt="" draggable="false">` : ""}
           ${pdSlots.map(cellHTML).join("")}</div>
         <ul class="pd__list">${pdSlots.map((d) => `<li class="${d.blocked ? "is-blocked" : d.name ? "pd__li--" + d.rar : "is-empty"}"><span class="mono">${esc(d.label)}</span> ${d.blocked ? "held by the 2H weapon" : d.name ? esc(d.name) : "empty"}</li>`).join("")}</ul></div>`;
     })() : "";

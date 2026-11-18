@@ -6,6 +6,10 @@ a dark figure with a coloured rim light, built from thick stroked limbs and fill
 each class's archetypal gear (horned helm and great axe, wolf pelt and staff, hood and scythe ...).
 
     python3 tools/figures.py        -> data/figures/<class>.svg  (viewBox 0 0 300 600)
+
+The Sandbox prefers game art when it's available: build_index.py calls portraits(), which cuts each
+class out of the Season 15 battle pass armor art (2DUI/ sheet) into data/figures/<class>.webp. The SVGs
+are the fallback (and the "no class" wanderer).
 """
 
 import os
@@ -251,6 +255,40 @@ def wanderer():
           poly([(98, 132), (202, 132), (224, 470), (196, 450), (176, 480), (150, 460), (124, 480), (104, 450), (76, 470)])]
     s += [ell(150, 84, 11, 13).replace("<ellipse", '<ellipse class="void"'), line([(118, 296), (182, 296)], 3, .2)]
     return s, a
+
+
+# Class portraits from shop / battle pass art. Most come from the Season 15 battle pass armor catalog
+# (all eight classes in their pass armor in one group shot, 5120×2160). The Druid stands behind the
+# Warlock and the Necromancer behind the Barbarian there, so theirs come from the newest shop pack
+# art for those classes (CollectionPack_Druid07, CollectionPack_Necromancer08).
+# class: (sheet, x, y, w, h) in sheet pixels.
+S15 = "2DUI_BP_S15_Catalog_Armor_Background [2669461].png"
+PORTRAITS = {
+    "Spiritborn": (S15, 2340, 450, 560, 1260), "Paladin": (S15, 2772, 500, 560, 1160),
+    "Rogue": (S15, 3070, 560, 560, 1140),
+    "Barbarian": (S15, 3360, 780, 560, 960), "Sorcerer": (S15, 3637, 560, 520, 1100),
+    "Warlock": (S15, 3882, 640, 560, 1100),
+    "any": (S15, 2400, 400, 2160, 1400),  # no class picked: the whole group
+    "Druid": ("2DUI_Bundle_AddOn_CollectionPack_Druid07_background [2644146].png", 2780, 250, 1140, 1910),
+    "Necromancer": ("2DUI_Bundle_AddOn_CollectionPack_Necromancer08_background [2644154].png", 2700, 180, 1500, 1980),
+}
+
+
+def portraits(atlas_dir, height=900):
+    """Cut the class portraits to data/figures/<class>.webp (only when missing). Returns {class: path}."""
+    import subprocess
+    os.makedirs(OUT, exist_ok=True)
+    done = {}
+    for cls, (sheet, x, y, w, h) in PORTRAITS.items():
+        src = os.path.join(atlas_dir or "", sheet)
+        dst = os.path.join(OUT, cls.lower() + ".webp")
+        if not os.path.exists(dst):
+            if not os.path.exists(src):
+                continue
+            subprocess.run(["cwebp", "-quiet", "-q", "80", "-crop", str(x), str(y), str(w), str(h),
+                            "-resize", "0", str(min(height, h)), src, "-o", dst], check=True)
+        done[cls] = "data/figures/" + cls.lower() + ".webp"
+    return done
 
 
 FIGURES = {"Barbarian": barbarian, "Druid": druid, "Necromancer": necromancer, "Rogue": rogue,

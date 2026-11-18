@@ -484,6 +484,13 @@ def main():
         paperdoll = {"frames": {k: icons.for_handle(h) for k, h in pd_frames.items()},
                      "empty": {k: icons.for_handle(h) for k, h in pd_empty.items()},
                      "sigil": {k: icons.for_handle(h, 360) for k, h in pd_sigil.items()}}
+        try:
+            import figures
+            pt = figures.portraits(args.atlases)
+            if pt:
+                paperdoll["portrait"] = pt
+        except Exception as e:  # cwebp missing etc.: keep the SVG figures
+            print(f"! class portraits not made: {e}")
         for grp in paperdoll.values():
             for k in [k for k, v in grp.items() if not v]:
                 del grp[k]
