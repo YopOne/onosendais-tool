@@ -378,12 +378,12 @@ h1, h2, h3 { margin: 0; }
 /* Portrait looks by rarity, shared by the Database (icon wells) and the Sandbox (paperdoll + Talisman slots).
    Uniques: a grey well. Mythics: a pink-purple glow. */
 :root {
-  --well-unique-bg: radial-gradient(ellipse at 50% 55%, rgba(215, 215, 225, 0.42), rgba(140, 140, 152, 0.24) 65%, rgba(90, 90, 100, 0.16)), #2a2a30;
-  --well-unique-line: #8e8e98;
-  --well-mythic-bg: radial-gradient(ellipse at 50% 55%, rgba(255, 105, 205, 0.62), rgba(200, 80, 255, 0.36) 55%, rgba(120, 50, 200, 0.18) 85%), #1c0c22;
-  --well-mythic-line: #f07ae0;
-  --well-mythic-glow: 0 0 14px rgba(255, 100, 215, 0.7), 0 0 4px rgba(255, 130, 230, 0.8), inset 0 0 14px rgba(255, 90, 210, 0.45);
-  --well-mythic-art: drop-shadow(0 0 6px rgba(255, 110, 220, 0.9)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
+  --well-unique-bg: radial-gradient(ellipse at 50% 55%, rgba(215, 215, 225, 0.34), rgba(140, 140, 152, 0.19) 65%, rgba(90, 90, 100, 0.13)), #232328;
+  --well-unique-line: rgba(142, 142, 152, 0.8);
+  --well-mythic-bg: radial-gradient(ellipse at 50% 55%, rgba(255, 105, 205, 0.5), rgba(200, 80, 255, 0.29) 55%, rgba(120, 50, 200, 0.14) 85%), #170a1c;
+  --well-mythic-line: rgba(240, 122, 224, 0.8);
+  --well-mythic-glow: 0 0 14px rgba(255, 100, 215, 0.56), 0 0 4px rgba(255, 130, 230, 0.64), inset 0 0 14px rgba(255, 90, 210, 0.36);
+  --well-mythic-art: drop-shadow(0 0 6px rgba(255, 110, 220, 0.72)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
 }
 :is(.card--unique, .tooltip--unique, .sb-cell--unique, .sb-entry--unique, .picker__item--unique) .ico-well {
   background: var(--well-unique-bg); border-color: var(--well-unique-line);
