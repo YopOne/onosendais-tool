@@ -844,14 +844,55 @@
       <dl class="tt__foot">${foot.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
   }
 
+  /** Tooltip for a set charm: its set, type, rolled affixes and the set's bonus tiers. */
+  function setCharmTooltip(piece, affixes) {
+    const st = piece.set, world = { t: state.sandbox.t, rank: 1, ip: 850 };
+    const have = new Set(state.sandbox.sets.map((x) => talismanIdx().piece.get(x.p)).filter((p) => p && p.set.id === st.id).map((p) => p.type));
+    const aff = (affixes || []).filter(Boolean).map((id) => Engine.renderAffix(id, world).map((l) => `<li>${l.html}</li>`).join("")).join("");
+    const tiers = st.tiers.map((tr) => `<li class="${have.size >= setNeed(tr.n) ? "tt__set-on" : "tt__set-off"}"><span class="mono">(${setNeed(tr.n)})</span> ${(Engine.renderAffix(tr.a, world)[0] || { html: "" }).html}</li>`).join("");
+    const parts = [];
+    if (aff) parts.push(`<ul class="tt__lines">${aff}</ul>`);
+    parts.push(`<p class="tt__setname">${esc(st.name)} <span class="mono">${have.size} / ${st.pieces.length}</span></p><ul class="tt__lines tt__lines--set">${tiers}</ul>`);
+    if (piece.flavor) parts.push(`<p class="tt__flavor">${esc(piece.flavor)}</p>`);
+    return `<div class="tt__head">${piece.ic ? `<span class="ico-well ico-well--tt">${itemIcon(piece.ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(piece.name)}</p><p class="tt__type">${esc((st.c.length === 1 ? st.c[0] + " " : "") + "Set Charm · " + piece.type)}</p></div></div>
+      <div class="tt__body">${parts.join('<div class="tt__sep"></div>')}</div>
+      <dl class="tt__foot"><dt>SET</dt><dd>${esc(st.name)}: bonuses at ${st.tiers.map((t) => setNeed(t.n)).join(" / ")} different types</dd>${aff ? "" : "<dt>AFFIXES</dt><dd>Pick 2 in the Talisman panel</dd>"}<dt>ID</dt><dd>${esc(piece.id)}</dd></dl>`;
+  }
+
+  /** Tooltip HTML + rarity for any data-key: a record key, "charm:<key>", "set:<i>", "piece:<id>" or "torch". */
+  function tooltipFor(key, inSandbox) {
+    const world = { t: state.sandbox.t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP };
+    const [kind, ...rest] = key.split(":");
+    const id = rest.join(":");
+    if (kind === "set") { const x = state.sandbox.sets[+id], p = x && talismanIdx().piece.get(x.p); return p && { html: setCharmTooltip(p, x.a), rarity: "set" }; }
+    if (kind === "piece") { const p = talismanIdx().piece.get(id); return p && { html: setCharmTooltip(p, []), rarity: "set" }; }
+    if (kind === "torch") {
+      const it = codexItem(TORCH_ID);
+      if (!it) return null;
+      const r = { kind: "item", name: it.name, rarity: "Mythic", type: "Charm", slot: "Talisman (charm)", classes: [], classLabel: "All classes", flavor: it.flavor || "", id: it.id, icon: it.ic, raw: it, drop: null };
+      return { html: tooltipInner(r, renderItem(it, { ...world, ip: 900 }, false)), rarity: "mythic" };
+    }
+    if (kind === "charm") {
+      const r0 = state.byId.get(id), ch = r0 && charmOf(r0);
+      if (!ch) return null;
+      const r = { ...r0, type: "Charm", slot: "Talisman (charm: unique power only)" };
+      return { html: tooltipInner(r, renderItem(ch, world, false)), rarity: rarityClass(r0.rarity) };
+    }
+    const r = state.byId.get(key);
+    if (!r) return null;
+    if (!inSandbox) return { html: tooltipInner(r), rarity: rarityClass(shownRarity(r)) };
+    const rendered = renderedAt(r, world);
+    return { html: tooltipInner(r, rendered), rarity: rarityClass(shownRarity(r, rendered)) };
+  }
+
   function showTooltip(card) {
-    const r = state.byId.get(card.dataset.key);
-    if (!r) return;
+    const tt = tooltipFor(card.dataset.key, Boolean(card.closest("#view-sandbox, #picker")));
+    if (!tt) return;
     if (state.activeCard && state.activeCard !== card) state.activeCard.classList.remove("is-active");
     state.activeCard = card;
     card.classList.add("is-active");
-    els.tooltip.className = `tooltip tooltip--${rarityClass(shownRarity(r))}`;
-    els.tooltip.innerHTML = tooltipInner(r);
+    els.tooltip.className = `tooltip tooltip--${tt.rarity}`;
+    els.tooltip.innerHTML = tt.html;
     els.tooltip.hidden = false;
     positionTooltip(card);
   }
@@ -1322,6 +1363,9 @@
     savePins(); saveSandbox(); syncPinButtons(); renderSandbox();
   }
 
+  /** Tooltip key for a picker value: record keys as-is, u:<key> → charm:<key>, s:<piece> → piece:<piece>, t:torch → torch. */
+  const pickTipKey = (v) => (v.startsWith("u:") ? "charm:" + v.slice(2) : v.startsWith("s:") ? "piece:" + v.slice(2) : v === "t:torch" ? "torch" : v);
+
   const PICK_TITLES = { aspect: "Add a legendary aspect" };
   let pickerSpec = "";
   function openPicker(spec, label) {
@@ -1339,7 +1383,7 @@
         const q = search.value.trim().toLowerCase();
         const all = el._items || [];
         const hits = (q ? all.filter((c) => (c.name + " " + c.sub).toLowerCase().includes(q)) : all).slice(0, 800);
-        list.innerHTML = hits.length ? hits.map((c) => `<li><button type="button" class="picker__item picker__item--${esc(c.rarity)}" data-pval="${esc(c.value)}">
+        list.innerHTML = hits.length ? hits.map((c) => `<li><button type="button" class="picker__item picker__item--${esc(c.rarity)}" data-pval="${esc(c.value)}" data-key="${esc(pickTipKey(c.value))}">
             <span class="picker__ico">${itemIcon(c.icon)}</span><span class="picker__text"><span class="picker__name">${esc(c.name)}</span><span class="picker__sub">${esc(c.sub)}</span></span></button></li>`).join("")
           : `<li class="hint" style="padding:12px">Nothing fits this slot${sandboxClass() ? " for a " + esc(sandboxClass()) : ""}.</li>`;
       };
@@ -1352,6 +1396,7 @@
       });
       el.addEventListener("keydown", (e) => { if (e.key === "Escape") closePicker(); });
     }
+    hideTooltip();
     pickerSpec = spec;
     el._items = pickCandidates(spec).sort((x, y) => x.name.localeCompare(y.name));
     el.querySelector(".picker__title").textContent = PICK_TITLES[spec] || `Choose: ${label}`;
@@ -1364,6 +1409,7 @@
   function closePicker() {
     const el = document.getElementById("picker");
     if (el) el.hidden = true;
+    hideTooltip();
   }
 
   function togglePin(key) {
@@ -1418,7 +1464,8 @@
     const L = sbLayout();
     const cell = (slot, label, k, extra = "", emptyText = "choose…") => {
       const r = k && state.byId.get(k);
-      return `<div class="sb-cell${r ? " sb-cell--" + rarityClass(shownRarity(r, { crafted: state.sandbox.mythic.includes(k) && canCraftMythic(r) })) : " sb-cell--empty"}">
+      const tkey = r ? (isCharm(k) ? "charm:" + k : k) : "";
+      return `<div class="sb-cell${r ? " sb-cell--" + rarityClass(shownRarity(r, { crafted: !isCharm(k) && state.sandbox.mythic.includes(k) && canCraftMythic(r) })) : " sb-cell--empty"}"${tkey ? ` data-key="${esc(tkey)}"` : ""}>
         <button type="button" class="sb-cell__pick" data-pick="${esc(slot)}" title="${r ? "Change" : "Choose"} ${esc(label)}">
           <span class="sb-cell__ico">${r && r.icon ? itemIcon(r.icon) : '<span class="sb-cell__plus" aria-hidden="true">+</span>'}</span>
           <span class="sb-cell__text"><span class="sb-cell__label mono">${esc(label)}${extra}</span><span class="sb-cell__name">${r ? esc(r.name) : esc(emptyText)}</span></span>
@@ -1458,13 +1505,13 @@
       const o = occupants[i];
       if (o && o.torch) {
         const torch = codexItem(TORCH_ID);
-        return `<div class="sb-cell sb-cell--mythic"><button type="button" class="sb-cell__pick" data-pick="c:${i}" title="Change charm ${i + 1}">
+        return `<div class="sb-cell sb-cell--mythic" data-key="torch"><button type="button" class="sb-cell__pick" data-pick="c:${i}" title="Change charm ${i + 1}">
           <span class="sb-cell__ico">${torch && torch.ic ? itemIcon(torch.ic) : '<span class="sb-cell__plus" aria-hidden="true">✦</span>'}</span>
           <span class="sb-cell__text"><span class="sb-cell__label mono">Charm ${i + 1} · Mythic</span><span class="sb-cell__name">Hellfire Torch</span></span></button>
           <button type="button" class="sb-cell__clear" data-torchremove aria-label="Remove Hellfire Torch" title="Remove">×</button></div>`;
       }
       if (o && o.x) {
-        return `<div class="sb-cell sb-cell--set"><button type="button" class="sb-cell__pick" data-pick="c:${i}" title="Change charm ${i + 1}">
+        return `<div class="sb-cell sb-cell--set" data-key="set:${o.x.i}"><button type="button" class="sb-cell__pick" data-pick="c:${i}" title="Change charm ${i + 1}">
           <span class="sb-cell__ico">${o.x.piece.ic ? itemIcon(o.x.piece.ic) : '<span class="sb-cell__plus" aria-hidden="true">◆</span>'}</span>
           <span class="sb-cell__text"><span class="sb-cell__label mono">Charm ${i + 1} · ${esc(o.x.piece.type)}</span><span class="sb-cell__name">${esc(o.x.piece.name)}</span></span></button>
           <button type="button" class="sb-cell__clear" data-setremove="${o.x.i}" aria-label="Remove ${esc(o.x.piece.name)}" title="Remove">×</button></div>`;
@@ -1928,7 +1975,7 @@
       tapWasOpen = Boolean(card && card === state.activeCard && !els.tooltip.hidden);
     });
     document.addEventListener("click", (e) => {
-      if (e.target.closest("[data-pin]")) return;
+      if (e.target.closest("[data-pin], [data-pick], [data-pval], .sb-cell__clear")) return;
       const card = e.target.closest("[data-key]");
       if (!card) { hideTooltip(); return; }
       if (e.pointerType && e.pointerType !== "mouse" && tapWasOpen) hideTooltip(); else showTooltip(card);

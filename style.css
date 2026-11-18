@@ -428,7 +428,7 @@ h1, h2, h3 { margin: 0; }
 /* ---------- Tooltip (Diablo in-game style) ---------- */
 .tooltip {
   --rarity: var(--r-unique);
-  position: fixed; z-index: 100;
+  position: fixed; z-index: 180;
   width: 380px; max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px); overflow: hidden;
   padding: 0;
@@ -456,6 +456,11 @@ h1, h2, h3 { margin: 0; }
 .tooltip--clipped { -webkit-mask-image: linear-gradient(#000 calc(100% - 48px), transparent); mask-image: linear-gradient(#000 calc(100% - 48px), transparent); }
 .tooltip--mythic { --rarity: var(--r-mythic); }
 .tooltip--legendary { --rarity: var(--r-legendary); }
+.tooltip--set { --rarity: var(--r-set); }
+.tt__setname { margin: 0 0 4px; font: 700 0.95rem var(--font-display); color: var(--r-set); }
+.tt__setname .mono { font-size: 0.74rem; color: var(--text-soft); margin-left: 6px; }
+.tt__lines--set li.tt__set-off { opacity: 0.5; }
+.tt__lines--set .mono { color: var(--r-set); margin-right: 2px; }
 
 .tt__head {
   display: flex; gap: 12px; align-items: center;
