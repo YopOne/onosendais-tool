@@ -1967,6 +1967,95 @@
       <p class="hint">Click a charm slot to add a set charm (5 types per set: Phoba, Fer, Mlor, Linta, Berú; bonuses at 2, 3 and 5; sets can be mixed) or a unique's charm (unique power only). The seal sets the slots: Magic 3, Rare 4, Legendary 5 (6 with the extra slot affix), Annihilus 6, Mythic seals 6 (Severed Finger 5). One unique charm is allowed, 2 with the Severed Finger, 3 with the Golden Epiphany, +1 with the Hellfire Torch; the Diamond Mind lowers every set bonus by 1 charm (min 2).</p>
     </section>`;
 
+    const damage = damageHTML();
+    /* ---------- Damage model ----------
+     * Diablo IV: every "+N% … Damage" bonus adds into one additive bucket; every "xN%" bonus (affixes,
+     * aspects, unique powers, gems, set bonuses) multiplies the result. Crits: base 5% chance and +50%
+     * damage (assumed), plus the build's crit chance / crit damage lines; "x" bonuses to Critical Strike
+     * Damage multiply only crits. Many lines are conditional: each one can be switched off.
+     * state.sandbox.dmgOff: ids of switched-off lines. */
+    function damageHTML() {
+      const W = { t: state.sandbox.t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP };
+      const src = [];
+      const add = (id, name, r) => { if (r) src.push({ id, name, lines: [r.power, ...(r.imp || []), ...(r.stats || []), ...(r.mythicLines || [])].filter(Boolean).map((l) => l.plain || "") }); };
+      const eq = new Set([...Object.values(L.weapons), ...Object.values(L.gear).flat()].filter(Boolean));
+      for (const k of eq) { const r = state.byId.get(k); add(k, r.name, renderedAt(r, W)); }
+      for (const [sp, e] of Object.entries(state.sandbox.leg)) {
+        const free = sp.startsWith("g:") ? L.gear[sp.split(":")[1]] && !L.gear[sp.split(":")[1]][+sp.split(":")[2]] : rule.slots[sp.slice(2)] && !L.weapons[sp.slice(2)];
+        const r = state.byId.get(e.a);
+        if (free && r) add("leg:" + sp, `${r.name} (${slotNameOf(sp)})`, renderLegAspect(r.key, sp));
+      }
+      for (const k of state.sandbox.charms) { const r = state.byId.get(k), ch = r && charmOf(r); if (ch) add("charm:" + k, r.name + " (charm)", renderItem(ch, W, false)); }
+      if (state.sandbox.torch && codexItem(TORCH_ID)) add("torch", "Hellfire Torch", renderItem(codexItem(TORCH_ID), { ...W, ip: 900 }, false));
+      if (sealItem) add("seal", sealName, renderItem(sealItem, { ...W, ip: 900 }, false));
+      const W850 = { t: state.sandbox.t, rank: 1, ip: 850 };
+      setCh.forEach((x) => x.a.filter(Boolean).forEach((id, j) => src.push({ id: `setaff:${x.i}:${j}`, name: x.piece.name, lines: Engine.renderAffix(id, W850).map((l) => l.plain) })));
+      for (const { set: st, types } of bySet.values())
+        st.tiers.filter((tr) => types.size >= setNeed(tr.n)).forEach((tr) => src.push({ id: `setbonus:${st.id}:${tr.n}`, name: `${st.name} (${setNeed(tr.n)})`, lines: Engine.renderAffix(tr.a, W850).map((l) => l.plain) }));
+      for (const d of pdSlots) {
+        const si = socketInfo(d.spec, L);
+        if (!si.n) continue;
+        socketsOf(d.spec, L).forEach((v, i) => { const ln = v && v.startsWith("g:") && socketLine(v, si.target); if (ln && ln.text) src.push({ id: `gem:${d.spec}:${i}`, name: `${ln.name} (${d.label})`, lines: [ln.text] }); });
+      }
+      // Classify every number.
+      const off = new Set(state.sandbox.dmgOff || []);
+      const ent = { add: [], mult: [], cc: [], cd: [], cm: [], ccm: [] };
+      const num = (x) => parseFloat(x.replace(/,/g, "")) / 100;
+      for (const sc of src) sc.lines.forEach((line, li) => {
+        let mi = 0;
+        const push = (bucket, v, m, idx) => {
+          const id = `${sc.id}#${li}#${mi++}`;
+          const at = Math.max(0, idx - 50), ctx = line.slice(at, idx + m.length + 70).trim();
+          ent[bucket].push({ id, v, src: sc.name, ctx: (at ? "…" : "") + ctx + (idx + m.length + 70 < line.length ? "…" : ""), on: !off.has(id) });
+        };
+        // What an x bonus multiplies: the nearest "Critical Strike Chance / Damage" mention in its sentence
+        // (before the number first, e.g. "Critical Strike Damage is increased by x75%", else after it).
+        const CRIT = /Critical Strikes?'?s? (Chance|Damage)/gi;
+        for (const m of line.matchAll(/x(\d[\d,]*(?:\.\d+)?)%/g)) {
+          const head = line.slice(0, m.index), cut = Math.max(head.lastIndexOf(". "), head.lastIndexOf("; "), head.lastIndexOf("•"));
+          const before = [...head.slice(cut + 1).matchAll(CRIT)].pop();
+          const tail = line.slice(m.index + m[0].length), end = tail.search(/\. |; |•|$/);
+          const after = before ? null : tail.slice(0, end).match(/^\s*(?:increased\s+|more\s+|bonus\s+)?(?:\w+\s+){0,3}?Critical Strikes?'?s? (Chance|Damage)/i);
+          const what = (before || after || [])[1];
+          push(!what ? "mult" : /chance/i.test(what) ? "ccm" : "cm", num(m[1]), m[0], m.index);
+        }
+        for (const m of line.matchAll(/\+(\d[\d,]*(?:\.\d+)?)%\s+([A-Za-z' ]{0,60}?)(Critical Strike Chance|Critical Strike Damage|Damage)\b/g)) {
+          if (/Reduction|Taken|Resist/i.test(line.slice(m.index, m.index + m[0].length + 12))) continue;
+          push(m[3] === "Critical Strike Chance" ? "cc" : m[3] === "Critical Strike Damage" ? "cd" : "add", num(m[1]), m[0], m.index);
+        }
+      });
+      const sum = (a) => a.filter((e) => e.on).reduce((p, e) => p + e.v, 0);
+      const prod = (a) => a.filter((e) => e.on).reduce((p, e) => p * (1 + e.v), 1);
+      const A = sum(ent.add), M = prod(ent.mult), base = (1 + A) * M;
+      const cc = Math.min(1, (0.05 + sum(ent.cc)) * prod(ent.ccm)), cd = 0.5 + sum(ent.cd), cm = prod(ent.cm);
+      const onCrit = base * (1 + cd) * cm, avg = base * (1 + cc * ((1 + cd) * cm - 1));
+      const pct = (x) => `${(Math.round(x * 1000) / 10).toLocaleString("en-US")}%`;
+      const times = (x) => `×${x >= 100 ? Math.round(x).toLocaleString("en-US") : x.toFixed(2)}`;
+      const row = (e, kind) => `<li class="${e.on ? "" : "is-off"}"><label><input type="checkbox" data-dmg="${esc(e.id)}"${e.on ? " checked" : ""}>
+          <span class="dm__v ${kind === "mult" || kind === "cm" ? "gt-mult" : ""}">${kind === "mult" || kind === "cm" ? "x" : "+"}${pct(e.v)}</span>
+          <span class="dm__src">${esc(e.src)}</span><span class="dm__ctx">${esc(e.ctx)}</span></label></li>`;
+      const block = (title, arr, kind, total) => arr.length ? `<div class="dm__blk"><p class="sb-build__sub mono">${title} <span class="dm__tot">${total}</span></p><ul class="dm__list">${arr.map((e) => row(e, kind)).join("")}</ul></div>` : "";
+      if (!src.length) return "";
+      return `<section class="sb-build dm">
+        <div class="sb-build__head"><h3 class="sb-loadout__title mono">DAMAGE // ADDITIVE × MULTIPLIERS</h3>
+          ${off.size ? `<button type="button" class="btn btn--ghost mono" data-dmgall>ALL ON</button>` : ""}</div>
+        <div class="dm__sum">
+          <div><span class="mono">ADDITIVE BUCKET</span><b>+${pct(A)}</b></div>
+          <div><span class="mono">MULTIPLIERS (${ent.mult.filter((e) => e.on).length})</span><b class="gt-mult">x${pct(M - 1)}</b></div>
+          <div><span class="mono">DAMAGE</span><b>${times(base)}</b><i>+${pct(base - 1)}</i></div>
+          <div><span class="mono">ON CRIT</span><b>${times(onCrit)}</b><i>${pct(cc)} chance · +${pct(cd)} crit dmg${ent.cm.some((e) => e.on) ? ` · x${pct(cm - 1)}` : ""}</i></div>
+          <div class="dm__avg"><span class="mono">AVERAGE WITH CRITS</span><b>${times(avg)}</b><i>+${pct(avg - 1)}</i></div>
+        </div>
+        ${block("ADDITIVE (+%) — these add together", ent.add, "add", "+" + pct(A))}
+        ${block("MULTIPLIERS (x%) — each multiplies the total", ent.mult, "mult", "x" + pct(M - 1))}
+        ${block("CRITICAL STRIKE CHANCE", ent.cc, "add", pct(cc) + " incl. 5% base")}
+        ${block("CRITICAL STRIKE CHANCE MULTIPLIERS", ent.ccm, "cm", "x" + pct(prod(ent.ccm) - 1))}
+        ${block("CRITICAL STRIKE DAMAGE", ent.cd, "add", "+" + pct(cd) + " incl. 50% base")}
+        ${block("CRITICAL STRIKE DAMAGE MULTIPLIERS", ent.cm, "cm", "x" + pct(cm - 1))}
+        <p class="hint">Diablo IV adds every +% damage bonus into one bucket, then multiplies it by every x% bonus (affixes, aspects, unique powers, gems, set bonuses), so x bonuses grow the total fast. That's why the game's own all-damage figure, which also folds in weapon damage, main stat and crits, can reach 100,000%. These numbers come from your build's lines at the current roll quality. Many only apply in some situations (vs Vulnerable, while Healthy, after a skill): untick the ones that don't apply to your rotation. Base crit: 5% chance, +50% damage (assumed). Main stat, weapon damage and skill ranks aren't counted.</p>
+      </section>`;
+    }
+
     const aspectKeys = state.pins.filter((k) => (state.byId.get(k) || {}).kind === "aspect");
     const aspects = `<section class="sb-build">
       <div class="sb-build__head"><h3 class="sb-loadout__title mono">ASPECTS TO COMPARE // ${aspectKeys.length}</h3>
@@ -1985,7 +2074,7 @@
       return `<article class="sb-entry sb-entry--legendary">${tooltipInner(rv, rendered)}
         <p class="hint mono" style="padding:0 16px 10px">ON A LEGENDARY ${esc(slotNameOf(sp).toUpperCase())}${bonus === "amulet" ? " // AMULET ×1.5" : bonus === "2h" ? " // 2H WEAPON ×2" : ""} // RANK ${r.maxRank ? Math.min(state.sandbox.rank, r.maxRank) + " / " + r.maxRank : state.sandbox.rank}</p></article>`;
     }).join("");
-    els.sbList.innerHTML = limitNote + build + talisman + aspects + (state.pins.length || legDetails ? details : "") + legDetails + state.pins.map((key) => {
+    els.sbList.innerHTML = limitNote + build + talisman + damage + aspects + (state.pins.length || legDetails ? details : "") + legDetails + state.pins.map((key) => {
       const r0 = state.byId.get(key);
       if (!r0) return "";
       const asCharm = isCharm(key) && charmOf(r0);
@@ -2355,6 +2444,7 @@
         saveSandbox(); renderSandbox();
         return;
       }
+      if (e.target.closest("[data-dmgall]")) { state.sandbox.dmgOff = []; saveSandbox(); renderSandbox(); return; }
       if (e.target.closest("[data-torchremove]")) { state.sandbox.torch = false; saveSandbox(); renderSandbox(); return; }
       const setRm = e.target.closest("[data-setremove]");
       if (setRm) { state.sandbox.sets.splice(+setRm.dataset.setremove, 1); saveSandbox(); renderSandbox(); return; }
@@ -2434,6 +2524,13 @@
       if (el.matches("[data-setaffix]")) {
         const x = state.sandbox.sets[+el.dataset.setaffix];
         if (x) x.a[+el.dataset.slot] = el.value;
+        saveSandbox(); renderSandbox();
+        return;
+      }
+      if (el.matches("[data-dmg]")) {
+        const off = new Set(state.sandbox.dmgOff || []);
+        if (el.checked) off.delete(el.dataset.dmg); else off.add(el.dataset.dmg);
+        state.sandbox.dmgOff = [...off];
         saveSandbox(); renderSandbox();
         return;
       }
