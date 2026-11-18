@@ -1121,3 +1121,7 @@ html[data-sb-ip="900"] .pd__slot--unique { --spark: var(--spark-anc); --spark-hi
 .pg-key--legendary { background: #ff8a3c; }
 .pg-key--socket { background: #b58cff; }
 @media (max-width: 640px) { .pg-prevs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.sk-hit { fill: transparent; pointer-events: all; }
+.sk-tt-group { margin: 0; font-size: 0.8rem; }
+.sk-tt-group .mono { color: #ff8a3c; font-size: 0.68rem; letter-spacing: 0.12em; }
+.sk-tt-alt li { font-size: 0.82rem; color: var(--muted); }

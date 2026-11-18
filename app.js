@@ -2863,18 +2863,27 @@
     const ctx = { power: n.p, world: { t: 1, rank: 1, skillRank: rank }, depth: 0 };
     const isMod = n.k === "mod", m = isMod ? st.m[n.m] || {} : null;
     const body = Engine.render(isMod ? m.d : st.d, ctx);
+    // Each skill has 3 branches; each ends in a pick-one group: 2 Upgrades (pick 1 of 2) or 3 Variants (pick 1 of 3).
+    let group = "";
+    if (isMod && n.ex != null) {
+      const sib = tree.nodes.map((x, j) => ({ x, j })).filter(({ x, j }) => x.ex === n.ex && j !== +i);
+      const kind = sib.length + 1 >= 3 ? "Variant" : "Upgrade";
+      const taken = sib.find(({ j }) => (s.pts[j] || 0) > 0);
+      group = `<p class="tt__power sk-tt-group"><span class="mono">${kind.toUpperCase()} · PICK 1 OF ${sib.length + 1}</span>${taken ? ` · <b>${esc(skNodeName(taken.x))}</b> is taken` : ""}</p>
+        <ul class="tt__lines sk-tt-alt">${sib.map(({ x }) => { const mm = (SK.skills[x.p] || {}).m || {}, e = mm[x.m] || {}; return `<li><b>${esc(e.n || "")}</b>${x.lv ? ` <span class="hint">(L${x.lv})</span>` : ""}: ${Engine.render(e.d || "", { power: x.p, world: ctx.world, depth: 0 }).html}</li>`; }).join("")}</ul>`;
+    }
     const why = pts < n.max ? skCanAdd(tree, s, +i, skActive(tree, s)) : "";
     const foot = [
       ["RANK", `${pts} / ${n.max}${!isMod && gear ? ` + ${gear} from gear` : ""}`],
       isMod ? ["UPGRADES", st.n] : null,
-      n.ex != null ? ["CHOICE", "Pick one upgrade in this group"] : null,
+      n.ex != null ? ["CHOICE", tree.nodes.filter((x) => x.ex === n.ex).length >= 3 ? "Variant: pick 1 of 3 (changes how the skill works)" : "Upgrade: pick 1 of 2"] : null,
       n.lv ? ["LEVEL", `Needs level ${n.lv}`] : null,
       why ? ["LOCKED", why] : null,
       ["CONTROLS", "Click: add a point · right-click or long-press: remove"],
     ].filter(Boolean);
     const ic = (isMod && m.ic) || st.ic;
-    return `<div class="tt__head">${ic ? `<span class="ico-well ico-well--tt ico-well--skill">${itemIcon(ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(isMod ? m.n : st.n)}</p><p class="tt__type">${esc(cls)} ${isMod ? "Skill Upgrade" : "Skill"}${!isMod ? ` · Rank ${rank}` : ""}</p></div></div>
-      <div class="tt__body"><p class="tt__power">${body.html}</p></div>
+    return `<div class="tt__head">${ic ? `<span class="ico-well ico-well--tt ico-well--skill">${itemIcon(ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(isMod ? m.n : st.n)}</p><p class="tt__type">${esc(cls)} ${isMod ? (n.ex != null && tree.nodes.filter((x) => x.ex === n.ex).length >= 3 ? "Skill Variant" : "Skill Upgrade") + " · " + esc(st.n) : "Skill"}${!isMod ? ` · Rank ${rank}` : ""}</p></div></div>
+      <div class="tt__body"><p class="tt__power">${body.html}</p>${group ? `<div class="tt__sep"></div><p class="hint mono" style="margin:0 0 4px">OR INSTEAD:</p>${group}` : ""}</div>
       <dl class="tt__foot">${foot.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
   }
 
@@ -2979,7 +2988,7 @@
           ${img(ic, x, y, r * 1.5, ` clip-path="url(#skc${i})" preserveAspectRatio="xMidYMid slice"`)}${img(frame, x, y, sz)}`;
       } else {
         const frame = [UI.modOn, UI.modOpen, UI.modOff][state];
-        art = `${img(frame, x, y, sz)}${img(ic, x, y, sz * 0.5, ' class="sk-modic"')}`;
+        art = `<rect class="sk-hit" x="${x - sz / 2}" y="${y - sz / 2}" width="${sz}" height="${sz}" rx="${sz * 0.12}"/>${img(frame, x, y, sz)}${img(ic, x, y, sz * 0.5, ' class="sk-modic"')}`;
       }
       // Label under the skill, or above it when another skill sits right below (data positions can be close).
       const crowded = n.k === "skill" && N.some((m, j) => j !== i && m.k === "skill" && Math.abs(P[j][0] - x) < 900 && P[j][1] - y > 0 && P[j][1] - y < 1300);
