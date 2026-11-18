@@ -1350,7 +1350,7 @@
       <label class="sb-seal"><span class="mono">ADD SET CHARM</span><select class="input mono" data-addset aria-label="Add a set charm"><option value="">— pick a set and type —</option>${addOpts}</select></label>
       ${setRows ? `<div class="sb-setcharms">${setRows}</div>` : ""}
       ${bonusHTML ? `<div class="sb-sets"><h4 class="sb-loadout__title mono">SET BONUSES</h4>${bonusHTML}</div>` : ""}
-      <p class="hint">The seal unlocks charm slots: Magic 3, Rare 4, Legendary 5 (6 with the extra charm slot affix), Annihilus and Mythic seals 6. Unique charms keep only their unique power. Set charms come in 5 types (Phoba, Fer, Mlor, Linta, Berú); a set's bonuses unlock at 2, 3 and 5 different types, and each set charm rolls 2 affixes. Affix values use your roll quality. Seal affixes aren't modelled yet.</p></section>`;
+      <p class="hint">The seal unlocks charm slots: Magic 3, Rare 4, Legendary 5 (6 with the extra charm slot affix), Annihilus and Mythic seals 6. Unique charms keep only their unique power. Set charms come in 5 types (Phoba, Fer, Mlor, Linta, Berú); a set's bonuses unlock at 2, 3 and 5 different types, and sets can be mixed (e.g. a 3-set + a 2-set, or three 2-sets). Each set charm rolls 2 affixes. Affix values use your roll quality. Seal affixes aren't modelled yet.</p></section>`;
 
     els.sbList.innerHTML = limitNote + loadout + gear + talisman + state.pins.map((key) => {
       const r0 = state.byId.get(key);
