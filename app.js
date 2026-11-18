@@ -1007,6 +1007,9 @@
       try { Object.assign(state.sandbox, JSON.parse(localStorage.getItem(SB_KEY)) || {}); } catch { /* ignore */ }
       if (!Array.isArray(state.sandbox.mythic)) state.sandbox.mythic = [];
       if (!state.sandbox.slot || typeof state.sandbox.slot !== "object") state.sandbox.slot = {};
+      const ch = /[?&]charms=([^&]+)/.exec(location.hash), seal = /[?&]seal=([^&]+)/.exec(location.hash);
+      state.sandbox.charms = ch ? decodeURIComponent(ch[1]).split(",").filter((k) => state.pins.includes(k)) : [];
+      state.sandbox.seal = seal && SEALS[seal[1]] ? seal[1] : "";
       state.sandbox.cls = cls && Engine.codex.meta.classes.includes(decodeURIComponent(cls[1])) ? decodeURIComponent(cls[1]) : "";
       savePins();
       return;
@@ -1015,6 +1018,12 @@
     try { Object.assign(state.sandbox, JSON.parse(localStorage.getItem(SB_KEY)) || {}); } catch { /* ignore */ }
     if (!Array.isArray(state.sandbox.mythic)) state.sandbox.mythic = [];
     if (!state.sandbox.slot || typeof state.sandbox.slot !== "object") state.sandbox.slot = {};
+    if (!Array.isArray(state.sandbox.charms)) state.sandbox.charms = [];
+    state.sandbox.charms = state.sandbox.charms.filter((k) => state.pins.includes(k));
+  }
+
+  function saveSandbox() {
+    try { localStorage.setItem(SB_KEY, JSON.stringify(state.sandbox)); } catch { /* ignore */ }
   }
 
   function savePins() {
@@ -1089,36 +1098,97 @@
     toastTimer = setTimeout(() => (el.hidden = true), 5000);
   }
 
-  /** Equip `key`: unequip the weapons it can't be used with. Returns false if the class can't use it at all. */
-  function equipWeapon(key) {
+  /* ---------- Gear slots and the Talisman ----------
+   * Gear: 1 each of Helm, Chest, Gloves, Pants, Boots, Amulet, and 2 Rings (weapons: WEAPON_RULES).
+   * Talisman: a seal in the centre unlocks charm slots (max 6). A unique with a charm version can sit in
+   * a charm slot instead of its gear slot; as a charm it carries only its unique power.
+   */
+  const GEAR_LIMIT = { Helm: 1, Chest: 1, Gloves: 1, Pants: 1, Boots: 1, Amulet: 1, Ring: 2 };
+  const SEALS = {
+    magic: ["Magic seal", 3],
+    rare: ["Rare seal", 4],
+    legendary: ["Legendary seal", 5],
+    legendary6: ["Legendary seal + extra charm slot", 6],
+    annihilus: ["Annihilus (Season 15)", 6],
+    mythic1: ["Seal of the Diamond Mind (Mythic)", 6],
+    mythic2: ["Seal of the Golden Epiphany (Mythic)", 6],
+    mythic3: ["Seal of the Severed Finger (Mythic)", 6],
+  };
+  const sealOf = () => SEALS[state.sandbox.seal] || SEALS.legendary;
+  const charmSlots = () => sealOf()[1];
+  let charmIdx = null;
+  /** The charm version of a unique (same name, Talisman_Charm_*): unique power only. */
+  function charmOf(r) {
+    if (!charmIdx) {
+      charmIdx = new Map();
+      for (const it of Engine.codex.items) if (it.charm && it.power) charmIdx.set(it.name, it);
+    }
+    return r && r.kind === "item" ? charmIdx.get(r.name) || null : null;
+  }
+  const isCharm = (k) => state.sandbox.charms.includes(k);
+  const isGear = (r) => r && r.kind === "item" && GEAR_LIMIT[r.slot] != null;
+
+  function unpinQuiet(keys) {
+    state.pins = state.pins.filter((k) => !keys.includes(k));
+    state.sandbox.charms = state.sandbox.charms.filter((k) => !keys.includes(k));
+    document.querySelectorAll(".pin[data-pin]").forEach((b) => {
+      if (keys.includes(b.dataset.pin)) { b.setAttribute("aria-pressed", "false"); b.textContent = "+"; b.title = "Add to Theorycraft Sandbox"; }
+    });
+  }
+
+  /** Items pushed out of their gear slot: into the Talisman when they have a charm and there's room, else unequipped. */
+  function displace(keys, why) {
+    const toCharm = [], gone = [];
+    for (const k of keys) {
+      if (charmOf(state.byId.get(k)) && state.sandbox.charms.length < charmSlots()) { state.sandbox.charms.push(k); toCharm.push(k); }
+      else gone.push(k);
+    }
+    unpinQuiet(gone);
+    const names = (ks) => ks.map((k) => state.byId.get(k).name).join(", ");
+    const msg = [toCharm.length ? `Moved ${names(toCharm)} to the Talisman as a charm` : "", gone.length ? `Unequipped ${names(gone)}` : ""].filter(Boolean).join(". ");
+    if (msg) toast(`${msg}: ${why}.`);
+  }
+
+  /** Put `key` in its gear or weapon slot. preferCharm: if that slot is full, try the Talisman first. */
+  function equip(key, preferCharm) {
     const r = state.byId.get(key);
-    const current = sandboxClass();
-    if (current && r.classes.length && !r.classes.includes(current)) {
-      toast(`${r.name} can't be equipped by a ${current} (${r.classLabel} only).`);
-      return false;
+    if (isWeapon(r)) {
+      const current = sandboxClass();
+      if (current && r.classes.length && !r.classes.includes(current)) {
+        toast(`${r.name} can't be equipped by a ${current} (${r.classLabel} only).`);
+        return false;
+      }
+      const cls = current || sandboxClass([...state.pins, key]);
+      const rule = weaponRule(cls);
+      if (!rule.fits(r.raw.typeId)) { toast(`${r.name} can't be equipped: ${rule.text}.`); return false; }
+      const others = state.pins.filter((k) => k !== key && !isCharm(k) && isWeapon(state.byId.get(k))).reverse();
+      const { unfit } = fitWeapons([key, ...others], cls);
+      if (unfit.length && preferCharm && charmOf(r) && state.sandbox.charms.length < charmSlots()) {
+        state.sandbox.charms.push(key);
+        toast(`${r.name} went to the Talisman as a charm: ${rule.text}.`);
+        return true;
+      }
+      if (unfit.length) displace(unfit, rule.text);
+      return true;
     }
-    const cls = current || sandboxClass([...state.pins, key]);
-    const rule = weaponRule(cls);
-    if (!rule.fits(r.raw.typeId)) {
-      toast(`${r.name} can't be equipped: ${rule.text}.`);
-      return false;
-    }
-    const others = state.pins.filter((k) => isWeapon(state.byId.get(k))).reverse(); // newest first keep priority
-    const { unfit } = fitWeapons([key, ...others], cls);
-    if (unfit.length) {
-      state.pins = state.pins.filter((k) => !unfit.includes(k));
-      toast(`Unequipped ${unfit.map((k) => state.byId.get(k).name).join(", ")}: ${rule.text}.`);
-      document.querySelectorAll(".pin[data-pin]").forEach((b) => {
-        if (unfit.includes(b.dataset.pin)) { b.setAttribute("aria-pressed", "false"); b.textContent = "+"; b.title = "Add to Theorycraft Sandbox"; }
-      });
+    if (isGear(r)) {
+      const limit = GEAR_LIMIT[r.slot];
+      const inSlot = state.pins.filter((k) => k !== key && !isCharm(k) && (state.byId.get(k) || {}).slot === r.slot);
+      if (inSlot.length < limit) return true;
+      if (preferCharm && charmOf(r) && state.sandbox.charms.length < charmSlots()) {
+        state.sandbox.charms.push(key);
+        toast(`${r.name} went to the Talisman as a charm (${r.slot} slot taken).`);
+        return true;
+      }
+      displace(inSlot.slice(0, inSlot.length - limit + 1), `only ${limit} ${r.slot}${limit > 1 ? "s" : ""} can be equipped`);
     }
     return true;
   }
 
   function togglePin(key) {
     const i = state.pins.indexOf(key);
-    if (i >= 0) state.pins.splice(i, 1);
-    else if (!isWeapon(state.byId.get(key)) || equipWeapon(key)) state.pins.push(key);
+    if (i >= 0) { state.pins.splice(i, 1); state.sandbox.charms = state.sandbox.charms.filter((k) => k !== key); saveSandbox(); }
+    else if (equip(key, true)) { state.pins.push(key); saveSandbox(); }
     savePins();
     document.querySelectorAll(`.pin[data-pin="${CSS.escape(key)}"]`).forEach((b) => {
       const on = state.pins.includes(key);
@@ -1134,6 +1204,7 @@
       const slotBonus = aspectSlotBonus(state.sandbox.slot[r.key]);
       return { power: Engine.renderAffix(r.id, { ...world, slotBonus })[0] || null, imp: [], stats: [], mythicLines: [], crafted: false };
     }
+    if (isCharm(r.key) && charmOf(r)) return renderItem(charmOf(r), world, false); // charm: unique power only
     return renderItem(r.raw, world, state.sandbox.mythic.includes(r.key) && canCraftMythic(r));
   }
 
@@ -1162,14 +1233,14 @@
     }
 
     // Only 1 crafted Mythic can be equipped; dropped Iconic Mythics and bought random Mythics don't count.
-    const craftedN = state.pins.filter((k) => state.sandbox.mythic.includes(k) && canCraftMythic(state.byId.get(k) || {})).length;
+    const craftedN = state.pins.filter((k) => !isCharm(k) && state.sandbox.mythic.includes(k) && canCraftMythic(state.byId.get(k) || {})).length;
     const limitNote = craftedN > 1
       ? `<p class="sb-note mono">${craftedN} CRAFTED MYTHICS // only 1 can be equipped at a time. Iconic Mythics (boss drops) and random Mythics from the Blacksmith or Jeweler don't count toward the limit.</p>`
       : "";
     // Weapon loadout: which pinned weapon sits in which slot, and any that can't be equipped together.
     const cls = sandboxClass();
     const rule = weaponRule(cls);
-    const weapons = state.pins.filter((k) => isWeapon(state.byId.get(k)));
+    const weapons = state.pins.filter((k) => !isCharm(k) && isWeapon(state.byId.get(k)));
     let loadout = "";
     if (weapons.length) {
       const { used, unfit } = fitWeapons(weapons, cls);
@@ -1183,17 +1254,47 @@
         <p class="hint">${esc(rule.text.replace(/^[a-z]/, (c) => c.toUpperCase()))}.${state.sandbox.cls ? "" : cls ? " Class taken from your pinned items." : " Pick a class to use Barbarian or Rogue weapon rules."}</p>
         ${unfit.length ? `<p class="sb-note mono">CAN'T BE EQUIPPED TOGETHER // ${esc(unfit.map((k) => state.byId.get(k).name).join(", "))}. Remove one, or change the class.</p>` : ""}</section>`;
     }
-    els.sbList.innerHTML = limitNote + loadout + state.pins.map((key) => {
-      const r = state.byId.get(key);
-      if (!r) return "";
-      const rendered = renderedAt(r, { t, rank, ip });
-      const mythicBtn = canCraftMythic(r)
+    // Gear slots (1 each, 2 rings) and the Talisman (seal + charm slots).
+    const nameOf = (k) => esc(state.byId.get(k).name);
+    const gearPins = state.pins.filter((k) => !isCharm(k) && isGear(state.byId.get(k)));
+    let gear = "";
+    if (gearPins.length) {
+      const over = [];
+      const cells = Object.entries(GEAR_LIMIT).flatMap(([slot, n]) => {
+        const ks = gearPins.filter((k) => state.byId.get(k).slot === slot);
+        over.push(...ks.slice(n));
+        return Array.from({ length: n }, (_, i) => `<div class="sb-slot${ks[i] ? "" : " sb-slot--empty"}"><dt>${slot}${n > 1 ? " " + (i + 1) : ""}</dt><dd>${ks[i] ? nameOf(ks[i]) : "empty"}</dd></div>`);
+      }).join("");
+      gear = `<section class="sb-loadout"><h3 class="sb-loadout__title mono">GEAR</h3><dl class="sb-loadout__slots">${cells}</dl>
+        ${over.length ? `<p class="sb-note mono">SLOT FULL // ${over.map(nameOf).join(", ")}: remove one, or press CHARM to move it to the Talisman.</p>` : ""}</section>`;
+    }
+    const [sealName, nSlots] = sealOf();
+    const charms = state.sandbox.charms;
+    const sealOpts = Object.entries(SEALS).map(([id, [label, n]]) => `<option value="${id}"${(state.sandbox.seal || "legendary") === id ? " selected" : ""}>${esc(label)} · ${n} slots</option>`).join("");
+    const talisman = `<section class="sb-loadout"><h3 class="sb-loadout__title mono">TALISMAN // ${charms.length} / ${nSlots} CHARMS</h3>
+      <label class="sb-seal"><span class="mono">SEAL</span><select class="input mono" data-seal aria-label="Talisman seal">${sealOpts}</select></label>
+      <dl class="sb-loadout__slots">${Array.from({ length: 6 }, (_, i) => i < nSlots
+        ? `<div class="sb-slot${charms[i] ? " sb-slot--charm" : " sb-slot--empty"}"><dt>Charm ${i + 1}</dt><dd>${charms[i] ? nameOf(charms[i]) : "empty"}</dd></div>`
+        : `<div class="sb-slot sb-slot--locked"><dt>Charm ${i + 1}</dt><dd>locked by seal</dd></div>`).join("")}</dl>
+      ${charms.length > nSlots ? `<p class="sb-note mono">TALISMAN FULL // ${charms.slice(nSlots).map(nameOf).join(", ")} don't fit the ${esc(sealName)}.</p>` : ""}
+      <p class="hint">The seal unlocks charm slots: Magic 3, Rare 4, Legendary 5 (6 with the extra charm slot affix), Annihilus and Mythic seals 6. A unique with a charm version can go here instead of its gear slot; as a charm it keeps only its unique power. Seal affixes and charm set bonuses aren't modelled yet.</p></section>`;
+
+    els.sbList.innerHTML = limitNote + loadout + gear + talisman + state.pins.map((key) => {
+      const r0 = state.byId.get(key);
+      if (!r0) return "";
+      const asCharm = isCharm(key) && charmOf(r0);
+      const r = asCharm ? { ...r0, type: "Charm", slot: "Talisman (charm: unique power only)" } : r0;
+      const rendered = renderedAt(r0, { t, rank, ip });
+      const charmBtn = charmOf(r0)
+        ? `<button type="button" class="btn btn--ghost mono" data-charm="${esc(key)}" aria-pressed="${Boolean(asCharm)}" title="${asCharm ? "Move back to its gear slot" : "Put it in the Talisman as a charm (unique power only)"}">CHARM</button>`
+        : "";
+      const mythicBtn = !asCharm && canCraftMythic(r)
         ? `<button type="button" class="btn btn--mythic mono" data-mythic="${esc(key)}" aria-pressed="${rendered.crafted}" title="View the crafted Mythic version">MYTHIC</button>`
         : "";
       const slotBtns = r.kind === "aspect"
         ? Object.entries(ASPECT_SLOTS).map(([s, [label]]) => `<button type="button" class="btn btn--ghost mono" data-aslot="${s}" data-akey="${esc(key)}" aria-pressed="${state.sandbox.slot[key] === s}" title="Imprinted on a non-unique ${s === "amulet" ? "amulet (150%)" : "two-handed weapon (200%)"}">${label}</button>`).join("")
         : "";
-      rendered.tools = `<div class="sb-entry__tools">${slotBtns}${mythicBtn}<button type="button" class="btn btn--ghost mono" data-unpin="${esc(key)}">REMOVE</button></div>`;
+      rendered.tools = `<div class="sb-entry__tools">${slotBtns}${charmBtn}${mythicBtn}<button type="button" class="btn btn--ghost mono" data-unpin="${esc(key)}">REMOVE</button></div>`;
       const rankNote = r.maxRank ? `<p class="hint mono" style="padding:0 16px 8px">RANK ${Math.min(rank, r.maxRank)} / ${r.maxRank}</p>` : "";
       return `
         <article class="sb-entry sb-entry--${rarityClass(shownRarity(r, rendered))}">
@@ -1530,6 +1631,17 @@
         renderSandbox();
         return;
       }
+      const charmB = e.target.closest("[data-charm]");
+      if (charmB) {
+        const k = charmB.dataset.charm, r = state.byId.get(k);
+        if (isCharm(k)) {
+          state.sandbox.charms = state.sandbox.charms.filter((x) => x !== k);
+          if (!equip(k, false)) state.sandbox.charms.push(k); // class can't use it as gear: keep it a charm
+        } else if (state.sandbox.charms.length < charmSlots()) state.sandbox.charms.push(k);
+        else toast(`The Talisman is full (${charmSlots()} charm slots with a ${sealOf()[0]}).`);
+        savePins(); saveSandbox(); renderSandbox();
+        return;
+      }
       const myth = e.target.closest("[data-mythic]");
       if (myth) {
         const k = myth.dataset.mythic, list = state.sandbox.mythic, i = list.indexOf(k);
@@ -1582,14 +1694,20 @@
       if (r && !state.pins.includes(r.key)) togglePin(r.key);
       els.sbAdd.value = "";
     });
+    els.sbList.addEventListener("change", (e) => {
+      if (!e.target.matches("[data-seal]")) return;
+      state.sandbox.seal = e.target.value;
+      saveSandbox();
+      renderSandbox();
+    });
     els.sbClass.addEventListener("change", () => {
       state.sandbox.cls = els.sbClass.value;
       try { localStorage.setItem(SB_KEY, JSON.stringify(state.sandbox)); } catch { /* ignore */ }
       renderSandbox();
     });
-    els.sbClear.addEventListener("click", () => { state.pins = []; savePins(); renderSandbox(); state.mode = null; });
+    els.sbClear.addEventListener("click", () => { state.pins = []; state.sandbox.charms = []; saveSandbox(); savePins(); renderSandbox(); state.mode = null; });
     els.sbShare.addEventListener("click", async () => {
-      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}`;
+      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}`;
       try { await navigator.clipboard.writeText(url); els.sbShare.textContent = "COPIED"; }
       catch { window.prompt("Copy this link:", url); }
       setTimeout(() => (els.sbShare.textContent = "COPY LINK"), 1400);

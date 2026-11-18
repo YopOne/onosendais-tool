@@ -302,6 +302,7 @@ h1, h2, h3 { margin: 0; }
 .btn--ghost:hover { color: var(--text); border-color: var(--line-hot); background: var(--accent-soft); box-shadow: none; }
 .btn--mythic { border-color: color-mix(in srgb, var(--r-mythic) 50%, transparent); background: none; color: var(--c-mythic); }
 .btn--mythic:hover { background: color-mix(in srgb, var(--r-mythic) 15%, transparent); color: var(--c-mythic); box-shadow: none; }
+.btn--ghost[aria-pressed="true"] { color: var(--text); border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 10px var(--accent-glow); }
 .btn--mythic[aria-pressed="true"] { background: var(--r-mythic); color: #0b0712; border-color: var(--r-mythic); }
 
 .empty { color: var(--faint); text-align: center; padding: 48px 0; letter-spacing: 0.08em; font-size: 0.8rem; }
@@ -553,6 +554,12 @@ h1, h2, h3 { margin: 0; }
 .sb-slot dd { margin: 2px 0 0; font-size: 0.86rem; color: var(--text); overflow-wrap: anywhere; }
 .sb-slot--empty dd { color: var(--faint); font-style: italic; }
 .sb-loadout .hint { margin: 0; }
+.sb-slot--charm { border-color: color-mix(in srgb, var(--r-unique) 45%, transparent); background: color-mix(in srgb, var(--r-unique) 7%, transparent); }
+.sb-slot--locked { opacity: 0.45; border-style: dashed; }
+.sb-slot--locked dd { color: var(--faint); font-style: italic; }
+.sb-seal { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sb-seal span { font-size: 0.68rem; letter-spacing: 0.16em; color: var(--faint); }
+.sb-seal select { appearance: auto; flex: 1 1 220px; max-width: 420px; min-width: 0; }
 .toast { position: fixed; z-index: 200; left: 50%; bottom: 20px; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 32px); padding: 10px 16px; border: 1px solid var(--accent); border-radius: var(--radius); background: #0c0c0f; color: var(--text); font-size: 0.78rem; letter-spacing: 0.03em; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7), 0 0 20px var(--accent-glow); }
 .toast[hidden] { display: none; }
 .sb-note { margin: 0; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--r-mythic) 45%, transparent); border-radius: var(--radius); background: color-mix(in srgb, var(--r-mythic) 8%, transparent); color: var(--text-soft); font-size: 0.76rem; letter-spacing: 0.04em; line-height: 1.5; }
