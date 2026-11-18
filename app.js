@@ -2876,6 +2876,42 @@
       <dl class="tt__foot">${foot.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
   }
 
+  /** Spread-out layout (data positions are tight): clusters a bit further apart, each skill further from its root,
+   * each upgrade branch further from its skill. Returns [[x, y], ...] per node; cached on the tree. */
+  function skLayout(tree) {
+    if (tree._lay) return tree._lay;
+    const N = tree.nodes, owner = new Array(N.length).fill(-1), rootOf = new Array(N.length).fill(-1);
+    N.forEach((n, r) => {
+      if (n.k !== "root") return;
+      rootOf[r] = r;
+      for (const sIdx of n.c) {
+        if (!N[sIdx] || N[sIdx].k !== "skill") continue;
+        rootOf[sIdx] = r; owner[sIdx] = sIdx;
+        const q = [sIdx];
+        while (q.length) {
+          const i = q.shift();
+          for (const j of N[i].c) if (N[j] && owner[j] < 0 && N[j].k !== "root" && N[j].k !== "skill") { owner[j] = sIdx; rootOf[j] = r; q.push(j); }
+        }
+      }
+    });
+    const roots = N.map((n, i) => i).filter((i) => N[i].k === "root");
+    const cx = roots.reduce((a, i) => a + N[i].x, 0) / (roots.length || 1), cy = roots.reduce((a, i) => a + N[i].y, 0) / (roots.length || 1);
+    const RP = new Map(roots.map((i) => [i, [cx + (N[i].x - cx) * 1.25, cy + (N[i].y - cy) * 1.7]]));
+    const pos = N.map((n, i) => {
+      const r = rootOf[i];
+      if (r < 0) return [cx + (n.x - cx) * 1.3, cy + (n.y - cy) * 1.45];
+      const [rx, ry] = RP.get(r);
+      if (i === r) return [rx, ry];
+      const sk = N[owner[i]] || n;
+      const sx = rx + (sk.x - N[r].x) * 1.85, sy = ry + (sk.y - N[r].y) * 1.85;
+      return owner[i] === i ? [sx, sy] : [sx + (n.x - sk.x) * 1.8, sy + (n.y - sk.y) * 1.8];
+    });
+    tree._lay = pos;
+    tree._root = rootOf;
+    return pos;
+  }
+  const skClusterLv = (tree, i) => { skLayout(tree); const r = tree._root[i]; return r >= 0 ? tree.nodes[r].lv || 0 : 0; };
+
   // Pan / zoom state of the tree (data units: the SkillKit vPosition box).
   const skView = { vb: null, cls: "" };
   function renderSkills() {
@@ -2894,37 +2930,61 @@
     }
     if (skTab === "paragon") { renderParagon(root, clsSel, cls); return; }
     const s = skState(), act = skActive(tree, s), N = tree.nodes, gear = skGearRanks();
+    const P = skLayout(tree), UI = SK.ui || {};
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const n of N) { x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y); x1 = Math.max(x1, n.x); y1 = Math.max(y1, n.y); }
-    const pad = 700, full = [x0 - pad, y0 - pad, x1 - x0 + 2 * pad, y1 - y0 + 2 * pad];
-    if (!skView.vb || skView.cls !== "tree:" + cls) { skView.vb = full.slice(); skView.cls = "tree:" + cls; }
-    const R = { skill: 145, mod: 92, hub: 52, root: 130 };
+    for (const [x, y] of P) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    const pad = 1100, full = [x0 - pad, y0 - pad, x1 - x0 + 2 * pad, y1 - y0 + 2 * pad];
+    // First view: the full width, from the top (the first clusters) at a readable zoom; FIT shows everything.
+    let fitTop = false;
+    if (!skView.vb || skView.cls !== "tree:" + cls) { skView.vb = [full[0], full[1], full[2], Math.min(full[3], full[2] * 0.62)]; skView.cls = "tree:" + cls; fitTop = true; }
+    // Game frames (data units): skill diamond, cluster root, upgrade square, hub diamond.
+    const SZ = { skill: 900, mod: 470, hub: 230, root: 900 };
+    const ultLv = Math.max(...N.filter((n) => n.k === "root").map((n) => n.lv || 0));
+    const img = (ic, cx, cy, sz, extra = "") => ic ? `<image href="data/icons/${ic}.webp" x="${cx - sz / 2}" y="${cy - sz / 2}" width="${sz}" height="${sz}"${extra}/>` : "";
+    const bg = (UI.bg || {})[cls];
+    const bgH = (y1 - y0 + 2 * pad) * 1.04, bgW = Math.max(bgH * (2765 / 5120), (x1 - x0 + 2 * pad) * 1.02), bcx = (x0 + x1) / 2, bcy = (y0 + y1) / 2;
+    const back = bg ? `<image class="sk-bgimg" href="${esc(bg)}" x="${bcx - bgW / 2}" y="${bcy - bgH / 2}" width="${bgW}" height="${bgH}" preserveAspectRatio="none"/>` : "";
     const lines = [], seen = new Set();
     N.forEach((n, i) => n.c.forEach((j) => {
       const key = i < j ? i + "-" + j : j + "-" + i;
       if (seen.has(key) || !N[j]) return;
       seen.add(key);
-      const on = act.active.has(i) && act.active.has(j);
-      lines.push(`<line class="sk-link${on ? " is-on" : ""}" x1="${n.x}" y1="${n.y}" x2="${N[j].x}" y2="${N[j].y}"/>`);
+      const bought = act.active.has(i) && act.active.has(j) && (N[i].k === "root" || N[i].k === "hub" || (s.pts[i] || 0) > 0) && (N[j].k === "root" || N[j].k === "hub" || (s.pts[j] || 0) > 0);
+      lines.push(`<line class="sk-link${bought ? " is-on" : ""}" x1="${P[i][0]}" y1="${P[i][1]}" x2="${P[j][0]}" y2="${P[j][1]}"/>`);
     }));
     const dots = N.map((n, i) => {
-      const pts = s.pts[i] || 0, r = R[n.k] || 80;
-      if (n.k === "hub" || n.k === "root") {
+      const [x, y] = P[i], pts = s.pts[i] || 0, sz = SZ[n.k] || 200;
+      if (n.k === "root") {
         const on = act.active.has(i);
-        return `<g class="sk-node sk-node--${n.k}${on ? " is-on" : ""}"><circle cx="${n.x}" cy="${n.y}" r="${r}"/>${n.k === "root" ? `<text class="sk-lv" x="${n.x}" y="${n.y + 55}" text-anchor="middle">${n.lv ? "L" + n.lv : "★"}</text>` : n.lv && !on ? `<text class="sk-lv sk-lv--hub" x="${n.x}" y="${n.y - r - 40}" text-anchor="middle">L${n.lv}</text>` : ""}</g>`;
+        return `<g class="sk-node sk-node--root${on ? " is-on" : ""}">${img(on ? UI.rootOn : UI.rootOff, x, y, sz)}<text class="sk-lv" x="${x}" y="${y + 75}" text-anchor="middle">${n.lv ? "L" + n.lv : "★"}</text></g>`;
+      }
+      if (n.k === "hub") {
+        const on = act.active.has(i);
+        const lit = on && n.c.some((j) => N[j] && (s.pts[j] || 0) > 0 && N[j].k !== "mod");
+        return `<g class="sk-node sk-node--hub">${img(lit ? UI.hubOn : on ? UI.hubOpen : UI.hubOff, x, y, sz)}${n.lv && !on ? `<text class="sk-lv sk-lv--hub" x="${x}" y="${y - sz / 2 - 60}" text-anchor="middle">L${n.lv}</text>` : ""}</g>`;
       }
       const st = SK.skills[n.p] || {}, ic = n.k === "mod" ? ((st.m || {})[n.m] || {}).ic || st.ic : st.ic;
-      const can = !skCanAdd(tree, s, i, act);
+      const can = !skCanAdd(tree, s, i, act), state = pts > 0 ? 0 : can ? 1 : 2;
       const cl = pts > 0 ? " is-taken" : can ? " is-open" : " is-locked";
       const g = n.k === "skill" ? gear[(st.n || "").toLowerCase()] || 0 : 0;
-      const label = n.k === "skill" ? `<text class="sk-name" x="${n.x}" y="${n.y + r + 150}" text-anchor="middle">${esc(st.n || "")}</text>` : "";
-      const badge = pts > 0 || g ? `<g class="sk-badge"><rect x="${n.x + r * 0.35}" y="${n.y + r * 0.35}" width="${g ? 330 : 200}" height="150" rx="40"/><text x="${n.x + r * 0.35 + (g ? 165 : 100)}" y="${n.y + r * 0.35 + 112}" text-anchor="middle">${pts}${g ? "+" + g : ""}</text></g>` : "";
-      return `<g class="sk-node sk-node--${n.k}${cl}" data-sknode="${i}" data-key="skill:${esc(cls)}:${i}" tabindex="0" role="button" aria-label="${esc(skNodeName(n))}: ${pts} of ${n.max}">
-        <circle class="sk-ring" cx="${n.x}" cy="${n.y}" r="${r + 22}"/>
-        <clipPath id="skc${i}"><circle cx="${n.x}" cy="${n.y}" r="${r}"/></clipPath>
-        <circle class="sk-bg" cx="${n.x}" cy="${n.y}" r="${r}"/>
-        ${ic ? `<image href="data/icons/${ic}.webp" x="${n.x - r}" y="${n.y - r}" width="${r * 2}" height="${r * 2}" clip-path="url(#skc${i})" preserveAspectRatio="xMidYMid slice"/>` : ""}
-        ${badge}${label}</g>`;
+      let art;
+      if (n.k === "skill") {
+        const row = (UI.skill || [])[skClusterLv(tree, i) === ultLv ? 1 : 0] || [];
+        const frame = row[[1, 0, 2][state]];
+        const r = sz * 0.36;
+        art = `<clipPath id="skc${i}"><polygon points="${x},${y - r} ${x + r},${y} ${x},${y + r} ${x - r},${y}"/></clipPath>
+          <polygon class="sk-bg" points="${x},${y - r} ${x + r},${y} ${x},${y + r} ${x - r},${y}"/>
+          ${img(ic, x, y, r * 1.5, ` clip-path="url(#skc${i})" preserveAspectRatio="xMidYMid slice"`)}${img(frame, x, y, sz)}`;
+      } else {
+        const frame = [UI.modOn, UI.modOpen, UI.modOff][state];
+        art = `${img(frame, x, y, sz)}${img(ic, x, y, sz * 0.5, ' class="sk-modic"')}`;
+      }
+      // Label under the skill, or above it when another skill sits right below (data positions can be close).
+      const crowded = n.k === "skill" && N.some((m, j) => j !== i && m.k === "skill" && Math.abs(P[j][0] - x) < 900 && P[j][1] - y > 0 && P[j][1] - y < 1300);
+      const label = n.k === "skill" ? `<text class="sk-name" x="${x}" y="${crowded ? y - sz / 2 - 60 : y + sz / 2 + 150}" text-anchor="middle">${esc(st.n || "")}</text>` : "";
+      const bx = x + sz * 0.2, by = y + sz * 0.2;
+      const badge = pts > 0 || g ? `<g class="sk-badge"><rect x="${bx}" y="${by}" width="${g ? 460 : 280}" height="210" rx="56"/><text x="${bx + (g ? 230 : 140)}" y="${by + 158}" text-anchor="middle">${pts}${g ? "+" + g : ""}</text></g>` : "";
+      return `<g class="sk-node sk-node--${n.k}${cl}" data-sknode="${i}" data-key="skill:${esc(cls)}:${i}" tabindex="0" role="button" aria-label="${esc(skNodeName(n))}: ${pts} of ${n.max}">${art}${badge}${label}</g>`;
     }).join("");
     // Allocated list, grouped by skill.
     const taken = N.map((n, i) => ({ n, i, p: s.pts[i] || 0 })).filter((x) => x.p > 0);
@@ -2937,17 +2997,22 @@
     }).join("");
     root.innerHTML = `
       <div class="sk-bar">${clsSel}${skTabs()}
-        <label class="sk-ctl sk-ctl--lv"><span class="mono">LEVEL <b>${s.lv}</b></span><input type="range" min="1" max="${SK_MAX_LV}" value="${s.lv}" data-sklv aria-label="Player level"></label>
+        <label class="sk-ctl sk-ctl--lv"><span class="mono">LEVEL <b data-sklvout>${s.lv}</b></span><input type="range" min="1" max="${SK_MAX_LV}" value="${s.lv}" data-sklv aria-label="Player level"></label>
         <span class="sk-ctl mono${skSpent(s) > SK_POINTS ? " sk-over" : ""}">SKILL POINTS <b>${skSpent(s)} / ${SK_POINTS}</b></span>
         <span class="sk-tools"><button type="button" class="btn btn--ghost mono" data-skzoom="1" aria-label="Zoom in">+</button><button type="button" class="btn btn--ghost mono" data-skzoom="-1" aria-label="Zoom out">−</button><button type="button" class="btn btn--ghost mono" data-skfit>FIT</button><button type="button" class="btn btn--ghost mono" data-skreset${taken.length ? "" : " disabled"}>RESET TREE</button></span>
       </div>
       <div class="sk-wrap">
-        <svg class="sk-svg" viewBox="${skView.vb.join(" ")}" data-skfull="${full.join(" ")}" role="group" aria-label="${esc(cls)} skill tree">${lines.join("")}${dots}</svg>
+        <svg class="sk-svg" viewBox="${skView.vb.join(" ")}" data-skfull="${full.join(" ")}" role="group" aria-label="${esc(cls)} skill tree">${back}${lines.join("")}${dots}</svg>
         <aside class="sk-side"><h3 class="sb-loadout__title mono">${esc(cls).toUpperCase()} // SKILLS</h3>
           ${list ? `<ul class="sk-list">${list}</ul>` : `<p class="hint">Click a skill in a cluster to take it, then its upgrades. Clusters open at levels ${[...new Set(N.filter((n) => n.k === "root").map((n) => n.lv || 0))].sort((a, b) => a - b).join(", ")}.</p>`}
-          <p class="hint">Click adds a point, right-click (or long-press) removes one. In each branch you pick one upgrade per group. Skills go to rank ${Math.max(...N.filter((n) => n.k === "skill").map((n) => n.max))}, upgrades to ${[...new Set(N.filter((n) => n.k === "mod").map((n) => n.max))].sort((a, b) => a - b).join(" or ")}. "+N to Skill" lines on your Sandbox gear add ranks (shown as 5+2). Damage numbers from your upgrades go to the Sandbox DAMAGE panel.</p>
+          <p class="hint">Click adds a point, right-click (or long-press) removes one. Drag to move, wheel or pinch to zoom, FIT shows the whole tree. In each branch you pick one upgrade per group. Skills go to rank ${Math.max(...N.filter((n) => n.k === "skill").map((n) => n.max))}, upgrades to ${[...new Set(N.filter((n) => n.k === "mod").map((n) => n.max))].sort((a, b) => a - b).join(" or ")}. "+N to Skill" lines on your Sandbox gear add ranks (shown as 5+2). Damage numbers from your upgrades go to the Sandbox DAMAGE panel.</p>
         </aside>
       </div>`;
+    // First view of a tree: match the view box to the panel's shape (no empty band), starting at the top.
+    if (fitTop) {
+      const el = root.querySelector(".sk-svg"), r = el && el.getBoundingClientRect();
+      if (r && r.width > 0) { skView.vb[3] = skView.vb[2] * (r.height / r.width); el.setAttribute("viewBox", skView.vb.join(" ")); }
+    }
   }
   function skAdd(i, dir) {
     const tree = skTree();
@@ -3048,12 +3113,16 @@
         toast("Skill tree reset.", ["UNDO", () => { skState().pts = before; saveSandbox(); renderSkills(); }]);
       }
     });
+    // Level slider: the number follows the drag; the tree redraws when it's let go (redrawing mid-drag replaced the slider).
     view.addEventListener("input", (e) => {
+      const lv = e.target.closest("[data-sklv]"); if (!lv) return;
+      const b = view.querySelector("[data-sklvout]"); if (b) b.textContent = lv.value;
+    });
+    view.addEventListener("change", (e) => {
       const lv = e.target.closest("[data-sklv]"); if (!lv) return;
       const s = skState(); s.lv = +lv.value;
       const tree = skTree(), dropped = tree ? skPrune(tree, s) : 0;
       saveSandbox(); renderSkills();
-      const el = view.querySelector("[data-sklv]"); if (el) el.focus();
       if (dropped) toast(`Level ${s.lv}: ${dropped} point${dropped > 1 ? "s" : ""} above the level removed.`);
     });
     view.addEventListener("change", (e) => {

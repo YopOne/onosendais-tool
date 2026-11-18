@@ -301,4 +301,31 @@ def extract(meta_dir, stl_dir, power_dir, icons=None, stat_line=None, attr_desc=
         for f in sfs:
             pending.update(x for x in POWERTAG_RE.findall(f) if x not in powers)
 
-    return {"trees": trees, "skills": skills, "powers": powers, "tables": tables, "paragon": paragon}
+    # Skill tree art (game sheets, cut by icons.py): node frames and each class's background panel.
+    ui = {}
+    if icons:
+        V2 = {"rootOn": 1918231416, "rootOff": 2313016955, "modOn": 1829110042, "modOpen": 1986147116, "modOff": 3769819183,
+              "hubOff": 2954744883, "hubOpen": 1700001041, "hubOn": 3494649535}
+        ui = {k: icons.for_handle(h) for k, h in V2.items()}
+        # 2DUI_SkillTree_ABCDFrames: 4 rows of skill diamonds x (taken, available, locked)
+        abcd = [[678742091, 2026560377, 664866222], [2916187532, 3980872826, 1996494639],
+                [858665677, 1640217979, 3328123056], [3096111118, 3594530428, 364784177]]
+        ui["skill"] = [[icons.for_handle(h) for h in row] for row in abcd]
+        ui = {k: v for k, v in ui.items() if v}
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    bg_dir, out_dir = os.path.join(root, "2DUI"), os.path.join(root, "data", "skilltree")
+    bgs = {}
+    if os.path.isdir(bg_dir):
+        import glob as _glob
+        import subprocess
+        os.makedirs(out_dir, exist_ok=True)
+        for cls in TREE_FILES:
+            hits = _glob.glob(os.path.join(_glob.escape(bg_dir), _glob.escape(f"2DUI_SkillTreeBackgroundMiddle_{cls} [") + "*].png"))
+            dst = os.path.join(out_dir, cls.lower() + ".webp")
+            if hits and not os.path.exists(dst):
+                # The stone-framed arch panel: the middle 54% of the 5120 px sheet, scaled to 1800 px tall.
+                subprocess.run(["cwebp", "-quiet", "-q", "72", "-crop", "1178", "0", "2765", "5120", "-resize", "0", "1800", hits[0], "-o", dst], check=True)
+            if os.path.exists(dst):
+                bgs[cls] = "data/skilltree/" + cls.lower() + ".webp"
+    ui["bg"] = bgs
+    return {"trees": trees, "skills": skills, "powers": powers, "tables": tables, "paragon": paragon, "ui": ui}
