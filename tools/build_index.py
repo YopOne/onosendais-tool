@@ -557,6 +557,17 @@ def main():
               f"aspects {sum(1 for a in aspects if a.get('ic'))}/{len(aspects)}, "
               f"runes {sum(1 for r in runes.get('runes', []) if r.get('ic'))}/{len(runes.get('runes', []))}")
 
+    # ---------- Weapon / off-hand item types: which classes can use them ----------
+    # ItemType/<type>.itt: fUsableByClass (same order as CLASSES), arBodySlots (10 main hand, 9 off-hand,
+    # 11/12 Barbarian 2H bludgeoning/slashing, 13 Rogue ranged, 14/15 dual wield), arItemLabels (0 = takes weapon aspects).
+    item_types = {}
+    itt_dir = os.path.join(meta_dir, "ItemType")
+    for path in sorted(glob.glob(os.path.join(itt_dir, "*.itt.json"))):
+        d = load(path)
+        bs = d.get("arBodySlots") or []
+        if 9 in bs or 10 in bs:
+            item_types[os.path.basename(path)[: -len(".itt.json")]] = {"c": class_list(d.get("fUsableByClass")) or CLASSES[:], "b": bs, "w": 0 in (d.get("arItemLabels") or [])}
+
     codex = {
         "meta": {
             "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -574,6 +585,7 @@ def main():
         "drops": drops,
         "runes": runes,
         "talisman": talisman,
+        "itemTypes": item_types,
     }
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)

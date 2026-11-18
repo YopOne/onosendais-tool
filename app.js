@@ -1160,7 +1160,37 @@
     }
     return common && common.length === 1 ? common[0] : "";
   }
-  const weaponRule = (cls) => WEAPON_RULES[cls] || WEAPON_RULES.any;
+  /* Class weapon types from the game data (ItemType fUsableByClass, codex.itemTypes). */
+  const TYPE_NAMES = { Sword: "sword", Axe: "axe", Mace: "mace", Dagger: "dagger", Wand: "wand", Scythe: "scythe", Flail: "flail",
+    Sword2H: "2H sword", Axe2H: "2H axe", Mace2H: "2H mace", Scythe2H: "2H scythe", Polearm: "polearm", Glaive: "glaive", Staff: "staff",
+    Quarterstaff: "quarterstaff", Bow: "bow", Crossbow2H: "crossbow", Shield: "shield", Focus: "focus", FocusBookOffHand: "book", OffHandTotem: "totem" };
+  const W2H = new Set(["Sword2H", "Axe2H", "Mace2H", "Scythe2H", "Polearm", "Glaive", "Staff", "Quarterstaff", "Bow", "Crossbow2H"]);
+  /** Can `cls` use item type `t`? Unknown types or no class: yes. */
+  function typeAllowed(t, cls) {
+    const T = Engine.codex && Engine.codex.itemTypes;
+    return !cls || !T || !T[t] || T[t].c.includes(cls);
+  }
+  const classTypes = (cls, set) => Object.keys(TYPE_NAMES).filter((t) => set.has(t) && typeAllowed(t, cls));
+  /** Off-hand types the class can hold, and 1H weapons (generic rule only). */
+  const classOffhands = (cls) => classTypes(cls, WOFF);
+  const class1H = (cls) => classTypes(cls, W1H);
+  const listOr = (xs) => (xs.length > 1 ? xs.slice(0, -1).join(", ") + " or " + xs[xs.length - 1] : xs[0] || "");
+  const weaponRuleCache = new Map();
+  /** The class's weapon rule, limited to the item types that class can use. */
+  function weaponRule(cls) {
+    if (weaponRuleCache.has(cls) && Engine.codex) return weaponRuleCache.get(cls);
+    const base = WEAPON_RULES[cls] || WEAPON_RULES.any;
+    if (!cls || !Engine.codex) return base;
+    const rule = { ...base, fits: (t) => (typeAllowed(t, cls) ? base.fits(t) : null) };
+    if (base === WEAPON_RULES.any) {
+      const n = (ts) => ts.map((t) => TYPE_NAMES[t]);
+      const one = class1H(cls), off = classOffhands(cls), two = classTypes(cls, W2H);
+      rule.text = `${cls}: a ${listOr(n(two))}` + (one.length ? `, or a ${listOr(n(one))}${off.length ? ` and a ${listOr(n(off))}` : ""}` : "");
+      if (!off.length) rule.slots = { main: base.slots.main };
+    }
+    weaponRuleCache.set(cls, rule);
+    return rule;
+  }
 
   /** Place weapons in priority order. Returns { slot: key } and the keys that don't fit. */
   function fitWeapons(keys, cls) {
@@ -1315,16 +1345,25 @@
   /* Legendary items: a non-unique slot holding a legendary with an imprinted aspect.
    * state.sandbox.leg = { "<slot spec>": { a: aspect record key, two: 2H (generic main hand only) } }. */
   const INHERENT_2H = new Set(["w:blunt", "w:slash", "w:ranged"]);
+  /** Generic-rule classes with no 1H weapons (Spiritborn): the main hand is always 2H. */
+  const only2H = () => { const c = sandboxClass(); return Boolean(c && !WEAPON_RULES[c] && Engine.codex && !class1H(c).length); };
   /** Aspect slot bonus for a legendary in `spec`: amulet x1.5, 2H weapon x2. */
   function legBonusSlot(spec, e) {
     if (spec.startsWith("g:Amulet")) return "amulet";
-    if (INHERENT_2H.has(spec) || (spec === "w:main" && e && e.two)) return "2h";
+    if (INHERENT_2H.has(spec) || (spec === "w:main" && ((e && e.two) || only2H()))) return "2h";
     return null;
   }
   /** Which aspect slot (ASPECT_SLOTS_ORDER) a slot spec accepts. */
   function legAspectSlots(spec) {
     if (spec.startsWith("g:")) return [spec.split(":")[1]];
-    if (spec === "w:off" && !["Barbarian", "Rogue"].includes(sandboxClass())) return ["Shield", "Weapon"];
+    if (spec === "w:off" && !["Barbarian", "Rogue"].includes(sandboxClass())) {
+      // Shields take shield aspects; a focus, book or totem counts as a weapon (item label 0).
+      const off = classOffhands(sandboxClass()), T = Engine.codex.itemTypes || {};
+      const out = [];
+      if (off.includes("Shield")) out.push("Shield");
+      if (off.some((t) => T[t] && T[t].w)) out.push("Weapon");
+      return out.length ? out : ["Shield", "Weapon"];
+    }
     return ["Weapon"];
   }
   function renderLegAspect(key, spec) {
@@ -1360,13 +1399,14 @@
     const item = (r, sub) => ({ value: r.key, name: r.name, sub, icon: r.icon, rarity: rarityClass(r.rarity) });
     const legOpts = () => {
       const want = legAspectSlots(spec), bonus = legBonusSlot(spec, null);
-      const what = spec.startsWith("g:") ? a : spec === "w:off" ? "off-hand" : bonus === "2h" ? "2H weapon" : "weapon";
+      const what = spec.startsWith("g:") ? a : spec === "w:off" ? (cls && !WEAPON_RULES[cls] ? listOr(classOffhands(cls).map((t) => TYPE_NAMES[t])) || "off-hand" : "off-hand") : bonus === "2h" ? "2H weapon" : "weapon";
       return state.records.filter((r) => r.kind === "aspect" && classOk(r, cls) && (r.aslots || []).some((x) => want.includes(x)))
         .map((r) => ({ value: "L:" + r.key, name: r.name, sub: `Legendary ${what} with this aspect · ${(r.cats || []).join(" / ")}${bonus === "amulet" ? " · ×1.5" : bonus === "2h" ? " · ×2" : ""}`, icon: "", rarity: "legendary", tip: "legpick:" + spec + "|" + r.key }));
     };
     if (kind === "w") {
       const rule = weaponRule(cls);
-      return [...state.records.filter((r) => r.kind === "item" && isWeapon(r) && classOk(r, cls) && (rule.fits(r.raw.typeId) || []).some((set) => set.includes(a)))
+      // A 2H fills both hands: list it under the main hand only, not the off-hand.
+      return [...state.records.filter((r) => r.kind === "item" && isWeapon(r) && classOk(r, cls) && (rule.fits(r.raw.typeId) || []).some((set) => set.includes(a) && !(a === "off" && set.includes("main"))))
         .map((r) => item(r, `${r.rarity} ${r.type}${r.classes.length ? " · " + r.classLabel : ""}`)), ...legOpts()];
     }
     if (kind === "g") {
@@ -1572,12 +1612,12 @@
       const e = state.sandbox.leg[spec], r = e && state.byId.get(e.a);
       if (!r) return null;
       const bonus = legBonusSlot(spec, e);
-      const toggle2h = spec === "w:main" && !INHERENT_2H.has(spec) && rule === WEAPON_RULES.any
+      const toggle2h = spec === "w:main" && !INHERENT_2H.has(spec) && !WEAPON_RULES[cls] && !only2H()
         ? `<button type="button" class="sb-cell__toggle mono" data-leg2h="${spec}" aria-pressed="${Boolean(e.two)}" title="Two-handed weapon: aspect ×2, no off-hand">2H</button>` : "";
       return `<div class="sb-cell sb-cell--legendary" data-key="leg:${esc(spec)}">
         <button type="button" class="sb-cell__pick" data-pick="${esc(spec)}" title="Change ${esc(label)}">
           <span class="sb-cell__ico"><span class="sb-cell__plus" aria-hidden="true">◈</span></span>
-          <span class="sb-cell__text"><span class="sb-cell__label mono">${esc(label)}${e.two && spec === "w:main" ? " (2H)" : ""} · Legendary${bonus === "amulet" ? " ×1.5" : bonus === "2h" ? " ×2" : ""}</span><span class="sb-cell__name">${esc(r.name)}</span></span></button>
+          <span class="sb-cell__text"><span class="sb-cell__label mono">${esc(label)}${(e.two || only2H()) && spec === "w:main" ? " (2H)" : ""} · Legendary${bonus === "amulet" ? " ×1.5" : bonus === "2h" ? " ×2" : ""}</span><span class="sb-cell__name">${esc(r.name)}</span></span></button>
         ${toggle2h}<button type="button" class="sb-cell__clear" data-legremove="${esc(spec)}" aria-label="Remove ${esc(r.name)}" title="Remove">×</button></div>`;
     };
     // Weapons (class rules), armor, jewelry.
@@ -1586,7 +1626,7 @@
       const k = L.weapons[sl];
       const twoHand = k && Object.entries(L.weapons).filter(([, x]) => x === k).length > 1;
       // The off-hand stays clickable under a 2H: picking a 1H or off-hand there swaps the 2H out.
-      if ((twoHand || (mainLeg2h && rule === WEAPON_RULES.any)) && sl !== "main") return cell("w:" + sl, label, null, "", "held by the 2H weapon");
+      if ((twoHand || (mainLeg2h && !WEAPON_RULES[cls])) && sl !== "main") return cell("w:" + sl, label, null, "", "held by the 2H weapon");
       if (!k) { const lc = legCell("w:" + sl, label); if (lc) return lc; }
       return cell("w:" + sl, twoHand ? `${label} (2H)` : label, k);
     }).join("");
