@@ -223,6 +223,7 @@
     const rollT = (w) => (w.mythic || w.forceMax ? 1 : w.t);
     const roll = (ctx, lo, hi) => (lo === UNKNOWN || hi === UNKNOWN ? UNKNOWN : lo + (hi - lo) * rollT(ctx.world));
 
+    const pgBudget = (i) => { const b = codex.paragonBudget; return b && typeof b[i] === "number" ? b[i] : UNKNOWN; };
     const glob = (k) => { const v = codex.globals && codex.globals[k]; return typeof v === "number" ? v : UNKNOWN; };
 
     const FUNCS = {
@@ -237,6 +238,15 @@
       // Greater Affix / masterwork / capstone multiplier on one affix (Sandbox item mods); a plain drop has 1.
       GetTotalAffixBonus: (c) => c.world.affixMult || 1,
       AffixMult: (c) => c.world.affixMult || 1,
+      // Paragon node values: globals arParagonPowerBudgetMultiplier, read in offensive / defensive pairs
+      // (index 1/2 Magic, 3/4 Rare major, 5/6 Rare minor: assumed order, gives magic 5% / rare 10% damage).
+      ParagonPowerBudgetMultiplierNodeMagicOffensive: () => pgBudget(1),
+      ParagonPowerBudgetMultiplierNodeMagicDefensive: () => pgBudget(2),
+      ParagonPowerBudgetMultiplierNodeRareMajorOffensive: () => pgBudget(3),
+      ParagonPowerBudgetMultiplierNodeRareMajorDefensive: () => pgBudget(4),
+      ParagonPowerBudgetMultiplierNodeRareMinorOffensive: () => pgBudget(5),
+      ParagonPowerBudgetMultiplierNodeRareMinorDefensive: () => pgBudget(6),
+      ParagonPowerBudgetMultiplierGlyphStatBonusRare: () => pgBudget(8),
       // Skill formulas: Table(n, sLevel) -> GameBalance/PowerFormulaTables[n][rank] (34 = SkillRankBonus).
       Table: (c, a) => {
         const t = codex.tables && codex.tables[a[0]];
@@ -360,6 +370,8 @@
         return evalFormula(codex.powers[ctx.power][+sf[1]], ctx);
       }
 
+      // Paragon rare-node thresholds: 190 + 75 * ParagonBoardEquipIndex (the board's order, start board = 0).
+      if (head === "ParagonBoardEquipIndex" && !rest.length) return ctx.world.boardIndex || 0;
       // Skill rank in skill formulas (Skills view): sLevel = points in the skill (+ ranks from gear).
       if ((head === "sLevel" || head === "sRank") && !rest.length) return ctx.world.skillRank || 1;
       // Mod.UpgradeN: whether a skill upgrade is taken; the tooltip shows each upgrade on its own, so 0.
@@ -545,6 +557,15 @@
       renderText: (t) => render(t, { affix: null, world: { t: 1, rank: 1 }, depth: 0 }),
       /** Render a template with a full context (skill text: ctx.power for SF_n, world.skillRank for sLevel). */
       render,
+      /** One AttributeDescriptions stat line (Paragon nodes) rendered, and its number. */
+      renderLine: (line, world) => render(statLineTemplate(line, world.ip), { affix: null, world, depth: 0 }),
+      lineValue: (line, world) => {
+        if (line.s) return UNKNOWN;
+        const f = line.f || gbFormula(line.g, world.ip);
+        return f ? evalFormula(f, { affix: null, world, depth: 0 }) : UNKNOWN;
+      },
+      evalFormula: (src, world) => evalFormula(src, { affix: null, world, depth: 0 }),
+      UNKNOWN,
       maxRankOf,
       DEFAULT_IP,
       esc,
@@ -960,6 +981,7 @@
       return { html: tooltipInner(r, { power: Engine.renderAffix(r.id, world)[0] || null, imp: [], stats: [], mythicLines: [], crafted: false }), rarity: "legendary" };
     }
     if (kind === "skill") { const [c, i] = id.split(":"); const h = skTooltip(c, i); return h && { html: h, rarity: "skill" }; }
+    if (kind === "pg") { const h = SK && pgTooltip(id); return h && { html: h, rarity: "skill" }; }
     if (kind === "torch") {
       const it = codexItem(TORCH_ID);
       if (!it) return null;
@@ -1209,6 +1231,8 @@
       state.sandbox.mods = cleanMods(parseMods(/[?&]mods=([^&]+)/.exec(location.hash)));
       const skm = /[?&]sk=([^&]+)/.exec(location.hash);
       state.sandbox.skills = skm ? parseSkills(skm[1], sandboxClass()) : null;
+      const pgm = /[?&]pg=([^&]+)/.exec(location.hash);
+      state.sandbox.paragon = pgm ? parseParagon(pgm[1], sandboxClass()) : null;
       saveSandbox();
       savePins();
       return;
@@ -2347,7 +2371,13 @@
         const m = st.m[n.m] || {};
         src.push({ id: `skill:${k}`, name: `${m.n || "Upgrade"} (${st.n})`, lines: [Engine.render(m.d, { power: n.p, world: { t: 1, rank: 1, skillRank: Math.max(1, skS.pts[skT.nodes.findIndex((x) => x.k === "skill" && x.p === n.p)] || 1) }, depth: 0 }).plain] });
       }
-      else if (!SK && skS && Object.keys(skS.pts || {}).length) loadSkills().then(() => { if (route() === "sandbox") renderSandbox(); });
+      const pgS = state.sandbox.paragon;
+      if (SK && pgS && pgS.cls === sandboxClass() && (pgS.pts || []).length) {
+        const g = pgGrid(pgS.cls, pgS), tot = pgTotals(pgS.cls, pgS, g);
+        tot.lines.forEach((x, j) => { if (!/_Core$/.test(x.ln.a)) src.push({ id: `pg:${x.ln.a}|${x.ln.p || ""}`, name: "Paragon total", lines: [x.r.plain] }); });
+        tot.legend.forEach((c) => { const st = SK.skills[c.node.pw]; if (st) src.push({ id: `pgleg:${c.key}`, name: `${c.node.n} (Paragon)`, lines: [Engine.render(st.d, { power: c.node.pw, world: { t: 1, rank: 1, ip: Engine.DEFAULT_IP }, depth: 0 }).plain] }); });
+      }
+      if (!SK && ((skS && Object.keys(skS.pts || {}).length) || (pgS && (pgS.pts || []).length))) loadSkills().then(() => { if (route() === "sandbox") renderSandbox(); });
       setCh.forEach((x) => x.a.filter(Boolean).forEach((id, j) => src.push({ id: `setaff:${x.i}:${j}`, name: x.piece.name, lines: Engine.renderAffix(id, W850).map((l) => l.plain) })));
       for (const { set: st, types } of bySet.values())
         st.tiers.filter((tr) => types.size >= setNeed(tr.n)).forEach((tr) => src.push({ id: `setbonus:${st.id}:${tr.n}`, name: `${st.name} (${setNeed(tr.n)})`, lines: Engine.renderAffix(tr.a, W850).map((l) => l.plain) }));
@@ -2737,6 +2767,7 @@
       SK = d;
       Object.assign(Engine.codex.powers, d.powers || {});
       Engine.codex.tables = d.tables || [];
+      if (d.paragon) { Object.assign(Engine.codex.gb, d.paragon.gb || {}); Engine.codex.paragonBudget = d.paragon.budget || []; }
       return SK;
     });
     return skLoading;
@@ -2859,11 +2890,12 @@
       root.innerHTML = `<div class="sk-bar">${clsSel}</div><p class="sb-empty">CHOOSE A CLASS: the tree, Paragon boards and glyphs follow the Sandbox's class.</p>`;
       return;
     }
+    if (skTab === "paragon") { renderParagon(root, clsSel, cls); return; }
     const s = skState(), act = skActive(tree, s), N = tree.nodes, gear = skGearRanks();
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const n of N) { x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y); x1 = Math.max(x1, n.x); y1 = Math.max(y1, n.y); }
     const pad = 700, full = [x0 - pad, y0 - pad, x1 - x0 + 2 * pad, y1 - y0 + 2 * pad];
-    if (!skView.vb || skView.cls !== cls) { skView.vb = full.slice(); skView.cls = cls; }
+    if (!skView.vb || skView.cls !== "tree:" + cls) { skView.vb = full.slice(); skView.cls = "tree:" + cls; }
     const R = { skill: 145, mod: 92, hub: 52, root: 130 };
     const lines = [], seen = new Set();
     N.forEach((n, i) => n.c.forEach((j) => {
@@ -2902,7 +2934,7 @@
         ${xs.filter((x) => x.n.k === "mod").map((x) => `<span class="sk-li__mod" data-key="skill:${esc(cls)}:${x.i}">${esc(skNodeName(x.n))} <span class="mono">${x.p}/${x.n.max}</span></span>`).join("")}</li>`;
     }).join("");
     root.innerHTML = `
-      <div class="sk-bar">${clsSel}
+      <div class="sk-bar">${clsSel}${skTabs()}
         <label class="sk-ctl sk-ctl--lv"><span class="mono">LEVEL <b>${s.lv}</b></span><input type="range" min="1" max="${SK_MAX_LV}" value="${s.lv}" data-sklv aria-label="Player level"></label>
         <span class="sk-ctl mono${skSpent(s) > SK_POINTS ? " sk-over" : ""}">SKILL POINTS <b>${skSpent(s)} / ${SK_POINTS}</b></span>
         <span class="sk-tools"><button type="button" class="btn btn--ghost mono" data-skzoom="1" aria-label="Zoom in">+</button><button type="button" class="btn btn--ghost mono" data-skzoom="-1" aria-label="Zoom out">−</button><button type="button" class="btn btn--ghost mono" data-skfit>FIT</button><button type="button" class="btn btn--ghost mono" data-skreset${taken.length ? "" : " disabled"}>RESET TREE</button></span>
@@ -2956,6 +2988,8 @@
       drag = { x: e.clientX, y: e.clientY, vb: skView.vb.slice(), moved: false };
       const node = e.target.closest("[data-sknode]");
       if (node && e.pointerType !== "mouse") press = setTimeout(() => { press = "fired"; drag = null; skAdd(+node.dataset.sknode, -1); }, 550);
+      const pc = e.target.closest("[data-pgcell]");
+      if (pc && e.pointerType !== "mouse") press = setTimeout(() => { press = "fired"; drag = null; pgToggle(pc.dataset.pgcell, -1); }, 550);
     });
     view.addEventListener("pointermove", (e) => {
       if (!pts.has(e.pointerId)) return;
@@ -2983,12 +3017,27 @@
       drag = null;
       if (wasDrag || e.button !== 0) return;
       const node = e.target.closest("[data-sknode]");
-      if (node) skAdd(+node.dataset.sknode, e.shiftKey ? -1 : 1);
+      if (node) { skAdd(+node.dataset.sknode, e.shiftKey ? -1 : 1); return; }
+      const cell = e.target.closest("[data-pgcell]");
+      if (cell) { pgToggle(cell.dataset.pgcell, e.shiftKey ? -1 : 1); return; }
+      const gate = e.target.closest("[data-pggate]");
+      if (gate) openBoardPicker(gate.dataset.pggate);
     });
     view.addEventListener("pointercancel", end);
-    view.addEventListener("contextmenu", (e) => { const node = e.target.closest("[data-sknode]"); if (node) { e.preventDefault(); skAdd(+node.dataset.sknode, -1); } });
+    view.addEventListener("contextmenu", (e) => {
+      const node = e.target.closest("[data-sknode]"); if (node) { e.preventDefault(); skAdd(+node.dataset.sknode, -1); return; }
+      const cell = e.target.closest("[data-pgcell]"); if (cell) { e.preventDefault(); pgToggle(cell.dataset.pgcell, -1); }
+    });
     view.addEventListener("keydown", (e) => { const node = e.target.closest("[data-sknode]"); if (node && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); skAdd(+node.dataset.sknode, e.shiftKey ? -1 : 1); } else if (node && (e.key === "Backspace" || e.key === "Delete")) { e.preventDefault(); skAdd(+node.dataset.sknode, -1); } });
     view.addEventListener("click", (e) => {
+      const tb = e.target.closest("[data-sktab]"); if (tb) { skTab = tb.dataset.sktab; try { localStorage.setItem("onosendai.sktab", skTab); } catch { /* ignore */ } hideTooltip(); renderSkills(); return; }
+      const rmb = e.target.closest("[data-pgrm]"); if (rmb) { pgRemoveBoard(+rmb.dataset.pgrm); return; }
+      if (e.target.closest("[data-pgreset]")) {
+        const before = JSON.parse(JSON.stringify(pgState()));
+        state.sandbox.paragon = null; pgState(); saveSandbox(); renderSkills();
+        toast("Paragon reset.", ["UNDO", () => { state.sandbox.paragon = before; saveSandbox(); renderSkills(); }]);
+        return;
+      }
       const z = e.target.closest("[data-skzoom]"); if (z) { zoomAt(+z.dataset.skzoom > 0 ? 1.4 : 1 / 1.4); return; }
       if (e.target.closest("[data-skfit]")) { const el = svg(); if (el) setVB(el.dataset.skfull.split(" ").map(Number)); return; }
       if (e.target.closest("[data-skreset]")) {
@@ -3012,6 +3061,262 @@
       renderSkills();
     });
   }
+  /* ---------- Paragon boards (phase 2) ----------
+   * state.sandbox.paragon = { cls, boards: [{ id, r: rotation 0-3, x, y: origin on the global grid, p: parent board, g: gate key }],
+   *   pts: ["<board>.<cell>", ...] }   Board 0 is the class's start board at (0, 0); the start node is free.
+   * A new board attaches at a free gate: its own gate on the facing edge sits next to it (rotation chosen by the player). */
+  let skTab = (() => { try { return localStorage.getItem("onosendai.sktab") || "tree"; } catch { return "tree"; } })();
+  const PG_MAX_BOARDS = 5; // start board + 4 (assumed; see status.md)
+  const skTabs = () => `<span class="sk-tabs" role="tablist">${[["tree", "SKILL TREE"], ["paragon", "PARAGON"]].map(([k, l]) => `<button type="button" class="btn btn--ghost mono" role="tab" data-sktab="${k}" aria-selected="${skTab === k}">${l}</button>`).join("")}</span>`;
+  const PG = () => (SK && SK.paragon) || {};
+  const pgBoardDefs = (cls) => (PG().boards || {})[cls] || [];
+  const pgDef = (cls, id) => pgBoardDefs(cls).find((b) => b.id === id);
+  function pgState() {
+    const cls = sandboxClass();
+    let s = state.sandbox.paragon;
+    const start = pgBoardDefs(cls).find((b) => b.start);
+    if (!s || typeof s !== "object" || s.cls !== cls || !Array.isArray(s.boards) || !s.boards.length) {
+      s = state.sandbox.paragon = { cls, boards: start ? [{ id: start.id, r: 0, x: 0, y: 0, p: -1, g: "" }] : [], pts: [] };
+    }
+    if (!Array.isArray(s.pts)) s.pts = [];
+    return s;
+  }
+  const pgRot = (x, y, r, w, h) => [[x, y], [h - 1 - y, x], [w - 1 - x, h - 1 - y], [y, w - 1 - x]][r & 3];
+  /** Global grid: "gx,gy" -> { bi, idx, node, def, gx, gy, lx, ly } for every placed board. */
+  function pgGrid(cls, s) {
+    const map = new Map(), nodes = PG().nodes || {};
+    s.boards.forEach((b, bi) => {
+      const def = pgDef(cls, b.id);
+      if (!def) return;
+      for (const [idx, name] of def.cells) {
+        const [rx, ry] = pgRot(idx % def.w, Math.floor(idx / def.w), b.r, def.w, def.h);
+        const gx = b.x + rx, gy = b.y + ry;
+        map.set(gx + "," + gy, { bi, idx, name, node: nodes[name] || {}, gx, gy, rx, ry, w: def.w, h: def.h, key: bi + "." + idx });
+      }
+    });
+    return map;
+  }
+  const PG_DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+  function pgTaken(s, grid) {
+    const set = new Set(s.pts);
+    for (const c of grid.values()) if (c.node.start && c.bi === 0) set.add(c.key);
+    return set;
+  }
+  function pgCanAdd(c, s, grid, taken) {
+    if (taken.has(c.key)) return "Already taken";
+    if (s.pts.length >= PG_POINTS) return `All ${PG_POINTS} Paragon points are spent`;
+    const near = PG_DIRS.some(([dx, dy]) => { const n = grid.get((c.gx + dx) + "," + (c.gy + dy)); return n && taken.has(n.key); });
+    return near ? "" : "Must connect to a taken node";
+  }
+  /** Is everything still connected to the start node without `without`? */
+  function pgConnected(s, grid, without) {
+    const taken = pgTaken(s, grid);
+    taken.delete(without);
+    const startC = [...grid.values()].find((c) => c.node.start && c.bi === 0);
+    if (!startC) return true;
+    const seen = new Set([startC.key]), q = [startC];
+    while (q.length) {
+      const c = q.shift();
+      for (const [dx, dy] of PG_DIRS) {
+        const n = grid.get((c.gx + dx) + "," + (c.gy + dy));
+        if (n && taken.has(n.key) && !seen.has(n.key)) { seen.add(n.key); q.push(n); }
+      }
+    }
+    return [...taken].every((k) => seen.has(k));
+  }
+  function pgToggle(key, dir) {
+    const cls = sandboxClass(), s = pgState(), grid = pgGrid(cls, s), taken = pgTaken(s, grid);
+    const c = [...grid.values()].find((x) => x.key === key);
+    if (!c) return;
+    const nm = c.node.n || c.name;
+    if (dir > 0) {
+      if (taken.has(key)) { dir = -1; } else {
+        const why = pgCanAdd(c, s, grid, taken);
+        if (why) { toast(`${nm}: ${why}.`); return; }
+        s.pts.push(key);
+      }
+    }
+    if (dir < 0) {
+      if (c.node.start && c.bi === 0) return;
+      if (!s.pts.includes(key)) return;
+      if (!pgConnected(s, grid, key)) { toast(`${nm}: removing it would cut off other nodes. Remove the far end first.`); return; }
+      s.pts = s.pts.filter((k) => k !== key);
+    }
+    saveSandbox(); hideTooltip(); renderSkills();
+  }
+  /** Free gates: a gate cell on a board edge with no board beyond it. */
+  function pgFreeGates(cls, s, grid) {
+    const out = [];
+    for (const c of grid.values()) {
+      if (!/Gate/.test(c.name)) continue;
+      const side = c.ry === 0 ? 0 : c.rx === c.w - 1 ? 1 : c.ry === c.h - 1 ? 2 : c.rx === 0 ? 3 : -1;
+      if (side < 0) continue;
+      const [dx, dy] = PG_DIRS[side], tx = c.gx + dx, ty = c.gy + dy;
+      const used = s.boards.some((b) => { const d = pgDef(cls, b.id); return d && tx >= b.x && tx < b.x + d.w && ty >= b.y && ty < b.y + d.h; });
+      if (!used) out.push({ c, side, tx, ty });
+    }
+    return out;
+  }
+  /** Where a board goes for a gate + rotation (its gate on the facing edge lands on tx,ty), or null if it overlaps. */
+  function pgPlace(cls, s, def, r, gate) {
+    const want = (gate.side + 2) % 4;
+    for (const [idx, name] of def.cells) {
+      if (!/Gate/.test(name)) continue;
+      const [rx, ry] = pgRot(idx % def.w, Math.floor(idx / def.w), r, def.w, def.h);
+      const side = ry === 0 ? 0 : rx === def.w - 1 ? 1 : ry === def.h - 1 ? 2 : rx === 0 ? 3 : -1;
+      if (side !== want) continue;
+      const x = gate.tx - rx, y = gate.ty - ry;
+      const clash = s.boards.some((b) => { const d = pgDef(cls, b.id); return d && x < b.x + d.w && x + def.w > b.x && y < b.y + d.h && y + def.h > b.y; });
+      return clash ? null : { x, y };
+    }
+    return null;
+  }
+  let pgPickGate = null;
+  function openBoardPicker(gateKey) {
+    const cls = sandboxClass(), s = pgState(), grid = pgGrid(cls, s);
+    const gate = pgFreeGates(cls, s, grid).find((g) => g.c.key === gateKey);
+    if (!gate) return;
+    if (s.boards.length >= PG_MAX_BOARDS) { toast(`Up to ${PG_MAX_BOARDS} boards (the start board + ${PG_MAX_BOARDS - 1}).`); return; }
+    pgPickGate = gate;
+    let el = document.getElementById("pgpick");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "pgpick"; el.className = "picker"; el.hidden = true;
+      el.innerHTML = `<div class="picker__panel mods" role="dialog" aria-modal="true" aria-labelledby="pgpick-title"><div class="picker__head"><h3 id="pgpick-title" class="picker__title">Attach a Paragon board</h3><button type="button" class="btn btn--ghost mono" data-pgclose aria-label="Close">×</button></div><div class="mods__body"></div></div>`;
+      document.body.appendChild(el);
+      el.addEventListener("click", (e) => {
+        if (e.target === el || e.target.closest("[data-pgclose]")) { el.hidden = true; return; }
+        const b = e.target.closest("[data-pgadd]");
+        if (b && !b.disabled) { const [id, r] = b.dataset.pgadd.split("|"); el.hidden = true; pgAddBoard(id, +r); }
+      });
+      el.addEventListener("keydown", (e) => { if (e.key === "Escape") el.hidden = true; });
+    }
+    const used = new Set(s.boards.map((b) => b.id));
+    const rows = pgBoardDefs(cls).filter((d) => !d.start && !used.has(d.id)).map((d) => {
+      const leg = d.cells.map(([, n]) => (PG().nodes || {})[n]).find((n) => n && n.r === "legendary");
+      const rot = [0, 1, 2, 3].map((r) => { const ok = pgPlace(cls, s, d, r, gate); return `<button type="button" class="btn btn--ghost mono" data-pgadd="${esc(d.id)}|${r}"${ok ? "" : " disabled title=\"Overlaps another board\""}>${r * 90}°</button>`; }).join("");
+      return `<li class="mods__stat"><span class="mods__text"><b>${esc(d.n)}</b>${leg && leg.n && leg.n !== d.n ? ` <span class="hint">· ${esc(leg.n)}</span>` : ""}</span><span class="pg-rot">${rot}</span></li>`;
+    }).join("");
+    el.querySelector(".mods__body").innerHTML = `<p class="hint">Pick a board and its rotation (0° = as in the data). Its gate on the facing edge joins this gate.</p><ul class="mods__list">${rows || '<li class="hint">Every board is already placed.</li>'}</ul>`;
+    el.hidden = false;
+    el.querySelector("[data-pgclose]").focus();
+  }
+  function pgAddBoard(id, r) {
+    const cls = sandboxClass(), s = pgState(), gate = pgPickGate, def = pgDef(cls, id);
+    if (!gate || !def) return;
+    const at = pgPlace(cls, s, def, r, gate);
+    if (!at) { toast("That rotation overlaps another board."); return; }
+    s.boards.push({ id, r, x: at.x, y: at.y, p: gate.c.bi, g: gate.c.key });
+    saveSandbox(); renderSkills();
+  }
+  function pgRemoveBoard(bi) {
+    const s = pgState();
+    if (bi <= 0 || s.boards.some((b) => b.p === bi)) { toast("Remove the boards attached to it first."); return; }
+    const before = JSON.parse(JSON.stringify(s));
+    s.boards.splice(bi, 1);
+    // Re-index: later boards shift down one.
+    s.boards.forEach((b) => { if (b.p > bi) b.p -= 1; if (b.g) { const [gb, gi] = b.g.split("."); if (+gb > bi) b.g = (+gb - 1) + "." + gi; } });
+    s.pts = s.pts.filter((k) => +k.split(".")[0] !== bi).map((k) => { const [b, i] = k.split("."); return (+b > bi ? +b - 1 : +b) + "." + i; });
+    saveSandbox(); renderSkills();
+    toast("Board removed.", ["UNDO", () => { state.sandbox.paragon = before; saveSandbox(); renderSkills(); }]);
+  }
+  /** Totals of every taken node (+ rare bonuses whose threshold is met) and threshold status per rare node. */
+  function pgTotals(cls, s, grid) {
+    const W = { t: 1, rank: 1, ip: Engine.DEFAULT_IP };
+    const taken = pgTaken(s, grid), sums = new Map(), legend = [];
+    const add = (ln, v) => {
+      if (v == null) return;
+      const k = ln.a + "|" + (ln.p || "");
+      const e = sums.get(k) || { ln, v: 0 };
+      e.v += v; sums.set(k, e);
+    };
+    const cells = [...grid.values()].filter((c) => taken.has(c.key));
+    for (const c of cells) for (const ln of c.node.l || []) add(ln, Engine.lineValue(ln, W));
+    const core = (a) => { const e = sums.get(a.replace(/_Total$/, "_Core") + "|"); return e ? e.v : 0; };
+    const rare = [];
+    for (const c of cells) {
+      if (c.node.pw) legend.push(c);
+      if (!c.node.th || !c.node.b) continue;
+      const req = (PG().thresholds || {})[c.node.th[0]] || [];
+      const need = req.map((t) => ({ a: t.a, v: Engine.evalFormula(t.f, { ...W, boardIndex: c.bi }) }));
+      const met = need.every((t) => t.v != null && core(t.a) >= t.v);
+      rare.push({ c, need, met });
+    }
+    for (const x of rare) if (x.met) for (const i of x.c.node.b) { const ln = (x.c.node.l || [])[i]; if (ln) add(ln, Engine.lineValue(ln, W)); }
+    const lines = [...sums.values()].map(({ ln, v }) => ({ ln, v, r: Engine.renderLine({ ...ln, g: undefined, f: String(v) }, W) }));
+    return { lines, rare, legend, core };
+  }
+  function pgTooltip(key) {
+    const cls = sandboxClass(), s = pgState(), grid = pgGrid(cls, s);
+    const c = [...grid.values()].find((x) => x.key === key);
+    if (!c) return null;
+    const W = { t: 1, rank: 1, ip: Engine.DEFAULT_IP, boardIndex: c.bi }, n = c.node, def = pgDef(cls, s.boards[c.bi].id);
+    const lines = (n.l || []).map((ln, i) => `<li${(n.b || []).includes(i) ? ' class="tt__ga"' : ""}>${Engine.renderLine(ln, W).html}</li>`).join("");
+    let bonus = "";
+    if (n.th && n.b) {
+      const tot = pgTotals(cls, s, grid), req = (PG().thresholds || {})[n.th[0]] || [];
+      const need = req.map((t) => `${Math.round(Engine.evalFormula(t.f, W) || 0)} ${t.a.replace(/_Total$/, "")} (you have ${Math.round(tot.core(t.a))})`).join(", ");
+      const met = tot.rare.find((x) => x.c.key === key);
+      bonus = `<p class="tt__power ${met && met.met ? "pg-bonus-on" : "pg-bonus-off"}">Bonus: ${n.b.map((i) => (n.l || [])[i] ? Engine.renderLine(n.l[i], W).html : "").join(", ")} if ${esc(need)}${met && met.met ? " ✓" : ""}</p>`;
+    }
+    const pw = n.pw && SK.skills[n.pw] ? `<p class="tt__power">${Engine.render(SK.skills[n.pw].d, { power: n.pw, world: W, depth: 0 }).html}</p>` : "";
+    const rarityLabel = { normal: "Normal", magic: "Magic", rare: "Rare", legendary: "Legendary" }[n.r] || "";
+    const taken = pgTaken(s, grid).has(key), why = taken ? "" : pgCanAdd(c, s, grid, pgTaken(s, grid));
+    return `<div class="tt__head">${n.ic ? `<span class="ico-well ico-well--tt pg-tt-ic">${itemIcon(n.ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(n.n || (/Gate/.test(c.name) ? "Board Gate" : /Socket/.test(c.name) ? "Glyph Socket" : c.name))}</p><p class="tt__type">${esc(rarityLabel)} Paragon Node · ${esc(def ? def.n : "")}</p></div></div>
+      <div class="tt__body">${lines ? `<ul class="tt__lines">${lines}</ul>` : ""}${bonus}${pw}${n.sock ? '<p class="hint">Glyph socket: glyphs come in phase 3.</p>' : ""}</div>
+      <dl class="tt__foot"><dt>STATE</dt><dd>${taken ? "Taken" : esc(why || "Can be taken")}</dd><dt>BOARD</dt><dd>${c.bi + 1}: ${esc(def ? def.n : "")}</dd><dt>CONTROLS</dt><dd>Click: take / remove · right-click or long-press: remove</dd></dl>`;
+  }
+  function renderParagon(root, clsSel, cls) {
+    const s = pgState(), grid = pgGrid(cls, s), taken = pgTaken(s, grid), gates = pgFreeGates(cls, s, grid);
+    const U = 100;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    s.boards.forEach((b) => { const d = pgDef(cls, b.id); if (!d) return; x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); x1 = Math.max(x1, b.x + d.w); y1 = Math.max(y1, b.y + d.h); });
+    for (const g of gates) { x0 = Math.min(x0, g.tx - 1); y0 = Math.min(y0, g.ty - 1); x1 = Math.max(x1, g.tx + 2); y1 = Math.max(y1, g.ty + 2); }
+    const full = [x0 * U - 150, y0 * U - 150, (x1 - x0) * U + 300, (y1 - y0) * U + 300];
+    const vkey = "pg:" + cls + ":" + s.boards.length;
+    if (!skView.vb || skView.cls !== vkey) { skView.vb = full.slice(); skView.cls = vkey; }
+    const boardsSvg = s.boards.map((b, bi) => { const d = pgDef(cls, b.id); return d ? `<g class="pg-board"><rect x="${b.x * U}" y="${b.y * U}" width="${d.w * U}" height="${d.h * U}" rx="40"/><text x="${(b.x + d.w / 2) * U}" y="${(b.y + (d.start ? 16.5 : d.h / 2)) * U}" text-anchor="middle">${esc(d.n)}</text></g>` : ""; }).join("");
+    const cellsSvg = [...grid.values()].map((c) => {
+      const t = taken.has(c.key), kind = /Gate/.test(c.name) ? "gate" : c.node.sock ? "socket" : c.node.start ? "start" : c.node.r || "normal";
+      const can = !t && !pgCanAdd(c, s, grid, taken);
+      const sz = kind === "legendary" ? 96 : kind === "rare" || kind === "socket" || kind === "gate" || kind === "start" ? 88 : 76, o = (U - sz) / 2;
+      return `<g class="pg-cell pg-cell--${kind}${t ? " is-taken" : can ? " is-open" : ""}" data-pgcell="${c.key}" data-key="pg:${c.key}"><rect x="${c.gx * U + o}" y="${c.gy * U + o}" width="${sz}" height="${sz}" rx="${kind === "socket" ? sz / 2 : 12}"/>${c.node.ic && kind !== "normal" ? `<image href="data/icons/${c.node.ic}.webp" x="${c.gx * U + o + 8}" y="${c.gy * U + o + 8}" width="${sz - 16}" height="${sz - 16}"/>` : ""}</g>`;
+    }).join("");
+    const gateSvg = s.boards.length < PG_MAX_BOARDS ? gates.map((g) => `<g class="pg-attach" data-pggate="${g.c.key}" role="button" aria-label="Attach a board here"><circle cx="${(g.tx + 0.5) * U}" cy="${(g.ty + 0.5) * U}" r="60"/><text x="${(g.tx + 0.5) * U}" y="${(g.ty + 0.5) * U + 32}" text-anchor="middle">+</text></g>`).join("") : "";
+    const tot = pgTotals(cls, s, grid);
+    const coreOrder = ["Strength_Core", "Intelligence_Core", "Willpower_Core", "Dexterity_Core"];
+    const lines = tot.lines.slice().sort((a, b) => (coreOrder.indexOf(a.ln.a) + 1 || 99) - (coreOrder.indexOf(b.ln.a) + 1 || 99) || a.r.plain.localeCompare(b.r.plain));
+    const boardsList = s.boards.map((b, bi) => { const d = pgDef(cls, b.id); const leaf = bi > 0 && !s.boards.some((x) => x.p === bi); return `<li><span class="mono">${bi + 1}</span> ${esc(d ? d.n : b.id)} <span class="hint">${b.r * 90}°</span>${leaf ? ` <button type="button" class="sb-cell__clear" data-pgrm="${bi}" aria-label="Remove board ${esc(d ? d.n : "")}">×</button>` : ""}</li>`; }).join("");
+    const used = s.pts.length;
+    root.innerHTML = `
+      <div class="sk-bar">${clsSel}${skTabs()}
+        <span class="sk-ctl mono${used > PG_POINTS ? " sk-over" : ""}">PARAGON POINTS <b>${used} / ${PG_POINTS}</b></span>
+        <span class="sk-ctl mono">BOARDS <b>${s.boards.length} / ${PG_MAX_BOARDS}</b></span>
+        <span class="sk-tools"><button type="button" class="btn btn--ghost mono" data-skzoom="1" aria-label="Zoom in">+</button><button type="button" class="btn btn--ghost mono" data-skzoom="-1" aria-label="Zoom out">−</button><button type="button" class="btn btn--ghost mono" data-skfit>FIT</button><button type="button" class="btn btn--ghost mono" data-pgreset${used || s.boards.length > 1 ? "" : " disabled"}>RESET PARAGON</button></span>
+      </div>
+      <div class="sk-wrap">
+        <svg class="sk-svg pg-svg" viewBox="${skView.vb.join(" ")}" data-skfull="${full.join(" ")}" role="group" aria-label="${esc(cls)} Paragon boards">${boardsSvg}${cellsSvg}${gateSvg}</svg>
+        <aside class="sk-side"><h3 class="sb-loadout__title mono">${esc(cls).toUpperCase()} // PARAGON</h3>
+          <ul class="pg-boards">${boardsList}</ul>
+          ${lines.length ? `<h4 class="mods__h mono">TOTALS</h4><ul class="pg-totals">${lines.map((x) => `<li>${x.r.html}</li>`).join("")}</ul>` : ""}
+          ${tot.rare.length ? `<h4 class="mods__h mono">RARE BONUSES <span>${tot.rare.filter((x) => x.met).length} / ${tot.rare.length}</span></h4>` : ""}
+          ${tot.legend.length ? `<h4 class="mods__h mono">LEGENDARY</h4><ul class="pg-totals">${tot.legend.map((c) => `<li data-key="pg:${c.key}">${esc(c.node.n || "")}</li>`).join("")}</ul>` : ""}
+          <p class="hint">Start at the bottom node and click next to taken nodes to take them (right-click / long-press removes the end of a path). Click a <b>+</b> beside a gate to attach a board and pick its rotation. Rare nodes give their bonus when your Paragon attributes reach the requirement (it grows +75 per board: 190 on the first). Totals count Paragon only, not gear. Damage lines go to the Sandbox DAMAGE panel.</p>
+        </aside>
+      </div>`;
+  }
+  const encodeParagon = () => {
+    const s = state.sandbox.paragon;
+    if (!s || !(s.pts || []).length && (s.boards || []).length < 2) return "";
+    return s.boards.map((b) => [b.id.replace(/^Paragon_/, ""), b.r, b.x, b.y, b.p, b.g].join("~")).join(",") + "|" + s.pts.join(",");
+  };
+  function parseParagon(str, cls) {
+    if (!str) return null;
+    const [bs, ps] = decodeURIComponent(str).split("|");
+    const boards = (bs || "").split(",").filter(Boolean).map((x) => { const [id, r, gx, gy, p, g] = x.split("~"); return { id: "Paragon_" + id, r: +r & 3, x: +gx || 0, y: +gy || 0, p: +p, g: g || "" }; });
+    return { cls, boards, pts: (ps || "").split(",").filter((k) => /^\d+\.\d+$/.test(k)) };
+  }
+
   /** Share link: sk=<level>.<node>:<pts>.<node>:<pts>... */
   const encodeSkills = () => {
     const s = state.sandbox.skills;
@@ -3236,7 +3541,7 @@
     });
     els.sbClear.addEventListener("click", () => { state.pins = []; state.sandbox.charms = []; state.sandbox.sets = []; state.sandbox.torch = false; state.sandbox.leg = {}; state.sandbox.sock = {}; state.sandbox.mods = {}; saveSandbox(); savePins(); renderSandbox(); state.mode = null; });
     els.sbShare.addEventListener("click", async () => {
-      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}${Object.keys(state.sandbox.sock).length ? "&sock=" + encodeURIComponent(Object.entries(state.sandbox.sock).map(([sp, v]) => [sp, ...v].join("~")).join(",")) + "&gt=" + state.sandbox.gt : ""}${Object.keys(state.sandbox.mods || {}).length ? "&mods=" + encodeURIComponent(encodeMods(state.sandbox.mods)) : ""}${encodeSkills() ? "&sk=" + encodeURIComponent(encodeSkills()) : ""}`;
+      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}${Object.keys(state.sandbox.sock).length ? "&sock=" + encodeURIComponent(Object.entries(state.sandbox.sock).map(([sp, v]) => [sp, ...v].join("~")).join(",")) + "&gt=" + state.sandbox.gt : ""}${Object.keys(state.sandbox.mods || {}).length ? "&mods=" + encodeURIComponent(encodeMods(state.sandbox.mods)) : ""}${encodeSkills() ? "&sk=" + encodeURIComponent(encodeSkills()) : ""}${encodeParagon() ? "&pg=" + encodeURIComponent(encodeParagon()) : ""}`;
       try { await navigator.clipboard.writeText(url); els.sbShare.textContent = "COPIED"; }
       catch { window.prompt("Copy this link:", url); }
       setTimeout(() => (els.sbShare.textContent = "COPY LINK"), 1400);

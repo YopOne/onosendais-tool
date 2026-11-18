@@ -1041,3 +1041,39 @@ html[data-sb-ip="900"] .pd__slot--unique { --spark: var(--spark-anc); --spark-hi
 .sk-li__mod { width: 100%; padding-left: 28px; font-size: 0.8rem; color: var(--c-random); }
 @media (max-width: 900px) { .sk-wrap { grid-template-columns: 1fr; } .sk-svg { height: 70vh; } .sk-tools { margin-left: 0; } }
 .sk-over b { color: var(--accent); }
+
+/* ---------- Skills & Paragon: Paragon boards ---------- */
+.sk-tabs { display: inline-flex; gap: 4px; }
+.sk-tabs [aria-selected="true"] { color: #fff; border-color: var(--accent); background: var(--accent-soft); }
+.pg-board rect { fill: rgba(255, 255, 255, 0.015); stroke: #2c2a26; stroke-width: 10; }
+.pg-board text { font: 700 120px var(--font-display); fill: rgba(220, 200, 160, 0.10); letter-spacing: 8px; pointer-events: none; }
+.pg-cell { cursor: pointer; }
+.pg-cell rect { fill: #17171b; stroke: #2e2e35; stroke-width: 6; }
+.pg-cell image { pointer-events: none; opacity: 0.55; }
+.pg-cell--magic rect { stroke: #4f7fd6; }
+.pg-cell--rare rect { stroke: #e2c25a; fill: #1d1a10; }
+.pg-cell--legendary rect { stroke: #ff8a3c; fill: #22140a; stroke-width: 10; }
+.pg-cell--socket rect { stroke: #b58cff; fill: #170f22; }
+.pg-cell--gate rect { stroke: #9a9aa4; fill: #202026; }
+.pg-cell--start rect { stroke: #ff3131; fill: #2a0d0d; }
+.pg-cell.is-open rect { stroke-width: 10; filter: brightness(1.5); }
+.pg-cell:hover rect { stroke: #f2d48c; }
+.pg-cell.is-taken rect { fill: #4a3a18; stroke: #f2c76b; stroke-width: 10; filter: drop-shadow(0 0 18px rgba(242, 199, 107, 0.55)); }
+.pg-cell--magic.is-taken rect { fill: #17305a; stroke: #8fb8ff; filter: drop-shadow(0 0 18px rgba(111, 160, 255, 0.6)); }
+.pg-cell--rare.is-taken rect { fill: #5a4410; }
+.pg-cell--legendary.is-taken rect { fill: #5a2a08; stroke: #ffb35c; filter: drop-shadow(0 0 30px rgba(255, 140, 60, 0.8)); }
+.pg-cell.is-taken image { opacity: 1; }
+.pg-attach { cursor: pointer; }
+.pg-attach circle { fill: #120a0a; stroke: var(--accent); stroke-width: 10; stroke-dasharray: 22 14; }
+.pg-attach text { font: 700 100px var(--font-mono); fill: var(--accent); pointer-events: none; }
+.pg-attach:hover circle { fill: var(--accent-soft); }
+.pg-boards, .pg-totals { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 0.84rem; }
+.pg-boards li { display: flex; gap: 8px; align-items: center; }
+.pg-boards .mono { color: var(--faint); font-size: 0.7rem; }
+.pg-boards .sb-cell__clear { position: static; margin-left: auto; }
+.pg-totals li { padding: 2px 0; border-bottom: 1px dashed var(--line); }
+.pg-rot { display: inline-flex; gap: 4px; }
+.pg-rot .btn { padding: 3px 8px; font-size: 0.7rem; }
+.pg-bonus-on { color: var(--c-set); }
+.pg-bonus-off { color: var(--faint); }
+.pg-tt-ic { width: 52px; height: 52px; }

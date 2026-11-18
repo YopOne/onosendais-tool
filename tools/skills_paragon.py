@@ -30,7 +30,91 @@ def _strings(stl_dir, name):
     return {e["szLabel"]: e["szText"] for e in _load(p).get("arStrings", [])}
 
 
-def extract(meta_dir, stl_dir, power_dir, icons=None):
+BOARD_PREFIX = {"Barbarian": "Barb", "Druid": "Druid", "Necromancer": "Necro", "Paladin": "Paladin", "Rogue": "Rogue",
+                "Sorcerer": "Sorc", "Spiritborn": "Spirit", "Warlock": "Warlock"}
+RARITY = {0: "normal", 1: "magic", 2: "magic", 3: "rare", 4: "legendary"}
+
+
+def extract_paragon(meta_dir, stl_dir, icons, stat_line, attr_desc, skill_text, pending):
+    """Paragon boards per class, node definitions, thresholds and the GameBalance formulas they use."""
+    import glob
+    pdir = os.path.join(meta_dir, "ParagonBoard")
+    boards, node_names = {}, set()
+    for cls, pre in BOARD_PREFIX.items():
+        out = []
+        for path in sorted(glob.glob(os.path.join(pdir, f"Paragon_{pre}_*.pbd.json"))):
+            bid = os.path.basename(path)[: -len(".pbd.json")]
+            b = _load(path)
+            w = b.get("nWidth") or 21
+            cells = [[i, e["name"]] for i, e in enumerate(b.get("arEntries") or []) if e and e.get("name")]
+            if not cells:
+                continue
+            node_names.update(n for _, n in cells)
+            out.append({"id": bid, "n": _strings(stl_dir, "ParagonBoard_" + bid).get("Name") or bid, "w": w,
+                        "h": len(b.get("arEntries") or []) // w, "cells": cells, "start": bid.endswith("_00")})
+        if out:
+            boards[cls] = out
+    nodes, thresholds, gb_names = {}, {}, set()
+    for name in sorted(node_names):
+        path = os.path.join(meta_dir, "ParagonNode", name + ".pgn.json")
+        if not os.path.exists(path):
+            continue
+        d = _load(path)
+        rec = {"r": RARITY.get(d.get("eRarityOverride") or 0, "normal")}
+        nm = _strings(stl_dir, "ParagonNode_" + name).get("Name")
+        if nm:
+            rec["n"] = nm
+        lines = []
+        for at in d.get("ptAttributes") or []:
+            if at.get("__eAttribute_name__") in attr_desc:
+                ln = stat_line(at)
+                if ln.get("g"):
+                    gb_names.add(ln["g"])
+                lines.append(ln)
+        if lines:
+            rec["l"] = lines
+        if d.get("ptBonusAttributeIndices"):
+            rec["b"] = d["ptBonusAttributeIndices"]
+        th = [x.get("name") for x in d.get("arThresholdSelector") or [] if x]
+        if th:
+            rec["th"] = th
+            for t in th:
+                if t not in thresholds:
+                    tp = os.path.join(meta_dir, "ParagonThreshold", t + ".pth.json")
+                    if os.path.exists(tp):
+                        thresholds[t] = [{"a": x["tThresholdAttribute"].get("__eAttribute_name__", ""), "f": x["tThresholdValueFormula"]["value"]}
+                                         for x in _load(tp).get("ptThresholds") or []]
+        pw = (d.get("snoPassivePower") or {}).get("name")
+        if pw:
+            rec["pw"] = pw
+            skill_text(pw)
+        if d.get("bHasSocket"):
+            rec["sock"] = 1
+        if d.get("bIsGate"):
+            rec["gate"] = 1
+        if name.startswith("StartNode"):
+            rec["start"] = 1
+        ic = icons and (icons.for_handle(d.get("hIcon")) or icons.for_handle(d.get("hIconMask")))
+        if ic:
+            rec["ic"] = ic
+        nodes[name] = rec
+    # GameBalance formulas the nodes use (ParagonNode*), per item power range like codex.gb.
+    gb = {}
+    gp = os.path.join(meta_dir, "GameBalance", "AttributeFormulas.gam.json")
+    if os.path.exists(gp):
+        for e in _load(gp)["ptData"][0]["tEntries"]:
+            if e["tHeader"]["szName"] in gb_names:
+                gb[e["tHeader"]["szName"]] = sorted([r["nItemPowerRangeStart"], r["tFormula"]["value"]] for r in e.get("arRanges", []))
+    budget = []
+    gl = os.path.join(meta_dir, "Global", "globals.glo.json")
+    if os.path.exists(gl):
+        m = re.search(r'"arParagonPowerBudgetMultiplier":\s*\[([^\]]*)\]', open(gl, encoding="utf-8").read())
+        if m:
+            budget = [float(x) for x in re.findall(r"[-0-9.eE]+", m.group(1))]
+    return {"boards": boards, "nodes": nodes, "thresholds": thresholds, "gb": gb, "budget": budget}
+
+
+def extract(meta_dir, stl_dir, power_dir, icons=None, stat_line=None, attr_desc=None):
     rewards = {e["tHeader"]["szName"]: e for e in _load(os.path.join(meta_dir, "GameBalance", "SkillTreeRewards.gam.json"))["ptData"][0]["tEntries"]}
     tables = [e.get("flValue") or [] for e in _load(os.path.join(meta_dir, "GameBalance", "PowerFormulaTables.gam.json"))["ptData"][0]["tEntries"]]
 
@@ -111,6 +195,8 @@ def extract(meta_dir, stl_dir, power_dir, icons=None):
         default = [(x or {}).get("name") for x in k.get("arDefaultSkillLoadout") or []]
         trees[cls] = {"nodes": nodes, "default": [d for d in default if d]}
 
+    paragon = extract_paragon(meta_dir, stl_dir, icons, stat_line, attr_desc or {}, skill_text, pending) if stat_line else {}
+
     # Script formulas of every referenced power (and PowerTag references, recursively).
     while pending:
         pname = pending.pop()
@@ -124,4 +210,4 @@ def extract(meta_dir, stl_dir, power_dir, icons=None):
         for f in sfs:
             pending.update(x for x in POWERTAG_RE.findall(f) if x not in powers)
 
-    return {"trees": trees, "skills": skills, "powers": powers, "tables": tables}
+    return {"trees": trees, "skills": skills, "powers": powers, "tables": tables, "paragon": paragon}

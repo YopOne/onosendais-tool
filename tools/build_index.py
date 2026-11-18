@@ -235,6 +235,34 @@ def main():
             power_name_cache[pname] = s.get("name") or s.get("Name")
         return power_name_cache[pname]
 
+    def stat_line(spec):
+        """One AttributeDescriptions stat line for a tAttribute spec (attr text, label, formula / GameBalance ref)."""
+        attr = spec.get("__eAttribute_name__", "")
+        formula = (spec.get("szAttributeFormula") or {}).get("value", "")
+        param = spec.get("nParam", -1)
+        label = None
+        if attr in PARAM_ENUMS:
+            label = PARAM_ENUMS[attr].get(param)
+        elif attr.startswith(DAMAGE_TYPE_ATTRS) and 0 <= param < len(DAMAGE_TYPES):
+            label = DAMAGE_TYPES[param]
+        elif param not in (-1, 0):
+            label = power_display_name(param) or skill_tags.get(param & 0xFFFFFFFF)
+        line = {"t": attr_desc[attr], "a": attr}
+        if label:
+            line["p"] = label
+        # gbidFormula = value comes from a GameBalance AttributeFormulas entry (per item power range)
+        gbid = (spec.get("gbidFormula") or {}).get("name")
+        if attr + "_Unscaled_By_Player_Health" in attr_desc:
+            # Stats with an "_Unscaled_By_Player_Health" twin (Thorns_Flat, Flat_Hitpoints_Max_Bonus,
+            # Flat_Hitpoints_On_Hit) store a fraction the game scales with player health at runtime.
+            line["s"] = 1
+        elif gbid:
+            line["g"] = gbid
+            gb_used.add(gbid)
+        elif formula not in ("", "0"):
+            line["f"] = formula
+        return line
+
     def add_affix(name):
         """Collect one affix's strings + raw formulas. Returns True if it has displayable text."""
         if name in affixes:
@@ -262,29 +290,7 @@ def main():
             if desc or attr not in attr_desc:
                 continue
             # Generic stat line (implicits / forced stats on uniques)
-            param = spec.get("nParam", -1)
-            label = None
-            if attr in PARAM_ENUMS:
-                label = PARAM_ENUMS[attr].get(param)
-            elif attr.startswith(DAMAGE_TYPE_ATTRS) and 0 <= param < len(DAMAGE_TYPES):
-                label = DAMAGE_TYPES[param]
-            elif param not in (-1, 0):
-                label = power_display_name(param) or skill_tags.get(param & 0xFFFFFFFF)
-            line = {"t": attr_desc[attr], "a": attr}
-            if label:
-                line["p"] = label
-            # gbidFormula = value comes from a GameBalance AttributeFormulas entry (per item power range)
-            gbid = (spec.get("gbidFormula") or {}).get("name")
-            if attr + "_Unscaled_By_Player_Health" in attr_desc:
-                # Stats with an "_Unscaled_By_Player_Health" twin (Thorns_Flat, Flat_Hitpoints_Max_Bonus,
-                # Flat_Hitpoints_On_Hit) store a fraction the game scales with player health at runtime.
-                line["s"] = 1
-            elif gbid:
-                line["g"] = gbid
-                gb_used.add(gbid)
-            elif formula not in ("", "0"):
-                line["f"] = formula
-            lines.append(line)
+            lines.append(stat_line(spec))
 
         if values:
             rec["v"] = values
@@ -696,7 +702,7 @@ def main():
                           os.path.join(ROOT, "data", "sources", "runes_maxroll.json"), items)
 
     # ---------- Skill trees (and Paragon / glyphs): data/index/skills.json, loaded by the Skills view ----------
-    skills_data = extract_skills(meta_dir, stl_dir, power_dir, icons)
+    skills_data = extract_skills(meta_dir, stl_dir, power_dir, icons, stat_line=stat_line, attr_desc=attr_desc)
 
     if icons:
         # Same-name copies whose own files have no art (e.g. Runeword bases) borrow it.
@@ -767,7 +773,8 @@ def main():
         json.dump(skills_data, f, ensure_ascii=False, separators=(",", ":"))
     print(f"Wrote {os.path.relpath(skills_out, ROOT)} ({os.path.getsize(skills_out) / 1024:,.0f} KB): "
           f"{len(skills_data['trees'])} trees, {sum(len(t['nodes']) for t in skills_data['trees'].values())} nodes, "
-          f"{len(skills_data['skills'])} skills, {len(skills_data['powers'])} powers")
+          f"{len(skills_data['skills'])} skills, {len(skills_data['powers'])} powers | Paragon: "
+          f"{sum(len(b) for b in skills_data['paragon'].get('boards', {}).values())} boards, {len(skills_data['paragon'].get('nodes', {}))} node types")
     size = os.path.getsize(args.out) / 1024
     print(f"Wrote {os.path.relpath(args.out, ROOT)} ({size:,.0f} KB) in {time.time() - t0:.1f}s")
     print(json.dumps(codex["meta"]["counts"]))
