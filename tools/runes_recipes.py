@@ -236,6 +236,26 @@ def extract(item_dir, stl_dir, recipe_dir, src_path, items):
         r["ins"][0]["n"] = "Ancestral Unique (item power 900)"
         r["out"] = {"n": "Mythic version of that Unique", "derived": True}
         cube["mythic"] = r
+    # Rerolls (always available): Affix Value Reroll (all base affixes of equipment / Talisman items) and Unique Power Reroll.
+    rerolls = []
+    for rid, first in (("X2_HoradricCube_Bundle_RerollAffixValues", "Equipment or Talisman item"),
+                       ("X2_HoradricCube_Bundle_RerollUniquePower", "Unique item or charm")):
+        if rid not in all_ids:
+            continue
+        r = parse(rid)
+        r["ins"][0]["n"], r["ins"][0]["q"] = first, 1
+        for e in r["ins"][1:]:
+            if not e.get("n"):
+                e["n"] = "other material (not named in the data)"
+        st = {}
+        sp = os.path.join(stl_dir, f"Recipe_{rid}.stl.json")
+        if os.path.exists(sp):
+            st = {e["szLabel"]: e["szText"] for e in _load(sp).get("arStrings", [])}
+        r["out"] = {"n": "Same item, values rerolled", "derived": True}
+        r["name"] = re.sub(r"\{[^}]*\}", "", st.get("Name", rid)).strip()
+        r["desc"] = st.get("Description", "")
+        rerolls.append(r)
+    cube["rerolls"] = rerolls
     recipes["cube"] = cube
 
     # Season 15 Soul Splinters: 5 of a tier -> next tier, per Prime/Lesser Evil

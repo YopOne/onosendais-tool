@@ -475,7 +475,7 @@
           } else if (/^payload:/i.test(tag) || (ctx.power && /^[A-Z][A-Za-z ]+$/.test(tag))) {
             // Skill damage payloads and live values (Resource Cost, Cooldown...): need the character's stats.
             html += `<span class="gt-unk" title="Depends on live character stats (weapon damage, cost and cooldown modifiers).">#</span>`; plain += "#";
-          } else if (/^icon:bullet/i.test(tag)) {
+          } else if (/^icon:bullet\s*(,|$)/i.test(tag)) {
             html += "• "; plain += "• ";
           } else if (/^icon:arrow/i.test(tag)) {
             html += "→ "; plain += "→ ";
@@ -2667,6 +2667,9 @@
         "Two steps. A white item with no affixes becomes a Unique of the same base; use an Ancestral (item power 900) base to get a 900 Unique. Only a 900 Unique can be upgraded to Mythic: it keeps all its affixes, promoted to their maximum values, and becomes item power 900.",
         cubeStepHTML("1", rc.cube.unique, rc.cube.unique.ancestral ? "Each base has a normal and an Ancestral recipe." : "") +
         (rc.cube.mythic ? cubeStepHTML("2", rc.cube.mythic, "") : "")) : "",
+      rc.cube && (rc.cube.rerolls || []).length ? sec("Horadric Cube: rerolls",
+        "Always available. Reroll a unique's base affixes and its unique power as often as you like to max them out, which is why the Sandbox defaults to Roll quality 100%.",
+        rc.cube.rerolls.map((r) => `<div class="cube-step"><p class="eyebrow">${esc(r.name)}</p>${recipeHTML(r)}${r.desc ? `<p class="hint">${Engine.renderText(r.desc).html}</p>` : ""}</div>`).join("")) : "",
       sec("Unique crafting", "", rc.unique.map(recipeHTML).join("")),
       sec("Season 15 Soul Splinters", "Horadric Cube, hidden recipes: 5 of a tier make the next tier.", splinters + (rc.wirt ? recipeHTML(rc.wirt) : "")),
     ].join("");
