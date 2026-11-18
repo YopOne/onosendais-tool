@@ -644,18 +644,20 @@
   const TF_MAX = 5;
   const mwPerLevel = (t) => 0.01 + 0.02 * (t == null ? 1 : t);
   const modsOf = (key) => (state.sandbox.mods || {})[key] || null;
-  const hasMods = (m) => Boolean(m && ((m.ga || []).some(Boolean) || m.temper || m.mw || (m.tf || []).length || m.lock || (m.rand || []).some(Boolean)));
+  const hasMods = (m) => Boolean(m && ((m.ga || []).some(Boolean) || m.temper || m.mw || (m.tf || []).length || m.lock || m.tga || (m.rand || []).some(Boolean)));
   /** An item has 4 base affixes: its fixed ones from the data, the rest rolled from the S04 pool (picked in the editor). */
   const BASE_AFFIXES = 4;
   const baseAffixes = (it, m) => [...(it.stats || []), ...((m && m.rand) || []).slice(0, Math.max(0, BASE_AFFIXES - (it.stats || []).length))]; // "" = rolled slot not chosen (keeps indexes)
   /** Capstone index: base affix i = i; Transfiguration stat k = TF_CAP + k (the capstone can land on either). */
   const TF_CAP = 100;
+  /** Capstone / GA index of the tempered affix (it can roll as a GA, and the capstone can land on it). */
+  const TEMPER_CAP = 99;
   /** Multiplier for one affix. Masterworking is universal (base affixes, temper, Transfiguration: the temper passes i = -1);
    * GA only on base affixes; the capstone on the chosen base or Transfiguration affix once masterwork is maxed. */
   function affixMultFor(m, i, t) {
     if (!m) return 1;
     let x = 1;
-    if (m.ga && m.ga[i]) x *= 1 + (glb().gaBonus ?? 0.25);
+    if (i === TEMPER_CAP ? m.tga : m.ga && m.ga[i]) x *= 1 + (glb().gaBonus ?? 0.25);
     if (m.mw) x *= 1 + m.mw * mwPerLevel(t);
     if (m.cap === i && m.mw >= MW_CAP()) x *= 1 + (glb().mwCapstone ?? 0.5);
     return x;
@@ -683,7 +685,8 @@
         return Engine.renderAffix(a, { ...sw, affixMult: affixMultFor(mods, i, base.t) }).map((l) => ({ ...l, ga, cap }));
       }),
       mythicLines: c ? Engine.renderMythicBonuses() : [],
-      temper: mods && mods.temper ? Engine.renderAffix(mods.temper.a, { ...sw, affixMult: affixMultFor(mods, -1, base.t) }) : [],
+      temper: mods && mods.temper ? Engine.renderAffix(mods.temper.a, { ...sw, affixMult: affixMultFor(mods, TEMPER_CAP, base.t) })
+        .map((l) => ({ ...l, ga: Boolean(mods.tga), cap: mods.cap === TEMPER_CAP && mods.mw >= MW_CAP() })) : [],
       transfig: mods ? (mods.tf || []).flatMap((a, k) => {
         const cap = mods.cap === TF_CAP + k && mods.mw >= MW_CAP();
         return Engine.renderAffix(a, { ...sw, affixMult: affixMultFor(mods, TF_CAP + k, base.t) }).map((l) => ({ ...l, cap }));
@@ -865,7 +868,7 @@
     const parts = [];
     if (rendered.imp.length) parts.push(`<ul class="tt__lines tt__lines--imp">${rendered.imp.map((l) => `<li>${l.html}</li>`).join("")}</ul>`);
     if (rendered.stats.length) parts.push(`<ul class="tt__lines">${rendered.stats.map((l) => `<li${l.ga || l.cap ? ` class="${l.ga ? "tt__ga" : ""}${l.cap ? " tt__cap" : ""}"` : ""}>${l.html}${l.ga ? ' <span class="tt__badge tt__badge--ga" title="Greater Affix: +25%">GA</span>' : ""}${l.cap ? ' <span class="tt__badge tt__badge--cap" title="Masterwork capstone: +50%">CAPSTONE</span>' : ""}</li>`).join("")}</ul>`);
-    if ((rendered.temper || []).length) parts.push(`<ul class="tt__lines tt__lines--temper">${rendered.temper.map((l) => `<li>${l.html}</li>`).join("")}</ul>`);
+    if ((rendered.temper || []).length) parts.push(`<ul class="tt__lines tt__lines--temper">${rendered.temper.map((l) => `<li>${l.html}${l.ga ? ' <span class="tt__badge tt__badge--ga" title="Greater Affix: +25%">GA</span>' : ""}${l.cap ? ' <span class="tt__badge tt__badge--cap" title="Masterwork capstone: +50%">CAPSTONE</span>' : ""}</li>`).join("")}</ul>`);
     if ((rendered.transfig || []).length) parts.push(`<ul class="tt__lines tt__lines--transfig">${rendered.transfig.map((l) => `<li${l.cap ? ' class="tt__cap"' : ""}>${l.html}${l.cap ? ' <span class="tt__badge tt__badge--cap" title="Masterwork capstone: +50%">CAPSTONE</span>' : ""}</li>`).join("")}</ul>`);
     if (rendered.mythicLines && rendered.mythicLines.length) parts.push(`<ul class="tt__lines tt__lines--mythic">${rendered.mythicLines.map((l) => `<li>${l.html}</li>`).join("")}</ul>`);
     if (rendered.power) parts.push(`<div class="tt__power-wrap"><p class="tt__power">${rendered.power.html}</p></div>`);
@@ -1126,14 +1129,14 @@
 
   /** Item mods in a share link: key~GA bits~manual.affix~masterwork~capstone~tf1.tf2~L, comma-separated. */
   const encodeMods = (all) => Object.entries(all).map(([k, m]) => [k, (m.ga || []).map((x) => (x ? 1 : 0)).join(""),
-    m.temper ? m.temper.m + "." + m.temper.a : "", m.mw || 0, m.cap ?? -1, (m.tf || []).join("."), m.lock ? "L" : "", (m.rand || []).join(".")].join("~")).join(",");
+    m.temper ? m.temper.m + "." + m.temper.a : "", m.mw || 0, m.cap ?? -1, (m.tf || []).join("."), m.lock ? "L" : "", (m.rand || []).join("."), m.tga ? 1 : ""].join("~")).join(",");
   function parseMods(match) {
     const out = {};
     if (!match) return out;
     for (const x of decodeURIComponent(match[1]).split(",")) {
-      const [k, ga, tp, mw, cap, tf, lk, rd] = x.split("~");
+      const [k, ga, tp, mw, cap, tf, lk, rd, tg] = x.split("~");
       const [tm, ta] = (tp || "").split(".");
-      out[k] = { ga: [...(ga || "")].map((c) => c === "1"), temper: tm && ta ? { m: tm, a: ta } : null, mw: +mw || 0, cap: cap === "" || cap == null ? -1 : +cap, tf: tf ? tf.split(".") : [], lock: lk === "L", rand: rd ? rd.split(".") : [] };
+      out[k] = { ga: [...(ga || "")].map((c) => c === "1"), temper: tm && ta ? { m: tm, a: ta } : null, mw: +mw || 0, cap: cap === "" || cap == null ? -1 : +cap, tf: tf ? tf.split(".") : [], lock: lk === "L", rand: rd ? rd.split(".") : [], tga: tg === "1" };
     }
     return out;
   }
@@ -1146,8 +1149,9 @@
       if (!state.byId.has(k) || !m) continue;
       const c = { ga: Array.isArray(m.ga) ? m.ga.map(Boolean) : [], temper: null, mw: Math.max(0, Math.min(MW_CAP(), +m.mw || 0)),
         cap: Number.isInteger(m.cap) ? m.cap : -1, tf: (Array.isArray(m.tf) ? m.tf : []).filter((a) => aff[a]).slice(0, TF_MAX), lock: Boolean(m.lock),
-        rand: (Array.isArray(m.rand) ? m.rand : []).slice(0, BASE_AFFIXES).map((a) => (aff[a] ? a : "")) };
-      if (m.temper && temperManual(m.temper.m) && aff[m.temper.a]) c.temper = { m: m.temper.m, a: m.temper.a };
+        rand: (Array.isArray(m.rand) ? m.rand : []).slice(0, BASE_AFFIXES).map((a) => (aff[a] ? a : "")), tga: false };
+      if (m.temper && temperManual(m.temper.m) && aff[m.temper.a]) { c.temper = { m: m.temper.m, a: m.temper.a }; c.tga = Boolean(m.tga); }
+      if (c.cap === TEMPER_CAP && !c.temper) c.cap = -1;
       if (!c.tf.length) c.lock = false;
       if (hasMods(c)) out[k] = c;
     }
@@ -1880,8 +1884,9 @@
     if (act === "ga") { const [idx, on] = val.split("|"); m.ga[+idx] = on === "true"; }
     else if (act === "cap") m.cap = m.cap === i ? -1 : i;
     else if (act === "mw") m.mw = Math.max(0, Math.min(MW_CAP(), Math.round(+val || 0))); // capstone stays chosen; it only counts at the cap
-    else if (act === "tman") { const man = temperManual(val); m.temper = man ? { m: man.id, a: man.a[0] } : null; }
-    else if (act === "taff") { if (m.temper) m.temper.a = val; }
+    else if (act === "tman") { const man = temperManual(val); m.temper = man ? { m: man.id, a: man.a[0] } : null; m.tga = false; if (m.cap === TEMPER_CAP) m.cap = -1; }
+    else if (act === "tga") m.tga = val.split("|")[1] === "true";
+    else if (act === "taff") { if (m.temper) { m.temper.a = val; m.tga = false; } }
     else if (act === "rand") { const [idx, id] = val.split("|"); m.rand[+idx] = id || ""; if (!id) { const at = (r.raw.stats || []).length + +idx; m.ga[at] = false; if (m.cap === at) m.cap = -1; } }
     else if (act === "tfadd") { if (val && m.tf.length < TF_MAX && !m.tf.includes(val)) m.tf.push(val); }
     else if (act === "tfrm") { m.tf.splice(i, 1); if (m.cap === TF_CAP + i) m.cap = -1; else if (m.cap > TF_CAP + i) m.cap -= 1; }
@@ -1936,9 +1941,13 @@
         <ul class="mods__list">${stats || '<li class="hint">No base affixes in the data.</li>'}</ul></section>
       <section class="mods__sec"><h4 class="mods__h mono">MASTERWORK <span>${m.mw} / ${cap}</span></h4>
         <input type="range" min="0" max="${cap}" step="1" value="${m.mw}" data-mact="mw" aria-label="Masterwork level"${dis}>
-        <p class="hint">Each level raises item quality by 1 and adds a random 1–3% to <b>every</b> affix: base, temper and Transfiguration (roll quality ${Math.round(t * 100)}% → ${(per * 100).toFixed(1)}% per level: ×${(1 + m.mw * per).toFixed(2)}). At ${cap} (+${cap} item quality) the <b>capstone</b> gives one base or Transfiguration affix +${Math.round((g.mwCapstone ?? 0.5) * 100)}% while the item can still be modified: strongest on a GA. Cost ${gold(g.mwGoldLevel)} gold per level, capstone ${gold(g.mwGoldCapstone)}, capstone reroll ${gold(g.mwGoldReroll)} (+ materials).</p></section>
-      <section class="mods__sec"><h4 class="mods__h mono">TEMPER <span>5th affix · Blacksmith</span></h4>
+        <p class="hint">Each level raises item quality by 1 and adds a random 1–3% to <b>every</b> affix: base, temper and Transfiguration (roll quality ${Math.round(t * 100)}% → ${(per * 100).toFixed(1)}% per level: ×${(1 + m.mw * per).toFixed(2)}). At ${cap} (+${cap} item quality) the <b>capstone</b> gives one affix +${Math.round((g.mwCapstone ?? 0.5) * 100)}%: base, temper or Transfiguration. It lands at random: reroll it (${gold(g.mwGoldReroll)} gold each) until it hits the one you want, while the item can still be modified. Strongest on a GA (a GA temper too). Cost ${gold(g.mwGoldLevel)} gold per level, capstone ${gold(g.mwGoldCapstone)}, capstone reroll ${gold(g.mwGoldReroll)} (+ materials).</p></section>
+      <section class="mods__sec"><h4 class="mods__h mono">TEMPER <span>5th affix · Blacksmith · can be GA</span></h4>
         <div class="mods__row">${manSel}${affSel}</div>
+        ${m.temper ? `<ul class="mods__list"><li class="mods__stat${m.tga ? " is-ga" : ""}${m.cap === TEMPER_CAP && m.mw >= cap ? " is-cap" : ""}"><span class="mods__tag mono">TEMPER</span>
+          <span class="mods__text">${Engine.renderAffix(m.temper.a, { t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP, affixMult: affixMultFor(m, TEMPER_CAP, t) }).map((l) => l.html).join("<br>")}</span>
+          <label class="mods__chk mono" title="The temper can roll as a Greater Affix: +${Math.round((g.gaBonus ?? 0.25) * 100)}%"><input type="checkbox" data-mact="tga" data-mval="t"${m.tga ? " checked" : ""}${dis}> GA</label>${capBtn(TEMPER_CAP)}</li></ul>
+          <p class="hint">The temper's value is a roll (Roll quality): rerolling it takes several tries, and it can land as a GA by chance. A GA temper is a good capstone target.</p>` : ""}
         ${mans.length ? "" : '<p class="hint">No temper manual fits this slot.</p>'}</section>
       <section class="mods__sec"><h4 class="mods__h mono">TRANSFIGURATION <span>Horadric Cube · risky</span></h4>
         <ul class="mods__list">${tfList}</ul>
