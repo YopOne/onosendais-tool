@@ -612,6 +612,8 @@ h1, h2, h3 { margin: 0; }
 .sb-cell__name { font: 700 0.9rem var(--font-display); color: var(--rarity); line-height: 1.2; overflow-wrap: anywhere; }
 .sb-cell--empty .sb-cell__name, .sb-cell--locked .sb-cell__name { font: italic 400 0.84rem var(--font-body); color: var(--faint); }
 .sb-cell__clear { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: #0c0c0f; color: var(--muted); cursor: pointer; font-size: 0.9rem; line-height: 1; }
+.sb-cell__toggle { position: absolute; bottom: 4px; right: 4px; padding: 0 6px; height: 18px; border: 1px solid var(--line); border-radius: 999px; background: #0c0c0f; color: var(--faint); font-size: 0.62rem; letter-spacing: 0.1em; cursor: pointer; }
+.sb-cell__toggle[aria-pressed="true"] { color: #0c0c0f; background: var(--r-legendary); border-color: var(--r-legendary); }
 .sb-cell__clear:hover { color: var(--text); border-color: var(--accent); }
 .sb-sealpower { padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--r-mythic) 35%, var(--line)); border-radius: 4px; background: color-mix(in srgb, var(--r-mythic) 6%, transparent); }
 .sb-sealpower > .mono { font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--r-mythic); }

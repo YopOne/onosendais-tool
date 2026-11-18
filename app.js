@@ -22,6 +22,10 @@
 
   const CLASS_FILTERS = ["Barbarian", "Druid", "Necromancer", "Paladin", "Rogue", "Sorcerer", "Spiritborn", "Warlock"];
   const RARITY_FILTERS = ["Unique", "Mythic", "Legendary"]; // Ancestral is a View (item power 900), not a rarity
+  // Aspect categories (FILTER_Legendary_* tags) and the slots aspects can be imprinted on (arAllowedItemLabels).
+  const ASPECT_CATS = ["Offensive", "Defensive", "Utility", "Resource", "Mobility"];
+  const ASPECT_SLOTS_ORDER = ["Weapon", "Helm", "Chest", "Gloves", "Pants", "Boots", "Amulet", "Ring", "Shield"];
+  const ASPECT_SLOT_ICON = { Weapon: "1H Weapon", Shield: "Off-Hand" };
   const SLOT_ORDER = ["Helm", "Chest", "Gloves", "Pants", "Boots", "Amulet", "Ring", "1H Weapon", "2H Weapon", "Off-Hand"];
 
   /**
@@ -599,11 +603,11 @@
   const state = {
     records: [],
     byId: new Map(),
-    filters: { q: "", tokens: [], cls: "all", rarity: "all", slot: "all", source: "all", avail: "all" },
+    filters: { q: "", tokens: [], cls: "all", rarity: "all", slot: "all", source: "all", avail: "all", cat: "all" },
     mode: null,
     activeCard: null,
     pins: [],
-    sandbox: { t: 1, rank: 16, ip: 850, mythic: [], slot: {} }, // slot: aspect key -> "amulet" | "2h"
+    sandbox: { t: 1, rank: 16, ip: 850, mythic: [], slot: {}, charms: [], sets: [], leg: {} }, // slot: aspect key -> "amulet" | "2h"
     view: { mythic: false, ip: IP.standard }, // Database view: Standard 850 / Ancestral 900 / crafted Mythic
     curation: null,
   };
@@ -736,6 +740,8 @@
         type: "Legendary Aspect",
         classes: a.c || [],
         maxRank: a.rk || null,
+        cats: asp.cat || [],
+        aslots: asp.sl || [],
         flavor: "",
         icon: asp.ic || "",
         power, imp: [], stats: [], mythicLines: [], crafted: false,
@@ -745,7 +751,7 @@
 
     for (const r of records) {
       const effectPlain = [r.power && r.power.plain, ...r.imp.map((x) => x.plain), ...r.stats.map((x) => x.plain)].filter(Boolean).join(" ");
-      r.search = [r.name, r.type, r.slot, r.rarity, r.classes.length ? r.classes.join(" ") : "all classes", r.drop && r.drop.text, effectPlain]
+      r.search = [r.name, r.type, r.slot, r.rarity, ...(r.cats || []), ...(r.aslots || []), r.classes.length ? r.classes.join(" ") : "all classes", r.drop && r.drop.text, effectPlain]
         .filter(Boolean).join(" ").toLowerCase();
       r.classLabel = r.classes.length ? r.classes.join(" / ") : "All classes";
     }
@@ -765,7 +771,7 @@
     viewCatalog: $("view-catalog"), viewSandbox: $("view-sandbox"),
     catalogEyebrow: $("catalog-eyebrow"), catalogTitle: $("catalog-title"),
     filterClass: $("filter-class"), filterRarity: $("filter-rarity"), filterSlot: $("filter-slot"),
-    rowRarity: $("row-rarity"), rowSlot: $("row-slot"), rowView: $("row-view"),
+    rowRarity: $("row-rarity"), rowSlot: $("row-slot"), rowView: $("row-view"), rowCat: $("row-cat"), filterCat: $("filter-cat"),
     rowSource: $("row-source"), filterSource: $("filter-source"), rowAvail: $("row-avail"), filterAvail: $("filter-avail"), sourceNote: $("source-note"),
     viewRunes: $("view-runes"), runeTabs: $("rune-tabs"), rowRuneKind: $("row-rune-kind"), runesBody: $("runes-body"),
     runesCount: $("runes-count"), runesSource: $("runes-source"),
@@ -785,7 +791,7 @@
   }
 
   function cardHTML(r) {
-    const meta = r.kind === "aspect" ? "Legendary Aspect" : `${r.crafted ? "Mythic (crafted)" : r.rarity} · ${r.slot}`;
+    const meta = r.kind === "aspect" ? `Legendary Aspect${r.cats.length ? " · " + r.cats.join(" / ") : ""}` : `${r.crafted ? "Mythic (crafted)" : r.rarity} · ${r.slot}`;
     const pinned = state.pins.includes(r.key);
     return `
       <article class="card card--${rarityClass(shownRarity(r))}" tabindex="0" data-key="${esc(r.key)}" aria-describedby="tooltip">
@@ -800,16 +806,20 @@
         <span class="card__foot">
           <span class="tag tag--cls">${esc(r.classLabel)}</span>
           ${r.kind === "item" ? `<span class="tag">${esc(r.type)}</span>` : r.maxRank ? `<span class="tag">Rank 1–${r.maxRank}</span>` : ""}
+          ${r.kind === "aspect" && r.aslots.length ? `<span class="tag" title="Can be imprinted on: ${esc(r.aslots.join(", "))}">${esc(aspectSlotsShort(r.aslots))}</span>` : ""}
           ${r.drop ? `<span class="tag tag--drop" title="${esc(r.drop.text)}">${esc(r.drop.tag)}</span>` : ""}
         </span>
         <button type="button" class="pin" data-pin="${esc(r.key)}" aria-pressed="${pinned}" title="${pinned ? "Remove from" : "Add to"} Theorycraft Sandbox" aria-label="${pinned ? "Remove from" : "Add to"} sandbox">${pinned ? "✓" : "+"}</button>
       </article>`;
   }
 
+  /** Short label for an aspect's imprint slots, e.g. "Weapon · Gloves · Ring · Amulet". */
+  const aspectSlotsShort = (sl) => sl.join(" · ");
+
   /* ---------- Tooltip ---------- */
   function tooltipInner(r, rendered = r) {
     const typeLine = r.kind === "aspect"
-      ? `Legendary Aspect${r.classes.length ? " · " + r.classLabel : ""}`
+      ? `${(r.cats || []).length ? r.cats.join(" / ") + " " : ""}Legendary Aspect${r.classes.length ? " · " + r.classLabel : ""}`
       : `${r.classes.length === 1 ? r.classes[0] + " " : ""}${rendered.crafted ? "Mythic Unique" : r.rarity} ${r.type}`;
     const parts = [];
     if (rendered.imp.length) parts.push(`<ul class="tt__lines tt__lines--imp">${rendered.imp.map((l) => `<li>${l.html}</li>`).join("")}</ul>`);
@@ -825,7 +835,8 @@
       r.maxRank ? ["RANKS", `1–${r.maxRank}`] : null,
       r.kind === "item" && bonusSlot(r.raw) && r.raw.power && (rendered.crafted || r.rarity === "Mythic")
         ? ["SLOT BONUS", `Mythic ${bonusSlot(r.raw) === "2h" ? "2H weapon: unique power ×2" : "amulet: unique power ×1.5"}, included above`] : null,
-      r.kind === "aspect" ? ["IMPRINT", "Non-unique gear via the Codex of Power (salvage at the Blacksmith). Amulet 150% · 2H weapon 200% (try it in the Sandbox)"] : null,
+      r.kind === "aspect" && (r.aslots || []).length ? ["SLOTS", r.aslots.join(", ") + (r.aslots.includes("Weapon") ? " (2H weapon ×2)" : "") + (r.aslots.includes("Amulet") ? " · amulet ×1.5" : "")] : null,
+      r.kind === "aspect" ? ["IMPRINT", "On a rare item in an allowed slot via the Codex of Power (salvage a legendary at the Blacksmith to save it), or over the aspect of a legendary in that slot"] : null,
       rendered.crafted ? ["MYTHIC", "Crafted: base stats at max, unique power +Unique Potency. Only 1 crafted Mythic can be equipped at a time"] : null,
       r.kind === "item" && r.rarity === "Mythic" ? ["EQUIP", "Doesn't count toward the 1 crafted Mythic limit (dropped Iconic Mythics and random Mythics from the Blacksmith or Jeweler don't)"] : null,
       ["ID", r.id],
@@ -866,6 +877,17 @@
     const id = rest.join(":");
     if (kind === "set") { const x = state.sandbox.sets[+id], p = x && talismanIdx().piece.get(x.p); return p && { html: setCharmTooltip(p, x.a), rarity: "set" }; }
     if (kind === "piece") { const p = talismanIdx().piece.get(id); return p && { html: setCharmTooltip(p, []), rarity: "set" }; }
+    if (kind === "leg") {
+      const e = state.sandbox.leg[id], r = e && state.byId.get(e.a);
+      if (!r) return null;
+      return { html: tooltipInner({ ...r, type: `Legendary ${slotNameOf(id)}` }, renderLegAspect(r.key, id)), rarity: "legendary" };
+    }
+    if (kind === "legpick") {
+      const [spec, akey] = id.split("|"), r = state.byId.get(akey);
+      if (!r) return null;
+      const world = { t: state.sandbox.t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP, slotBonus: aspectSlotBonus(legBonusSlot(spec, null)) };
+      return { html: tooltipInner(r, { power: Engine.renderAffix(r.id, world)[0] || null, imp: [], stats: [], mythicLines: [], crafted: false }), rarity: "legendary" };
+    }
     if (kind === "torch") {
       const it = codexItem(TORCH_ID);
       if (!it) return null;
@@ -940,10 +962,11 @@
     els.catalogEyebrow.textContent = mode === "codex" ? "// ASPECT CODEX" : "// DATABASE";
     els.catalogTitle.textContent = mode === "codex" ? "Aspect Codex" : "Database";
     $("catalog-sub").textContent = mode === "codex"
-      ? "Legendary aspects. Salvage a legendary item at the Blacksmith to save its aspect to the Codex of Power, then imprint it on any non-unique item: 150% on an amulet, 200% on a two-handed weapon. Unique powers can't be imprinted."
+      ? "Legendary aspects. Salvage a legendary at the Blacksmith to save its aspect to the Codex of Power, then imprint it on a rare item, or over the aspect of a legendary. Each aspect has a type (Offensive, Defensive, Utility, Resource, Mobility) that decides its slots: Offensive on weapons, gloves, rings and amulets; Defensive on helm, chest, pants, amulet and shield; Utility on armor, amulet and shield; Resource on rings and amulet; Mobility on boots and amulet. Amulet 150%, two-handed weapon 200%. Unique powers can't be imprinted."
       : "Uniques, Mythics and legendary aspects. A unique's power stays on that unique; only legendary aspects can be saved to the Codex of Power and imprinted on other gear.";
     els.rowRarity.hidden = mode === "codex";
-    els.rowSlot.hidden = mode === "codex";
+    els.rowSlot.hidden = false;
+    els.rowCat.hidden = mode !== "codex";
     els.rowView.hidden = mode === "codex";
     els.rowView.querySelectorAll("[data-view]").forEach((b) => {
       b.setAttribute("aria-pressed", String(b.dataset.view === viewName()));
@@ -970,9 +993,17 @@
       RARITY_FILTERS.map((x) => pill("rarity", x, x, count((r) => r.rarity === x))).join("");
 
     const slotCounts = {};
-    for (const r of recs) if (r.slot) slotCounts[r.slot] = (slotCounts[r.slot] || 0) + 1;
-    const slots = [...SLOT_ORDER.filter((s) => slotCounts[s]), ...Object.keys(slotCounts).filter((s) => !SLOT_ORDER.includes(s)).sort()];
-    els.filterSlot.innerHTML = pill("slot", "all", "All", recs.length) + slots.map((s) => pill("slot", s, s, slotCounts[s], false, "", slotIcon(s))).join("");
+    if (state.mode === "codex") {
+      // Aspect Codex: Slot = where an aspect can be imprinted.
+      for (const r of recs) for (const s of r.aslots || []) slotCounts[s] = (slotCounts[s] || 0) + 1;
+      els.filterSlot.innerHTML = pill("slot", "all", "All", recs.length) + ASPECT_SLOTS_ORDER.filter((s) => slotCounts[s])
+        .map((s) => pill("slot", s, s, slotCounts[s], false, `Aspects that can be imprinted on ${s === "Weapon" ? "a weapon" : "a " + s}`, slotIcon(ASPECT_SLOT_ICON[s] || s))).join("");
+      els.filterCat.innerHTML = pill("cat", "all", "All", recs.length) + ASPECT_CATS.map((c) => pill("cat", c, c, count((r) => (r.cats || []).includes(c)))).join("");
+    } else {
+      for (const r of recs) if (r.slot) slotCounts[r.slot] = (slotCounts[r.slot] || 0) + 1;
+      const slots = [...SLOT_ORDER.filter((s) => slotCounts[s]), ...Object.keys(slotCounts).filter((s) => !SLOT_ORDER.includes(s)).sort()];
+      els.filterSlot.innerHTML = pill("slot", "all", "All", recs.length) + slots.map((s) => pill("slot", s, s, slotCounts[s], false, "", slotIcon(s))).join("");
+    }
     if (f.slot !== "all" && !slotCounts[f.slot]) f.slot = "all";
 
     const drops = Engine.codex && Engine.codex.drops;
@@ -1010,7 +1041,10 @@
   function matches(r) {
     const f = state.filters;
     if (f.cls !== "all" && r.classes.length && !r.classes.includes(f.cls)) return false;
-    if (state.mode !== "codex") {
+    if (state.mode === "codex") {
+      if (f.slot !== "all" && !(r.aslots || []).includes(f.slot)) return false;
+      if (f.cat !== "all" && !(r.cats || []).includes(f.cat)) return false;
+    } else {
       if (f.rarity !== "all" && r.rarity !== f.rarity) return false;
       if (f.slot !== "all" && r.slot !== f.slot) return false;
       if (f.source !== "all" && (f.source === "unknown" ? r.drop : !(r.drop && r.drop.keys.includes(f.source)))) return false;
@@ -1052,6 +1086,9 @@
       state.sandbox.charms = ch ? decodeURIComponent(ch[1]).split(",").filter((k) => state.pins.includes(k)) : [];
       state.sandbox.seal = seal && SEALS[seal[1]] ? seal[1] : "";
       state.sandbox.torch = /[?&]torch=1/.test(location.hash);
+      const lg = /[?&]leg=([^&]+)/.exec(location.hash);
+      state.sandbox.leg = {};
+      if (lg) for (const x of decodeURIComponent(lg[1]).split(",")) { const [sp, ak, two] = x.split("~"); if (sp && state.byId.has(ak)) state.sandbox.leg[sp] = { a: ak, two: two === "1" }; }
       const sc = /[?&]sets=([^&]+)/.exec(location.hash);
       state.sandbox.sets = sc ? decodeURIComponent(sc[1]).split(",").map((x) => { const [p, a1, a2] = x.split("~"); return { p, a: [a1 || "", a2 || ""] }; }).filter((x) => talismanIdx().piece.has(x.p)) : [];
       state.sandbox.cls = cls && Engine.codex.meta.classes.includes(decodeURIComponent(cls[1])) ? decodeURIComponent(cls[1]) : "";
@@ -1065,6 +1102,7 @@
     if (!state.sandbox.slot || typeof state.sandbox.slot !== "object") state.sandbox.slot = {};
     if (!Array.isArray(state.sandbox.charms)) state.sandbox.charms = [];
     if (!Array.isArray(state.sandbox.sets)) state.sandbox.sets = [];
+    if (!state.sandbox.leg || typeof state.sandbox.leg !== "object") state.sandbox.leg = {};
     state.sandbox.sets = state.sandbox.sets.filter((x) => x && talismanIdx().piece.has(x.p));
     state.sandbox.charms = state.sandbox.charms.filter((k) => state.pins.includes(k));
   }
@@ -1252,9 +1290,16 @@
       return true;
     }
     if (isGear(r)) {
-      const limit = GEAR_LIMIT[r.slot];
+      const legs = Object.keys(state.sandbox.leg).filter((sp) => sp.startsWith(`g:${r.slot}:`));
+      const limit = GEAR_LIMIT[r.slot] - legs.length;
       const inSlot = state.pins.filter((k) => k !== key && !isCharm(k) && (state.byId.get(k) || {}).slot === r.slot);
       if (inSlot.length < limit) return true;
+      if (legs.length && !(preferCharm && charmOf(r) && uniqueRoom())) {
+        const sp = legs[legs.length - 1], a = state.byId.get(state.sandbox.leg[sp].a);
+        delete state.sandbox.leg[sp];
+        toast(`Replaced the legendary ${r.slot}${a ? " (" + a.name + ")" : ""} with ${r.name}.`);
+        return true;
+      }
       if (preferCharm && charmOf(r) && uniqueRoom()) {
         state.sandbox.charms.push(key);
         toast(`${r.name} went to the Talisman as a charm (${r.slot} slot taken).`);
@@ -1267,16 +1312,41 @@
 
   /* ---------- Build editor: slots, picker ---------- */
 
+  /* Legendary items: a non-unique slot holding a legendary with an imprinted aspect.
+   * state.sandbox.leg = { "<slot spec>": { a: aspect record key, two: 2H (generic main hand only) } }. */
+  const INHERENT_2H = new Set(["w:blunt", "w:slash", "w:ranged"]);
+  /** Aspect slot bonus for a legendary in `spec`: amulet x1.5, 2H weapon x2. */
+  function legBonusSlot(spec, e) {
+    if (spec.startsWith("g:Amulet")) return "amulet";
+    if (INHERENT_2H.has(spec) || (spec === "w:main" && e && e.two)) return "2h";
+    return null;
+  }
+  /** Which aspect slot (ASPECT_SLOTS_ORDER) a slot spec accepts. */
+  function legAspectSlots(spec) {
+    if (spec.startsWith("g:")) return [spec.split(":")[1]];
+    if (spec === "w:off" && !["Barbarian", "Rogue"].includes(sandboxClass())) return ["Shield", "Weapon"];
+    return ["Weapon"];
+  }
+  function renderLegAspect(key, spec) {
+    const r = state.byId.get(key), e = state.sandbox.leg[spec];
+    if (!r) return null;
+    const world = { t: state.sandbox.t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP, slotBonus: aspectSlotBonus(legBonusSlot(spec, e)) };
+    return { power: Engine.renderAffix(r.id, world)[0] || null, imp: [], stats: [], mythicLines: [], crafted: false };
+  }
+  const slotNameOf = (spec) => (spec.startsWith("g:") ? spec.split(":")[1] + (spec.startsWith("g:Ring") ? " " + (+spec.split(":")[2] + 1) : "")
+    : (weaponRule(sandboxClass()).slots[spec.slice(2)] || spec.slice(2)));
+
   /** Which pinned item is in which slot: { weapons: {slot: key}, unfitWeapons, gear: {Helm: [keys]}, overGear }. */
   function sbLayout() {
     const cls = sandboxClass();
     const weapons = state.pins.filter((k) => !isCharm(k) && isWeapon(state.byId.get(k)));
     const { used, unfit } = fitWeapons(weapons, cls);
-    const gear = {}, overGear = [];
+    const gear = {}, overGear = [], leg = state.sandbox.leg;
     for (const slot of Object.keys(GEAR_LIMIT)) {
+      // Uniques fill the slots that don't hold a legendary (aspect) item.
       const ks = state.pins.filter((k) => !isCharm(k) && (state.byId.get(k) || {}).slot === slot);
-      gear[slot] = ks.slice(0, GEAR_LIMIT[slot]);
-      overGear.push(...ks.slice(GEAR_LIMIT[slot]));
+      gear[slot] = Array.from({ length: GEAR_LIMIT[slot] }, (_, i) => (leg[`g:${slot}:${i}`] ? null : ks.shift() || null));
+      overGear.push(...ks);
     }
     return { weapons: used, unfitWeapons: unfit, gear, overGear };
   }
@@ -1288,14 +1358,20 @@
     const cls = sandboxClass();
     const [kind, a] = spec.split(":");
     const item = (r, sub) => ({ value: r.key, name: r.name, sub, icon: r.icon, rarity: rarityClass(r.rarity) });
+    const legOpts = () => {
+      const want = legAspectSlots(spec), bonus = legBonusSlot(spec, null);
+      const what = spec.startsWith("g:") ? a : spec === "w:off" ? "off-hand" : bonus === "2h" ? "2H weapon" : "weapon";
+      return state.records.filter((r) => r.kind === "aspect" && classOk(r, cls) && (r.aslots || []).some((x) => want.includes(x)))
+        .map((r) => ({ value: "L:" + r.key, name: r.name, sub: `Legendary ${what} with this aspect · ${(r.cats || []).join(" / ")}${bonus === "amulet" ? " · ×1.5" : bonus === "2h" ? " · ×2" : ""}`, icon: "", rarity: "legendary", tip: "legpick:" + spec + "|" + r.key }));
+    };
     if (kind === "w") {
       const rule = weaponRule(cls);
-      return state.records.filter((r) => r.kind === "item" && isWeapon(r) && classOk(r, cls) && (rule.fits(r.raw.typeId) || []).some((set) => set.includes(a)))
-        .map((r) => item(r, `${r.rarity} ${r.type}${r.classes.length ? " · " + r.classLabel : ""}`));
+      return [...state.records.filter((r) => r.kind === "item" && isWeapon(r) && classOk(r, cls) && (rule.fits(r.raw.typeId) || []).some((set) => set.includes(a)))
+        .map((r) => item(r, `${r.rarity} ${r.type}${r.classes.length ? " · " + r.classLabel : ""}`)), ...legOpts()];
     }
     if (kind === "g") {
-      return state.records.filter((r) => r.kind === "item" && r.slot === a && classOk(r, cls))
-        .map((r) => item(r, `${r.rarity} ${r.type}${r.classes.length ? " · " + r.classLabel : ""}`));
+      return [...state.records.filter((r) => r.kind === "item" && r.slot === a && classOk(r, cls))
+        .map((r) => item(r, `${r.rarity} ${r.type}${r.classes.length ? " · " + r.classLabel : ""}`)), ...legOpts()];
     }
     if (kind === "c") {
       const T = talismanIdx();
@@ -1334,14 +1410,31 @@
   function applyPick(spec, value) {
     const [kind, a, b] = spec.split(":");
     const L = sbLayout();
-    if (kind === "g") {
+    const leg = state.sandbox.leg;
+    if (value.startsWith("L:") && (kind === "g" || kind === "w")) {
+      // Legendary item with an aspect: clear the unique(s) in that slot.
+      const key = value.slice(2);
+      if (kind === "g") {
+        const occ = L.gear[a][+b];
+        if (occ) unpinQuiet([occ]);
+      } else {
+        const occ = [L.weapons[a]];
+        if (a === "off") { if (leg["w:main"]) leg["w:main"].two = false; }
+        if (a === "main" && L.weapons.main && L.weapons.main === L.weapons.off) occ.push(L.weapons.off);
+        unpinQuiet(occ.filter(Boolean));
+      }
+      leg[spec] = { a: key, two: INHERENT_2H.has(spec) };
+    } else if (kind === "g") {
       const occ = L.gear[a][+b];
+      delete leg[spec];
       if (occ !== value) replacePins(occ ? [occ] : [], value);
     } else if (kind === "w") {
       const r = state.byId.get(value), cls = sandboxClass();
       if (cls && r.classes.length && !r.classes.includes(cls)) { toast(`${r.name} can't be equipped by a ${cls}.`); return; }
       const choice = (weaponRule(cls).fits(r.raw.typeId) || []).find((set) => set.includes(a)) || [a];
       replacePins([...new Set(choice.map((sl) => L.weapons[sl]).filter(Boolean))], value);
+      for (const sl of choice) delete leg["w:" + sl];
+      if (a === "off" && leg["w:main"]) leg["w:main"].two = false;
     } else if (kind === "c") {
       const i = +a, occ = talismanOccupants()[i];
       if (occ && occ.torch) state.sandbox.torch = false;
@@ -1383,7 +1476,7 @@
         const q = search.value.trim().toLowerCase();
         const all = el._items || [];
         const hits = (q ? all.filter((c) => (c.name + " " + c.sub).toLowerCase().includes(q)) : all).slice(0, 800);
-        list.innerHTML = hits.length ? hits.map((c) => `<li><button type="button" class="picker__item picker__item--${esc(c.rarity)}" data-pval="${esc(c.value)}" data-key="${esc(pickTipKey(c.value))}">
+        list.innerHTML = hits.length ? hits.map((c) => `<li><button type="button" class="picker__item picker__item--${esc(c.rarity)}" data-pval="${esc(c.value)}" data-key="${esc(c.tip || pickTipKey(c.value))}">
             <span class="picker__ico">${itemIcon(c.icon)}</span><span class="picker__text"><span class="picker__name">${esc(c.name)}</span><span class="picker__sub">${esc(c.sub)}</span></span></button></li>`).join("")
           : `<li class="hint" style="padding:12px">Nothing fits this slot${sandboxClass() ? " for a " + esc(sandboxClass()) : ""}.</li>`;
       };
@@ -1474,16 +1567,34 @@
       </div>`;
     };
 
+    // A legendary item (non-unique) holding an imprinted aspect.
+    const legCell = (spec, label) => {
+      const e = state.sandbox.leg[spec], r = e && state.byId.get(e.a);
+      if (!r) return null;
+      const bonus = legBonusSlot(spec, e);
+      const toggle2h = spec === "w:main" && !INHERENT_2H.has(spec) && rule === WEAPON_RULES.any
+        ? `<button type="button" class="sb-cell__toggle mono" data-leg2h="${spec}" aria-pressed="${Boolean(e.two)}" title="Two-handed weapon: aspect ×2, no off-hand">2H</button>` : "";
+      return `<div class="sb-cell sb-cell--legendary" data-key="leg:${esc(spec)}">
+        <button type="button" class="sb-cell__pick" data-pick="${esc(spec)}" title="Change ${esc(label)}">
+          <span class="sb-cell__ico"><span class="sb-cell__plus" aria-hidden="true">◈</span></span>
+          <span class="sb-cell__text"><span class="sb-cell__label mono">${esc(label)}${e.two && spec === "w:main" ? " (2H)" : ""} · Legendary${bonus === "amulet" ? " ×1.5" : bonus === "2h" ? " ×2" : ""}</span><span class="sb-cell__name">${esc(r.name)}</span></span></button>
+        ${toggle2h}<button type="button" class="sb-cell__clear" data-legremove="${esc(spec)}" aria-label="Remove ${esc(r.name)}" title="Remove">×</button></div>`;
+    };
     // Weapons (class rules), armor, jewelry.
+    const mainLeg2h = state.sandbox.leg["w:main"] && state.sandbox.leg["w:main"].two && !L.weapons.main;
     const wCells = Object.entries(rule.slots).map(([sl, label]) => {
       const k = L.weapons[sl];
       const twoHand = k && Object.entries(L.weapons).filter(([, x]) => x === k).length > 1;
       // The off-hand stays clickable under a 2H: picking a 1H or off-hand there swaps the 2H out.
-      if (twoHand && sl !== "main") return cell("w:" + sl, label, null, "", "held by the 2H weapon");
+      if ((twoHand || (mainLeg2h && rule === WEAPON_RULES.any)) && sl !== "main") return cell("w:" + sl, label, null, "", "held by the 2H weapon");
+      if (!k) { const lc = legCell("w:" + sl, label); if (lc) return lc; }
       return cell("w:" + sl, twoHand ? `${label} (2H)` : label, k);
     }).join("");
     const gCells = Object.entries(GEAR_LIMIT).flatMap(([slot, n]) =>
-      Array.from({ length: n }, (_, i) => cell(`g:${slot}:${i}`, n > 1 ? `${slot} ${i + 1}` : slot, L.gear[slot][i]))).join("");
+      Array.from({ length: n }, (_, i) => {
+        const spec = `g:${slot}:${i}`, label = n > 1 ? `${slot} ${i + 1}` : slot;
+        return (!L.gear[slot][i] && legCell(spec, label)) || cell(spec, label, L.gear[slot][i]);
+      })).join("");
     const overflow = [...L.unfitWeapons, ...L.overGear];
     const build = `<section class="sb-build">
       <div class="sb-build__head"><h3 class="sb-loadout__title mono">BUILD // ${esc(cls || "any class")}</h3>
@@ -1563,13 +1674,23 @@
 
     const aspectKeys = state.pins.filter((k) => (state.byId.get(k) || {}).kind === "aspect");
     const aspects = `<section class="sb-build">
-      <div class="sb-build__head"><h3 class="sb-loadout__title mono">ASPECTS // ${aspectKeys.length}</h3>
+      <div class="sb-build__head"><h3 class="sb-loadout__title mono">ASPECTS TO COMPARE // ${aspectKeys.length}</h3>
         <button type="button" class="btn mono" data-pick="aspect">+ ADD ASPECT</button></div>
-      ${aspectKeys.length ? "" : '<p class="hint">Legendary aspects to compare. Use AMULET ×1.5 / 2H ×2 on each one below to see it imprinted on those slots.</p>'}
+      ${aspectKeys.length ? "" : '<p class="hint">To equip an aspect, click a slot in the build and pick it from the Legendary entries (only aspects allowed in that slot are listed; amulet ×1.5, 2H weapon ×2 apply automatically). Aspects added here are just for side-by-side comparison.</p>'}
     </section>`;
 
-    const details = state.pins.length ? `<h3 class="sb-details mono">DETAILS // tooltips at your roll quality and item power</h3>` : "";
-    els.sbList.innerHTML = limitNote + build + talisman + aspects + details + state.pins.map((key) => {
+    const details = true ? `<h3 class="sb-details mono">DETAILS // tooltips at your roll quality and item power</h3>` : "";
+    const legSpecs = Object.keys(state.sandbox.leg).filter((sp) => state.byId.has(state.sandbox.leg[sp].a) &&
+      (sp.startsWith("g:") ? !L.gear[sp.split(":")[1]][+sp.split(":")[2]] : rule.slots[sp.slice(2)] && !L.weapons[sp.slice(2)]));
+    const legDetails = legSpecs.map((sp) => {
+      const r = state.byId.get(state.sandbox.leg[sp].a), rendered = renderLegAspect(r.key, sp);
+      const bonus = legBonusSlot(sp, state.sandbox.leg[sp]);
+      rendered.tools = `<div class="sb-entry__tools"><button type="button" class="btn btn--ghost mono" data-legremove="${esc(sp)}">REMOVE</button></div>`;
+      const rv = { ...r, name: `${r.name}`, type: `Legendary ${slotNameOf(sp)}` };
+      return `<article class="sb-entry sb-entry--legendary">${tooltipInner(rv, rendered)}
+        <p class="hint mono" style="padding:0 16px 10px">ON A LEGENDARY ${esc(slotNameOf(sp).toUpperCase())}${bonus === "amulet" ? " // AMULET ×1.5" : bonus === "2h" ? " // 2H WEAPON ×2" : ""} // RANK ${r.maxRank ? Math.min(state.sandbox.rank, r.maxRank) + " / " + r.maxRank : state.sandbox.rank}</p></article>`;
+    }).join("");
+    els.sbList.innerHTML = limitNote + build + talisman + aspects + (state.pins.length || legDetails ? details : "") + legDetails + state.pins.map((key) => {
       const r0 = state.byId.get(key);
       if (!r0) return "";
       const asCharm = isCharm(key) && charmOf(r0);
@@ -1902,7 +2023,7 @@
       if (p && !p.disabled) { state.filters[p.dataset.filter] = p.dataset.value; applyFilters(); }
     });
     els.reset.addEventListener("click", () => {
-      Object.assign(state.filters, { q: "", tokens: [], cls: "all", rarity: "all", slot: "all", source: "all", avail: "all" });
+      Object.assign(state.filters, { q: "", tokens: [], cls: "all", rarity: "all", slot: "all", source: "all", avail: "all", cat: "all" });
       els.search.value = "";
       applyFilters();
     });
@@ -1925,6 +2046,18 @@
       if (pk && !pk.closest("#picker")) {
         const label = (pk.querySelector(".sb-cell__label") || pk).textContent.trim();
         openPicker(pk.dataset.pick, label);
+        return;
+      }
+      const legRm = e.target.closest("[data-legremove]");
+      if (legRm) { delete state.sandbox.leg[legRm.dataset.legremove]; saveSandbox(); hideTooltip(); renderSandbox(); return; }
+      const leg2 = e.target.closest("[data-leg2h]");
+      if (leg2) {
+        const en = state.sandbox.leg[leg2.dataset.leg2h];
+        if (en) {
+          en.two = !en.two;
+          if (en.two) { delete state.sandbox.leg["w:off"]; const L = sbLayout(); if (L.weapons.off) unpinQuiet([L.weapons.off]); savePins(); }
+        }
+        saveSandbox(); renderSandbox();
         return;
       }
       if (e.target.closest("[data-torchremove]")) { state.sandbox.torch = false; saveSandbox(); renderSandbox(); return; }
@@ -1975,7 +2108,7 @@
       tapWasOpen = Boolean(card && card === state.activeCard && !els.tooltip.hidden);
     });
     document.addEventListener("click", (e) => {
-      if (e.target.closest("[data-pin], [data-pick], [data-pval], .sb-cell__clear")) return;
+      if (e.target.closest("[data-pin], [data-pick], [data-pval], .sb-cell__clear, .sb-cell__toggle")) return;
       const card = e.target.closest("[data-key]");
       if (!card) { hideTooltip(); return; }
       if (e.pointerType && e.pointerType !== "mouse" && tapWasOpen) hideTooltip(); else showTooltip(card);
@@ -2019,9 +2152,9 @@
       try { localStorage.setItem(SB_KEY, JSON.stringify(state.sandbox)); } catch { /* ignore */ }
       renderSandbox();
     });
-    els.sbClear.addEventListener("click", () => { state.pins = []; state.sandbox.charms = []; state.sandbox.sets = []; state.sandbox.torch = false; saveSandbox(); savePins(); renderSandbox(); state.mode = null; });
+    els.sbClear.addEventListener("click", () => { state.pins = []; state.sandbox.charms = []; state.sandbox.sets = []; state.sandbox.torch = false; state.sandbox.leg = {}; saveSandbox(); savePins(); renderSandbox(); state.mode = null; });
     els.sbShare.addEventListener("click", async () => {
-      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}`;
+      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}`;
       try { await navigator.clipboard.writeText(url); els.sbShare.textContent = "COPIED"; }
       catch { window.prompt("Copy this link:", url); }
       setTimeout(() => (els.sbShare.textContent = "COPY LINK"), 1400);

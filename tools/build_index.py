@@ -75,6 +75,27 @@ PARAM_ENUMS = {
 }
 POWER_GROUP = 29
 
+# Aspect imprint slots: arAllowedItemLabels -> slot (label ids read off ItemType/*.itt arItemLabels; 0 = any weapon).
+ASPECT_SLOT_LABELS = {0: "Weapon", 16: "Helm", 17: "Chest", 28: "Gloves", 30: "Pants", 29: "Boots", 26: "Amulet", 19: "Ring", 15: "Shield"}
+ASPECT_CATEGORIES = {"Offensive": "Offensive", "Defensive": "Defensive", "Utility": "Utility", "Resource": "Resource", "Movement": "Mobility"}
+
+
+def aspect_category(tags, slots):
+    """FILTER_Legendary_<cat> skill tags; 14 aspects have none, so infer it from their slot set (same sets per category)."""
+    cats = [ASPECT_CATEGORIES[t.split("_")[-1]] for t in tags if t.startswith("FILTER_Legendary_") and t.split("_")[-1] in ASPECT_CATEGORIES]
+    if cats:
+        return cats
+    sl = set(slots)
+    if "Weapon" in sl:
+        return ["Offensive"]
+    if sl == {"Ring", "Amulet"}:
+        return ["Resource"]
+    if sl == {"Boots", "Amulet"}:
+        return ["Mobility"]
+    if "Boots" in sl:
+        return ["Utility"]
+    return ["Defensive"]
+
 
 def load(path):
     with open(path, encoding="utf-8") as f:
@@ -386,6 +407,14 @@ def main():
         prev = aspects_by_name.get(key)
         if not prev or score > prev[0]:
             arec = {"id": a, "name": name}
+            araw_p = os.path.join(affix_dir, a + ".aff.json")
+            if have_affix and os.path.exists(araw_p):
+                araw = load(araw_p)
+                order = list(ASPECT_SLOT_LABELS.values())
+                slots = sorted({ASPECT_SLOT_LABELS[l] for l in araw.get("arAllowedItemLabels") or [] if l in ASPECT_SLOT_LABELS}, key=order.index)
+                tags = [(t or {}).get("name", "") for t in araw.get("arAffixSkillTags") or []]
+                arec["sl"] = slots
+                arec["cat"] = aspect_category(tags, slots)
             ic = icons and icons.for_handle(aspect_icon.get(a))
             if ic:
                 arec["ic"] = ic
