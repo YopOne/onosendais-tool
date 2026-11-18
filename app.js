@@ -1744,6 +1744,7 @@
     syncPinButtons();
     const { t, rank } = state.sandbox;
     const ip = state.sandbox.ip || Engine.DEFAULT_IP;
+    document.documentElement.dataset.sbIp = ip >= IP.ancestral ? "900" : ""; // CSS: Ancestral uniques sparkle
     const openRaw = new Set([...els.sbList.querySelectorAll("details[data-raw][open]")].map((d) => d.dataset.raw));
     els.sbRoll.value = Math.round(t * 100);
     els.sbRank.value = rank;
@@ -2452,6 +2453,10 @@
   function render() {
     hideTooltip();
     const view = route();
+    // CSS hooks for the portrait sparkle: which page, and whether the Database shows Ancestral 900 uniques.
+    document.documentElement.dataset.route = view;
+    document.documentElement.dataset.dbView = viewName();
+    document.documentElement.dataset.sbIp = (state.sandbox.ip || Engine.DEFAULT_IP) >= IP.ancestral ? "900" : "";
     document.querySelectorAll("[data-nav]").forEach((a) => {
       if (a.dataset.nav === view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });

@@ -393,6 +393,63 @@ h1, h2, h3 { margin: 0; }
 }
 :is(.card--mythic, .tooltip--mythic, .sb-cell--mythic, .sb-entry--mythic, .picker__item--mythic) .ico-well .ico { filter: var(--well-mythic-art); }
 :is(.card--unique, .card--mythic):is(:hover, :focus-visible, .is-active) .ico-well { border-color: #fff8; }
+
+/* Sparkle: Mythics everywhere; uniques when they're Ancestral 900 (Database "Ancestral 900" view, Sandbox item power 900).
+   A glint sweeps round the border (::after) and small stars twinkle at the corners (::before on the well, or on the slot). */
+@property --spark-a { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes spark-spin { to { --spark-a: 360deg; } }
+@keyframes spark-twinkle {
+  0%, 100% { opacity: 0.15; transform: scale(0.85); }
+  18% { opacity: 1; transform: scale(1.08); }
+  40% { opacity: 0.35; transform: scale(0.92); }
+  62% { opacity: 0.9; transform: scale(1.02); }
+}
+:root {
+  --spark-mythic: #ff8ae6; --spark-mythic-hi: #fff2fc;
+  --spark-anc: #e0573a; --spark-anc-hi: #fff0e6;
+}
+.ico-well { --spark: var(--spark-mythic); --spark-hi: var(--spark-mythic-hi); }
+html[data-route="database"][data-db-view="ancestral"] :is(.card--unique, .tooltip--unique) .ico-well,
+html[data-route="sandbox"][data-sb-ip="900"] :is(.tooltip--unique, .sb-cell--unique, .sb-entry--unique, .picker__item--unique) .ico-well,
+html[data-sb-ip="900"] .pd__slot--unique { --spark: var(--spark-anc); --spark-hi: var(--spark-anc-hi); }
+
+/* Glint border */
+:is(.card--mythic, .tooltip--mythic, .sb-cell--mythic, .sb-entry--mythic, .picker__item--mythic) .ico-well::after,
+html[data-route="database"][data-db-view="ancestral"] :is(.card--unique, .tooltip--unique) .ico-well::after,
+html[data-route="sandbox"][data-sb-ip="900"] :is(.tooltip--unique, .sb-cell--unique, .sb-entry--unique, .picker__item--unique) .ico-well::after,
+.pd__slot--mythic .pd__pick::after, .tal__sock--mythic .tal__pick::after,
+html[data-sb-ip="900"] .pd__slot--unique .pd__pick::after {
+  content: ""; position: absolute; inset: -2px; z-index: 3; border-radius: 3px; padding: 2px; pointer-events: none;
+  background: conic-gradient(from var(--spark-a), transparent 0 62%, color-mix(in srgb, var(--spark) 70%, transparent) 74%, var(--spark-hi) 80%, color-mix(in srgb, var(--spark) 70%, transparent) 86%, transparent 96%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  filter: drop-shadow(0 0 3px var(--spark));
+  animation: spark-spin 3.2s linear infinite;
+}
+.pd__slot--mythic .pd__pick::after, html[data-sb-ip="900"] .pd__slot--unique .pd__pick::after { inset: calc(9% - 2px); }
+.tal__sock--mythic .tal__pick::after { inset: calc(17.5% - 2px) calc(24% - 2px); }
+
+/* Twinkling stars */
+:is(.card--mythic, .tooltip--mythic, .sb-cell--mythic, .sb-entry--mythic, .picker__item--mythic) .ico-well::before,
+html[data-route="database"][data-db-view="ancestral"] :is(.card--unique, .tooltip--unique) .ico-well::before,
+html[data-route="sandbox"][data-sb-ip="900"] :is(.tooltip--unique, .sb-cell--unique, .sb-entry--unique, .picker__item--unique) .ico-well::before,
+.pd__slot--mythic::after, .tal__sock--mythic::after,
+html[data-sb-ip="900"] .pd__slot--unique::after {
+  content: ""; position: absolute; inset: -4px; z-index: 4; pointer-events: none;
+  background:
+    radial-gradient(circle at 8% 10%, var(--spark-hi) 0 1.2px, color-mix(in srgb, var(--spark) 80%, transparent) 2px, transparent 4.5px),
+    radial-gradient(circle at 92% 30%, var(--spark-hi) 0 1px, color-mix(in srgb, var(--spark) 80%, transparent) 1.8px, transparent 4px),
+    radial-gradient(circle at 85% 92%, var(--spark-hi) 0 1.2px, color-mix(in srgb, var(--spark) 80%, transparent) 2px, transparent 4.5px),
+    radial-gradient(circle at 12% 70%, var(--spark-hi) 0 0.8px, color-mix(in srgb, var(--spark) 70%, transparent) 1.5px, transparent 3.5px);
+  animation: spark-twinkle 2.4s ease-in-out infinite;
+}
+.pd__slot--mythic::after, html[data-sb-ip="900"] .pd__slot--unique::after { inset: 4%; }
+.tal__sock--mythic::after { inset: 14% 21%; }
+.pd__slot--mythic, .tal__sock--mythic, .pd__slot--unique { --spark: var(--spark-mythic); --spark-hi: var(--spark-mythic-hi); }
+html[data-sb-ip="900"] .pd__slot--unique { --spark: var(--spark-anc); --spark-hi: var(--spark-anc-hi); }
+@media (prefers-reduced-motion: reduce) {
+  .ico-well::before, .ico-well::after, .pd__pick::after, .tal__pick::after, .pd__slot::after, .tal__sock::after { animation: none !important; }
+}
 .ico-well--tt { width: 52px; height: 74px; margin: 0; }
 .ico-well--rune { width: 40px; height: 54px; margin: 0; }
 .sb-seal__ico { width: 40px; height: 40px; margin: 0; flex: none; }
