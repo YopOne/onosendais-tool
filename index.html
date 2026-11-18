@@ -81,7 +81,7 @@
             <button type="button" class="pill" data-view="ancestral" aria-pressed="false" title="Ancestral unique, item power 900">Ancestral 900</button>
             <button type="button" class="pill pill--mythic" data-view="mythic" aria-pressed="false" title="Show every Unique as its crafted Mythic version">Mythic (crafted)</button>
           </div>
-          <span class="hint view-hint">Base stats at max level: 850, Ancestral 900. Mythics are always 900. Crafted Mythic: made from the Ancestral unique, affixes promoted to max, unique power +30% Unique Potency, plus Mythic bonuses.</span>
+          <span class="hint view-hint">Base stats at max level: 850, Ancestral 900. Mythics are always 900. Crafted Mythic: made from the Ancestral unique, affixes promoted to max, unique power +30% Unique Potency, plus Mythic bonuses. Only 1 crafted Mythic can be equipped; dropped Iconic Mythics and random Mythics from the Blacksmith or Jeweler don't count.</span>
         </div>
       </div>
 
@@ -139,7 +139,7 @@
           <div class="field">
             <label for="sb-roll">Roll quality <output id="sb-roll-out" class="mono"></output></label>
             <input id="sb-roll" type="range" min="0" max="100" step="1" value="100">
-            <p class="hint">0% = minimum roll, 100% = perfect roll. Original Mythics always roll perfectly. Press <span class="mono">MYTHIC</span> on a unique to see its crafted Mythic version (made from the Ancestral 900 unique: affixes promoted to max, unique power keeps this roll +30% potency).</p>
+            <p class="hint">0% = minimum roll, 100% = perfect roll. Original Mythics always roll perfectly. Press <span class="mono">MYTHIC</span> on a unique to see its crafted Mythic version (made from the Ancestral 900 unique: affixes promoted to max, unique power keeps this roll +30% potency). Only 1 crafted Mythic can be equipped at a time.</p>
           </div>
           <div class="field">
             <label for="sb-rank">Aspect rank <output id="sb-rank-out" class="mono"></output></label>

@@ -826,7 +826,8 @@
       r.kind === "item" && bonusSlot(r.raw) && r.raw.power && (rendered.crafted || r.rarity === "Mythic")
         ? ["SLOT BONUS", `Mythic ${bonusSlot(r.raw) === "2h" ? "2H weapon: unique power ×2" : "amulet: unique power ×1.5"}, included above`] : null,
       r.kind === "aspect" ? ["IMPRINT", "Non-unique gear via the Codex of Power (salvage at the Blacksmith). Amulet 150% · 2H weapon 200% (try it in the Sandbox)"] : null,
-      rendered.crafted ? ["MYTHIC", "Crafted: base stats at max, unique power +Unique Potency"] : null,
+      rendered.crafted ? ["MYTHIC", "Crafted: base stats at max, unique power +Unique Potency. Only 1 crafted Mythic can be equipped at a time"] : null,
+      r.kind === "item" && r.rarity === "Mythic" ? ["EQUIP", "Doesn't count toward the 1 crafted Mythic limit (dropped Iconic Mythics and random Mythics from the Blacksmith or Jeweler don't)"] : null,
       ["ID", r.id],
     ].filter(Boolean);
 
@@ -1060,7 +1061,12 @@
       return;
     }
 
-    els.sbList.innerHTML = state.pins.map((key) => {
+    // Only 1 crafted Mythic can be equipped; dropped Iconic Mythics and bought random Mythics don't count.
+    const craftedN = state.pins.filter((k) => state.sandbox.mythic.includes(k) && canCraftMythic(state.byId.get(k) || {})).length;
+    const limitNote = craftedN > 1
+      ? `<p class="sb-note mono">${craftedN} CRAFTED MYTHICS // only 1 can be equipped at a time. Iconic Mythics (boss drops) and random Mythics from the Blacksmith or Jeweler don't count toward the limit.</p>`
+      : "";
+    els.sbList.innerHTML = limitNote + state.pins.map((key) => {
       const r = state.byId.get(key);
       if (!r) return "";
       const rendered = renderedAt(r, { t, rank, ip });

@@ -545,6 +545,7 @@ h1, h2, h3 { margin: 0; }
   padding: 10px; background: var(--black); border: 1px solid var(--line); border-radius: 6px;
   font: 0.7rem/1.5 var(--font-mono); color: #b9b6ad;
 }
+.sb-note { margin: 0; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--r-mythic) 45%, transparent); border-radius: var(--radius); background: color-mix(in srgb, var(--r-mythic) 8%, transparent); color: var(--text-soft); font-size: 0.76rem; letter-spacing: 0.04em; line-height: 1.5; }
 .sb-empty { border: 1px dashed var(--line-hot); border-radius: var(--radius); padding: 40px 20px; text-align: center; color: var(--faint); font: 0.8rem var(--font-mono); letter-spacing: 0.06em; background: rgba(255, 49, 49, 0.03); }
 
 /* ---------- Footer ---------- */
