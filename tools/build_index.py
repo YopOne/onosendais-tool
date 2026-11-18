@@ -41,6 +41,7 @@ import time
 import unicodedata
 
 from runes_recipes import extract as extract_runes
+from skills_paragon import extract as extract_skills
 from icons import Icons
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -694,6 +695,9 @@ def main():
     runes = extract_runes(item_dir, stl_dir, os.path.join(args.d4data, "json", "base", "meta", "Recipe"),
                           os.path.join(ROOT, "data", "sources", "runes_maxroll.json"), items)
 
+    # ---------- Skill trees (and Paragon / glyphs): data/index/skills.json, loaded by the Skills view ----------
+    skills_data = extract_skills(meta_dir, stl_dir, power_dir, icons)
+
     if icons:
         # Same-name copies whose own files have no art (e.g. Runeword bases) borrow it.
         by_name = {}
@@ -758,6 +762,12 @@ def main():
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(codex, f, ensure_ascii=False, separators=(",", ":"))
 
+    skills_out = os.path.join(os.path.dirname(args.out), "skills.json")
+    with open(skills_out, "w", encoding="utf-8") as f:
+        json.dump(skills_data, f, ensure_ascii=False, separators=(",", ":"))
+    print(f"Wrote {os.path.relpath(skills_out, ROOT)} ({os.path.getsize(skills_out) / 1024:,.0f} KB): "
+          f"{len(skills_data['trees'])} trees, {sum(len(t['nodes']) for t in skills_data['trees'].values())} nodes, "
+          f"{len(skills_data['skills'])} skills, {len(skills_data['powers'])} powers")
     size = os.path.getsize(args.out) / 1024
     print(f"Wrote {os.path.relpath(args.out, ROOT)} ({size:,.0f} KB) in {time.time() - t0:.1f}s")
     print(json.dumps(codex["meta"]["counts"]))

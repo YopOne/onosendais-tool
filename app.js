@@ -237,6 +237,12 @@
       // Greater Affix / masterwork / capstone multiplier on one affix (Sandbox item mods); a plain drop has 1.
       GetTotalAffixBonus: (c) => c.world.affixMult || 1,
       AffixMult: (c) => c.world.affixMult || 1,
+      // Skill formulas: Table(n, sLevel) -> GameBalance/PowerFormulaTables[n][rank] (34 = SkillRankBonus).
+      Table: (c, a) => {
+        const t = codex.tables && codex.tables[a[0]];
+        if (!t || a[1] === UNKNOWN) return UNKNOWN;
+        return t[Math.max(0, Math.min(t.length - 1, Math.round(a[1])))] ?? UNKNOWN;
+      },
       SacredAffixScalarOffense: () => glob("flSacredAffixScalarOffense"),
       AncestralAffixScalarOffense: () => glob("flAncestralAffixScalarOffense"),
       SacredAffixScalarDefense: () => glob("flSacredAffixScalarDefense"),
@@ -354,7 +360,12 @@
         return evalFormula(codex.powers[ctx.power][+sf[1]], ctx);
       }
 
-      // Owner.*, Mod.*, live character attributes: not knowable offline
+      // Skill rank in skill formulas (Skills view): sLevel = points in the skill (+ ranks from gear).
+      if ((head === "sLevel" || head === "sRank") && !rest.length) return ctx.world.skillRank || 1;
+      // Mod.UpgradeN: whether a skill upgrade is taken; the tooltip shows each upgrade on its own, so 0.
+      if (head === "Mod" && rest.length) return 0;
+
+      // Owner.*, live character attributes: not knowable offline
       return UNKNOWN;
     }
 
@@ -445,6 +456,12 @@
               html += `<span class="${cls || "gt-important"}">`;
             }
             stack.push(tag);
+          } else if (/^SF_\d+$/.test(tag) && ctx.power) {
+            const res = evalToken(tag, "", ctx);
+            html += `<span class="${res.unknown ? "gt-unk" : "gt-val"}">${esc(res.text)}</span>`; plain += res.text;
+          } else if (/^payload:/i.test(tag) || (ctx.power && /^[A-Z][A-Za-z ]+$/.test(tag))) {
+            // Skill damage payloads and live values (Resource Cost, Cooldown...): need the character's stats.
+            html += `<span class="gt-unk" title="Depends on live character stats (weapon damage, cost and cooldown modifiers).">#</span>`; plain += "#";
           } else if (/^icon:bullet/i.test(tag)) {
             html += "• "; plain += "• ";
           } else if (/^icon:arrow/i.test(tag)) {
@@ -454,7 +471,7 @@
           continue;
         }
         if (p[0] === "[" && p[p.length - 1] === "]") {
-          const inner = p.slice(1, -1);
+          const inner = p.slice(1, -1).replace(/[{}]/g, ""); // skill text puts {SF_n} inside [..]
           const [expr, fmt = ""] = inner.split("|");
           const res = evalToken(expr.trim(), fmt, ctx);
           const cls = res.unknown ? "gt-unk" : res.range ? "gt-val gt-val--range" : "gt-val";
@@ -526,6 +543,8 @@
       mythicPotency,
       /** Render a plain game-text template (no affix context), e.g. rune descriptions. */
       renderText: (t) => render(t, { affix: null, world: { t: 1, rank: 1 }, depth: 0 }),
+      /** Render a template with a full context (skill text: ctx.power for SF_n, world.skillRank for sLevel). */
+      render,
       maxRankOf,
       DEFAULT_IP,
       esc,
@@ -811,7 +830,7 @@
   const $ = (id) => document.getElementById(id);
   const els = {
     hudStatus: $("hud-status"), alert: $("alert"), search: $("search"), pinCount: $("pin-count"),
-    viewCatalog: $("view-catalog"), viewSandbox: $("view-sandbox"),
+    viewCatalog: $("view-catalog"), viewSandbox: $("view-sandbox"), viewSkills: $("view-skills"),
     catalogEyebrow: $("catalog-eyebrow"), catalogTitle: $("catalog-title"),
     filterClass: $("filter-class"), filterRarity: $("filter-rarity"), filterSlot: $("filter-slot"),
     rowRarity: $("row-rarity"), rowSlot: $("row-slot"), rowView: $("row-view"), rowCat: $("row-cat"), filterCat: $("filter-cat"),
@@ -940,6 +959,7 @@
       const world = { t: state.sandbox.t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP, slotBonus: aspectSlotBonus(legBonusSlot(spec, null)) };
       return { html: tooltipInner(r, { power: Engine.renderAffix(r.id, world)[0] || null, imp: [], stats: [], mythicLines: [], crafted: false }), rarity: "legendary" };
     }
+    if (kind === "skill") { const [c, i] = id.split(":"); const h = skTooltip(c, i); return h && { html: h, rarity: "skill" }; }
     if (kind === "torch") {
       const it = codexItem(TORCH_ID);
       if (!it) return null;
@@ -1187,6 +1207,8 @@
       if (so) for (const x of decodeURIComponent(so[1]).split(",")) { const [sp, ...v] = x.split("~"); if (/^(g|w):/.test(sp)) state.sandbox.sock[sp] = v.map((y) => (/^(g|r):/.test(y) ? y : "")); }
       state.sandbox.gt = gt ? +gt[1] : 9;
       state.sandbox.mods = cleanMods(parseMods(/[?&]mods=([^&]+)/.exec(location.hash)));
+      const skm = /[?&]sk=([^&]+)/.exec(location.hash);
+      state.sandbox.skills = skm ? parseSkills(skm[1], sandboxClass()) : null;
       saveSandbox();
       savePins();
       return;
@@ -2318,6 +2340,14 @@
       if (state.sandbox.torch && codexItem(TORCH_ID)) add("torch", "Hellfire Torch", renderItem(codexItem(TORCH_ID), { ...W, ip: 900 }, false));
       if (sealItem) add("seal", sealName, renderItem(sealItem, { ...W, ip: 900 }, false));
       const W850 = { t: state.sandbox.t, rank: 1, ip: 850 };
+      const skS = state.sandbox.skills, skT = SK && skS && skS.cls === sandboxClass() && SK.trees[skS.cls];
+      if (skT) for (const [k, v] of Object.entries(skS.pts || {})) {
+        const n = skT.nodes[+k], st = n && SK.skills[n.p];
+        if (!st || !(v > 0) || n.k !== "mod") continue;
+        const m = st.m[n.m] || {};
+        src.push({ id: `skill:${k}`, name: `${m.n || "Upgrade"} (${st.n})`, lines: [Engine.render(m.d, { power: n.p, world: { t: 1, rank: 1, skillRank: Math.max(1, skS.pts[skT.nodes.findIndex((x) => x.k === "skill" && x.p === n.p)] || 1) }, depth: 0 }).plain] });
+      }
+      else if (!SK && skS && Object.keys(skS.pts || {}).length) loadSkills().then(() => { if (route() === "sandbox") renderSandbox(); });
       setCh.forEach((x) => x.a.filter(Boolean).forEach((id, j) => src.push({ id: `setaff:${x.i}:${j}`, name: x.piece.name, lines: Engine.renderAffix(id, W850).map((l) => l.plain) })));
       for (const { set: st, types } of bySet.values())
         st.tiers.filter((tr) => types.size >= setNeed(tr.n)).forEach((tr) => src.push({ id: `setbonus:${st.id}:${tr.n}`, name: `${st.name} (${setNeed(tr.n)})`, lines: Engine.renderAffix(tr.a, W850).map((l) => l.plain) }));
@@ -2676,7 +2706,7 @@
 
   function route() {
     const h = location.hash.replace(/^#\/?/, "").split("?")[0];
-    return ["database", "codex", "runes", "sandbox"].includes(h) ? h : "database";
+    return ["database", "codex", "runes", "sandbox", "skills"].includes(h) ? h : "database";
   }
 
   const viewName = () => (state.view.mythic ? "mythic" : state.view.ip === IP.ancestral ? "ancestral" : "standard");
@@ -2690,6 +2720,307 @@
     buildRecords(Engine.codex);
     state.mode = null; // force the grid to re-render with the new numbers
     render();
+  }
+
+  /* ==========================================================
+     Skills & Paragon view (#/skills): skill tree (phase 1)
+     data/index/skills.json (tools/skills_paragon.py), loaded on first visit.
+     state.sandbox.skills = { cls, lv: player level, pts: { node index: points } }
+     ========================================================== */
+  let SK = null, skLoading = null;
+  const SK_MAX_LV = 60;
+  function loadSkills() {
+    if (SK) return Promise.resolve(SK);
+    if (!skLoading) skLoading = fetch("data/index/skills.json", { cache: "no-cache" }).then((r) => r.json()).then((d) => {
+      SK = d;
+      Object.assign(Engine.codex.powers, d.powers || {});
+      Engine.codex.tables = d.tables || [];
+      return SK;
+    });
+    return skLoading;
+  }
+  function skState() {
+    const cls = sandboxClass();
+    let s = state.sandbox.skills;
+    if (!s || typeof s !== "object" || s.cls !== cls) s = state.sandbox.skills = { cls, lv: (s && s.lv) || SK_MAX_LV, pts: {} };
+    if (!s.pts || typeof s.pts !== "object") s.pts = {};
+    if (!(s.lv >= 1 && s.lv <= SK_MAX_LV)) s.lv = SK_MAX_LV;
+    return s;
+  }
+  const skTree = () => (SK && SK.trees[sandboxClass()]) || null;
+  /** Nodes that are reachable / active for the current points and level (BFS from the cluster roots). */
+  function skActive(tree, s) {
+    const N = tree.nodes, active = new Set(), reach = new Set();
+    const lvOk = (n) => !n.lv || s.lv >= n.lv;
+    const queue = [];
+    N.forEach((n, i) => { if (n.k === "root" && lvOk(n)) { active.add(i); queue.push(i); } });
+    while (queue.length) {
+      const i = queue.shift();
+      for (const j of N[i].c) {
+        const n = N[j];
+        if (!n || active.has(j)) continue;
+        if (n.k === "hub" || n.k === "root") { if (lvOk(n)) { active.add(j); queue.push(j); } else reach.add(j); continue; }
+        reach.add(j);
+        if ((s.pts[j] || 0) > 0) { active.add(j); queue.push(j); }
+      }
+    }
+    return { active, reach };
+  }
+  /** Can a point go into node i? Returns "" or the reason it can't. */
+  function skCanAdd(tree, s, i, act) {
+    const n = tree.nodes[i];
+    if (n.k !== "skill" && n.k !== "mod") return "Not a skill or upgrade";
+    if (n.lv && s.lv < n.lv) return `Needs level ${n.lv}`;
+    if (!act.reach.has(i) && !act.active.has(i)) return n.k === "mod" ? "Take the skill (and reach this branch) first" : "Reach this cluster first";
+    if ((s.pts[i] || 0) >= n.max) return `Max rank ${n.max}`;
+    if (n.ex != null) {
+      const other = tree.nodes.findIndex((x, j) => j !== i && x.ex === n.ex && (s.pts[j] || 0) > 0);
+      if (other >= 0) return `Pick one: ${skNodeName(tree.nodes[other])} is taken in this group`;
+    }
+    return "";
+  }
+  /** Drop points that are no longer reachable (after removing a skill or lowering the level). */
+  function skPrune(tree, s) {
+    let changed = true, dropped = 0;
+    while (changed) {
+      changed = false;
+      const act = skActive(tree, s);
+      for (const k of Object.keys(s.pts)) {
+        const n = tree.nodes[+k];
+        if (!n || !(s.pts[k] > 0) || (n.lv && s.lv < n.lv) || (!act.reach.has(+k) && !act.active.has(+k))) { delete s.pts[k]; changed = true; dropped++; }
+      }
+    }
+    return dropped;
+  }
+  const skNodeName = (n) => {
+    const st = SK && SK.skills[n.p];
+    if (!st) return n.k;
+    return n.k === "mod" ? ((st.m[n.m] || {}).n || "Upgrade") : st.n;
+  };
+  const skSpent = (s) => Object.values(s.pts).reduce((a, b) => a + (b || 0), 0);
+  /** Extra skill ranks from the Sandbox gear: "+N to <Skill name>" lines on equipped items (category bonuses not counted yet). */
+  function skGearRanks() {
+    const out = {};
+    if (!state.byId.size) return out;
+    const W = { t: state.sandbox.t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP };
+    const L = sbLayout();
+    const keys = new Set([...Object.values(L.weapons), ...Object.values(L.gear).flat()].filter(Boolean));
+    for (const k of keys) {
+      const r = state.byId.get(k), rd = r && renderedAt(r, W);
+      if (!rd) continue;
+      for (const l of [...(rd.imp || []), ...(rd.stats || []), ...(rd.temper || []), ...(rd.transfig || [])]) {
+        const m = /^\+(\d+) to (.+?)$/.exec((l.plain || "").trim());
+        if (m && !/Skills$/.test(m[2])) out[m[2].toLowerCase()] = (out[m[2].toLowerCase()] || 0) + +m[1];
+      }
+    }
+    return out;
+  }
+  function skTooltip(cls, i) {
+    const tree = SK && SK.trees[cls], n = tree && tree.nodes[+i];
+    if (!n || !n.p) return null;
+    const st = SK.skills[n.p], s = skState(), pts = s.pts[+i] || 0;
+    const skillIdx = tree.nodes.findIndex((x) => x.k === "skill" && x.p === n.p);
+    const gear = (skGearRanks()[st.n.toLowerCase()] || 0);
+    const rank = Math.max(1, (s.pts[skillIdx] || 0) + gear);
+    const ctx = { power: n.p, world: { t: 1, rank: 1, skillRank: rank }, depth: 0 };
+    const isMod = n.k === "mod", m = isMod ? st.m[n.m] || {} : null;
+    const body = Engine.render(isMod ? m.d : st.d, ctx);
+    const why = pts < n.max ? skCanAdd(tree, s, +i, skActive(tree, s)) : "";
+    const foot = [
+      ["RANK", `${pts} / ${n.max}${!isMod && gear ? ` + ${gear} from gear` : ""}`],
+      isMod ? ["UPGRADES", st.n] : null,
+      n.ex != null ? ["CHOICE", "Pick one upgrade in this group"] : null,
+      n.lv ? ["LEVEL", `Needs level ${n.lv}`] : null,
+      why ? ["LOCKED", why] : null,
+      ["CONTROLS", "Click: add a point · right-click or long-press: remove"],
+    ].filter(Boolean);
+    const ic = (isMod && m.ic) || st.ic;
+    return `<div class="tt__head">${ic ? `<span class="ico-well ico-well--tt ico-well--skill">${itemIcon(ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(isMod ? m.n : st.n)}</p><p class="tt__type">${esc(cls)} ${isMod ? "Skill Upgrade" : "Skill"}${!isMod ? ` · Rank ${rank}` : ""}</p></div></div>
+      <div class="tt__body"><p class="tt__power">${body.html}</p></div>
+      <dl class="tt__foot">${foot.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
+  }
+
+  // Pan / zoom state of the tree (data units: the SkillKit vPosition box).
+  const skView = { vb: null, cls: "" };
+  function renderSkills() {
+    const root = els.viewSkills.querySelector(".sk");
+    if (!SK) {
+      root.innerHTML = `<p class="sb-empty">LOADING SKILL TREES…</p>`;
+      loadSkills().then(() => { if (route() === "skills") renderSkills(); }).catch(() => { root.innerHTML = `<p class="sb-empty">Couldn't load data/index/skills.json.</p>`; });
+      return;
+    }
+    const cls = sandboxClass(), classes = Engine.codex.meta.classes;
+    const clsSel = `<label class="sk-ctl"><span class="mono">CLASS</span><select class="input mono" data-skcls aria-label="Class">${cls ? "" : `<option value="">Choose a class…</option>`}${classes.map((c) => `<option${c === cls ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></label>`;
+    const tree = skTree();
+    if (!tree) {
+      root.innerHTML = `<div class="sk-bar">${clsSel}</div><p class="sb-empty">CHOOSE A CLASS: the tree, Paragon boards and glyphs follow the Sandbox's class.</p>`;
+      return;
+    }
+    const s = skState(), act = skActive(tree, s), N = tree.nodes, gear = skGearRanks();
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const n of N) { x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y); x1 = Math.max(x1, n.x); y1 = Math.max(y1, n.y); }
+    const pad = 700, full = [x0 - pad, y0 - pad, x1 - x0 + 2 * pad, y1 - y0 + 2 * pad];
+    if (!skView.vb || skView.cls !== cls) { skView.vb = full.slice(); skView.cls = cls; }
+    const R = { skill: 145, mod: 92, hub: 52, root: 130 };
+    const lines = [], seen = new Set();
+    N.forEach((n, i) => n.c.forEach((j) => {
+      const key = i < j ? i + "-" + j : j + "-" + i;
+      if (seen.has(key) || !N[j]) return;
+      seen.add(key);
+      const on = act.active.has(i) && act.active.has(j);
+      lines.push(`<line class="sk-link${on ? " is-on" : ""}" x1="${n.x}" y1="${n.y}" x2="${N[j].x}" y2="${N[j].y}"/>`);
+    }));
+    const dots = N.map((n, i) => {
+      const pts = s.pts[i] || 0, r = R[n.k] || 80;
+      if (n.k === "hub" || n.k === "root") {
+        const on = act.active.has(i);
+        return `<g class="sk-node sk-node--${n.k}${on ? " is-on" : ""}"><circle cx="${n.x}" cy="${n.y}" r="${r}"/>${n.k === "root" ? `<text class="sk-lv" x="${n.x}" y="${n.y + 55}" text-anchor="middle">${n.lv ? "L" + n.lv : "★"}</text>` : n.lv && !on ? `<text class="sk-lv sk-lv--hub" x="${n.x}" y="${n.y - r - 40}" text-anchor="middle">L${n.lv}</text>` : ""}</g>`;
+      }
+      const st = SK.skills[n.p] || {}, ic = n.k === "mod" ? ((st.m || {})[n.m] || {}).ic || st.ic : st.ic;
+      const can = !skCanAdd(tree, s, i, act);
+      const cl = pts > 0 ? " is-taken" : can ? " is-open" : " is-locked";
+      const g = n.k === "skill" ? gear[(st.n || "").toLowerCase()] || 0 : 0;
+      const label = n.k === "skill" ? `<text class="sk-name" x="${n.x}" y="${n.y + r + 150}" text-anchor="middle">${esc(st.n || "")}</text>` : "";
+      const badge = pts > 0 || g ? `<g class="sk-badge"><rect x="${n.x + r * 0.35}" y="${n.y + r * 0.35}" width="${g ? 330 : 200}" height="150" rx="40"/><text x="${n.x + r * 0.35 + (g ? 165 : 100)}" y="${n.y + r * 0.35 + 112}" text-anchor="middle">${pts}${g ? "+" + g : ""}</text></g>` : "";
+      return `<g class="sk-node sk-node--${n.k}${cl}" data-sknode="${i}" data-key="skill:${esc(cls)}:${i}" tabindex="0" role="button" aria-label="${esc(skNodeName(n))}: ${pts} of ${n.max}">
+        <circle class="sk-ring" cx="${n.x}" cy="${n.y}" r="${r + 22}"/>
+        <clipPath id="skc${i}"><circle cx="${n.x}" cy="${n.y}" r="${r}"/></clipPath>
+        <circle class="sk-bg" cx="${n.x}" cy="${n.y}" r="${r}"/>
+        ${ic ? `<image href="data/icons/${ic}.webp" x="${n.x - r}" y="${n.y - r}" width="${r * 2}" height="${r * 2}" clip-path="url(#skc${i})" preserveAspectRatio="xMidYMid slice"/>` : ""}
+        ${badge}${label}</g>`;
+    }).join("");
+    // Allocated list, grouped by skill.
+    const taken = N.map((n, i) => ({ n, i, p: s.pts[i] || 0 })).filter((x) => x.p > 0);
+    const bySkill = new Map();
+    for (const x of taken) { const k = x.n.p; if (!bySkill.has(k)) bySkill.set(k, []); bySkill.get(k).push(x); }
+    const list = [...bySkill].map(([p, xs]) => {
+      const st = SK.skills[p] || {}, sk = xs.find((x) => x.n.k === "skill"), g = gear[(st.n || "").toLowerCase()] || 0;
+      return `<li><span class="sk-li__name">${st.ic ? itemIcon(st.ic, "sk-li__ic") : ""}${esc(st.n || p)}</span> <span class="mono">${sk ? `RANK ${sk.p}${g ? " + " + g : ""}` : "—"}</span>
+        ${xs.filter((x) => x.n.k === "mod").map((x) => `<span class="sk-li__mod" data-key="skill:${esc(cls)}:${x.i}">${esc(skNodeName(x.n))} <span class="mono">${x.p}/${x.n.max}</span></span>`).join("")}</li>`;
+    }).join("");
+    root.innerHTML = `
+      <div class="sk-bar">${clsSel}
+        <label class="sk-ctl sk-ctl--lv"><span class="mono">LEVEL <b>${s.lv}</b></span><input type="range" min="1" max="${SK_MAX_LV}" value="${s.lv}" data-sklv aria-label="Player level"></label>
+        <span class="sk-ctl mono">POINTS SPENT <b>${skSpent(s)}</b></span>
+        <span class="sk-tools"><button type="button" class="btn btn--ghost mono" data-skzoom="1" aria-label="Zoom in">+</button><button type="button" class="btn btn--ghost mono" data-skzoom="-1" aria-label="Zoom out">−</button><button type="button" class="btn btn--ghost mono" data-skfit>FIT</button><button type="button" class="btn btn--ghost mono" data-skreset${taken.length ? "" : " disabled"}>RESET TREE</button></span>
+      </div>
+      <div class="sk-wrap">
+        <svg class="sk-svg" viewBox="${skView.vb.join(" ")}" data-skfull="${full.join(" ")}" role="group" aria-label="${esc(cls)} skill tree">${lines.join("")}${dots}</svg>
+        <aside class="sk-side"><h3 class="sb-loadout__title mono">${esc(cls).toUpperCase()} // SKILLS</h3>
+          ${list ? `<ul class="sk-list">${list}</ul>` : `<p class="hint">Click a skill in a cluster to take it, then its upgrades. Clusters open at levels ${[...new Set(N.filter((n) => n.k === "root").map((n) => n.lv || 0))].sort((a, b) => a - b).join(", ")}.</p>`}
+          <p class="hint">Click adds a point, right-click (or long-press) removes one. In each branch you pick one upgrade per group. Skills go to rank ${Math.max(...N.filter((n) => n.k === "skill").map((n) => n.max))}, upgrades to ${[...new Set(N.filter((n) => n.k === "mod").map((n) => n.max))].sort((a, b) => a - b).join(" or ")}. "+N to Skill" lines on your Sandbox gear add ranks (shown as 5+2). Damage numbers from your upgrades go to the Sandbox DAMAGE panel.</p>
+        </aside>
+      </div>`;
+  }
+  function skAdd(i, dir) {
+    const tree = skTree();
+    if (!tree) return;
+    const s = skState(), n = tree.nodes[i];
+    if (dir > 0) {
+      const why = skCanAdd(tree, s, i, skActive(tree, s));
+      if (why) { toast(`${skNodeName(n)}: ${why}.`); return; }
+      s.pts[i] = (s.pts[i] || 0) + 1;
+    } else {
+      if (!(s.pts[i] > 0)) return;
+      s.pts[i] -= 1;
+      if (!s.pts[i]) delete s.pts[i];
+      const dropped = skPrune(tree, s);
+      if (dropped) toast(`${dropped} upgrade${dropped > 1 ? "s" : ""} no longer reachable: removed.`);
+    }
+    saveSandbox();
+    hideTooltip();
+    renderSkills();
+  }
+  function bindSkills() {
+    const view = els.viewSkills;
+    let drag = null, pinch = null, press = null;
+    const svg = () => view.querySelector(".sk-svg");
+    const setVB = (vb) => { skView.vb = vb; const el = svg(); if (el) el.setAttribute("viewBox", vb.join(" ")); };
+    const zoomAt = (f, cx, cy) => {
+      const el = svg(); if (!el) return;
+      const [x, y, w, h] = skView.vb, full = el.dataset.skfull.split(" ").map(Number);
+      const nw = Math.max(full[2] / 12, Math.min(full[2] * 1.2, w / f)), k = nw / w, nh = h * k;
+      const r = el.getBoundingClientRect();
+      const px = cx == null ? 0.5 : (cx - r.left) / r.width, py = cy == null ? 0.5 : (cy - r.top) / r.height;
+      setVB([x + (w - nw) * px, y + (h - nh) * py, nw, nh]);
+    };
+    view.addEventListener("wheel", (e) => { if (!e.target.closest(".sk-svg")) return; e.preventDefault(); zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY); }, { passive: false });
+    const pts = new Map();
+    view.addEventListener("pointerdown", (e) => {
+      const el = e.target.closest(".sk-svg"); if (!el) return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) }; drag = null; return; }
+      drag = { x: e.clientX, y: e.clientY, vb: skView.vb.slice(), moved: false };
+      const node = e.target.closest("[data-sknode]");
+      if (node && e.pointerType !== "mouse") press = setTimeout(() => { press = "fired"; drag = null; skAdd(+node.dataset.sknode, -1); }, 550);
+    });
+    view.addEventListener("pointermove", (e) => {
+      if (!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch && pts.size === 2) { const [a, b] = [...pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y); zoomAt(d / pinch.d, (a.x + b.x) / 2, (a.y + b.y) / 2); pinch.d = d; return; }
+      if (!drag) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 6) return;
+      drag.moved = true;
+      if (press && press !== "fired") { clearTimeout(press); press = null; }
+      const r = svg().getBoundingClientRect(), [x, y, w, h] = drag.vb;
+      const sc = Math.max(w / r.width, h / r.height);
+      setVB([x - dx * sc, y - dy * sc, w, h]);
+      hideTooltip();
+    });
+    const end = (e) => {
+      pts.delete(e.pointerId);
+      if (pts.size < 2) pinch = null;
+      if (press && press !== "fired") { clearTimeout(press); press = null; }
+    };
+    view.addEventListener("pointerup", (e) => {
+      const wasDrag = drag && drag.moved, fired = press === "fired";
+      end(e);
+      if (fired) { press = null; drag = null; return; }
+      drag = null;
+      if (wasDrag || e.button !== 0) return;
+      const node = e.target.closest("[data-sknode]");
+      if (node) skAdd(+node.dataset.sknode, e.shiftKey ? -1 : 1);
+    });
+    view.addEventListener("pointercancel", end);
+    view.addEventListener("contextmenu", (e) => { const node = e.target.closest("[data-sknode]"); if (node) { e.preventDefault(); skAdd(+node.dataset.sknode, -1); } });
+    view.addEventListener("keydown", (e) => { const node = e.target.closest("[data-sknode]"); if (node && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); skAdd(+node.dataset.sknode, e.shiftKey ? -1 : 1); } else if (node && (e.key === "Backspace" || e.key === "Delete")) { e.preventDefault(); skAdd(+node.dataset.sknode, -1); } });
+    view.addEventListener("click", (e) => {
+      const z = e.target.closest("[data-skzoom]"); if (z) { zoomAt(+z.dataset.skzoom > 0 ? 1.4 : 1 / 1.4); return; }
+      if (e.target.closest("[data-skfit]")) { const el = svg(); if (el) setVB(el.dataset.skfull.split(" ").map(Number)); return; }
+      if (e.target.closest("[data-skreset]")) {
+        const s = skState(), before = { ...s.pts };
+        s.pts = {}; saveSandbox(); renderSkills();
+        toast("Skill tree reset.", ["UNDO", () => { skState().pts = before; saveSandbox(); renderSkills(); }]);
+      }
+    });
+    view.addEventListener("input", (e) => {
+      const lv = e.target.closest("[data-sklv]"); if (!lv) return;
+      const s = skState(); s.lv = +lv.value;
+      const tree = skTree(), dropped = tree ? skPrune(tree, s) : 0;
+      saveSandbox(); renderSkills();
+      const el = view.querySelector("[data-sklv]"); if (el) el.focus();
+      if (dropped) toast(`Level ${s.lv}: ${dropped} point${dropped > 1 ? "s" : ""} above the level removed.`);
+    });
+    view.addEventListener("change", (e) => {
+      const c = e.target.closest("[data-skcls]"); if (!c) return;
+      els.sbClass.value = c.value;
+      els.sbClass.dispatchEvent(new Event("change"));
+      renderSkills();
+    });
+  }
+  /** Share link: sk=<level>.<node>:<pts>.<node>:<pts>... */
+  const encodeSkills = () => {
+    const s = state.sandbox.skills;
+    if (!s || !Object.keys(s.pts || {}).length) return "";
+    return [s.lv || SK_MAX_LV, ...Object.entries(s.pts).map(([k, v]) => `${k}:${v}`)].join(".");
+  };
+  function parseSkills(str, cls) {
+    if (!str) return null;
+    const [lv, ...rest] = decodeURIComponent(str).split(".");
+    const pts = {};
+    for (const x of rest) { const [k, v] = x.split(":"); if (/^\d+$/.test(k) && +v > 0) pts[k] = Math.min(99, +v); }
+    return { cls, lv: Math.max(1, Math.min(SK_MAX_LV, +lv || SK_MAX_LV)), pts };
   }
 
   function render() {
@@ -2709,23 +3040,25 @@
       const n = nav.getBoundingClientRect(), c = cur.getBoundingClientRect();
       nav.scrollLeft += c.left - n.left - (n.width - c.width) / 2;
     }, 0);
-    els.viewCatalog.hidden = view === "sandbox" || view === "runes";
+    els.viewCatalog.hidden = view === "sandbox" || view === "runes" || view === "skills";
     els.viewSandbox.hidden = view !== "sandbox";
     els.viewRunes.hidden = view !== "runes";
-    if (view === "sandbox") renderSandbox(); else if (view === "runes") renderRunes(); else renderCatalog(view);
-    document.title = `${{ database: "Database", codex: "Aspect Codex", runes: "Runes & Recipes", sandbox: "Theorycraft Sandbox" }[view]} · Onosendai's Tool`;
+    els.viewSkills.hidden = view !== "skills";
+    if (view === "sandbox") renderSandbox(); else if (view === "runes") renderRunes(); else if (view === "skills") renderSkills(); else renderCatalog(view);
+    document.title = `${{ database: "Database", codex: "Aspect Codex", runes: "Runes & Recipes", sandbox: "Theorycraft Sandbox", skills: "Skills & Paragon" }[view]} · Onosendai's Tool`;
   }
 
   function bindEvents() {
     window.addEventListener("hashchange", render);
     bindRunes();
+    bindSkills();
 
     els.search.addEventListener("input", () => {
       const q = els.search.value.trim().toLowerCase();
       state.filters.q = q;
       state.filters.tokens = q ? q.split(/\s+/) : [];
       const v = route();
-      if (v === "sandbox") location.hash = "#/database"; else if (v === "runes") applyRuneFilters(); else applyFilters();
+      if (v === "sandbox" || v === "skills") location.hash = "#/database"; else if (v === "runes") applyRuneFilters(); else applyFilters();
     });
 
     document.addEventListener("keydown", (e) => {
@@ -2900,7 +3233,7 @@
     });
     els.sbClear.addEventListener("click", () => { state.pins = []; state.sandbox.charms = []; state.sandbox.sets = []; state.sandbox.torch = false; state.sandbox.leg = {}; state.sandbox.sock = {}; state.sandbox.mods = {}; saveSandbox(); savePins(); renderSandbox(); state.mode = null; });
     els.sbShare.addEventListener("click", async () => {
-      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}${Object.keys(state.sandbox.sock).length ? "&sock=" + encodeURIComponent(Object.entries(state.sandbox.sock).map(([sp, v]) => [sp, ...v].join("~")).join(",")) + "&gt=" + state.sandbox.gt : ""}${Object.keys(state.sandbox.mods || {}).length ? "&mods=" + encodeURIComponent(encodeMods(state.sandbox.mods)) : ""}`;
+      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}${Object.keys(state.sandbox.sock).length ? "&sock=" + encodeURIComponent(Object.entries(state.sandbox.sock).map(([sp, v]) => [sp, ...v].join("~")).join(",")) + "&gt=" + state.sandbox.gt : ""}${Object.keys(state.sandbox.mods || {}).length ? "&mods=" + encodeURIComponent(encodeMods(state.sandbox.mods)) : ""}${encodeSkills() ? "&sk=" + encodeURIComponent(encodeSkills()) : ""}`;
       try { await navigator.clipboard.writeText(url); els.sbShare.textContent = "COPIED"; }
       catch { window.prompt("Copy this link:", url); }
       setTimeout(() => (els.sbShare.textContent = "COPY LINK"), 1400);
