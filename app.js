@@ -2760,8 +2760,8 @@
      state.sandbox.skills = { cls, lv: player level, pts: { node index: points } }
      ========================================================== */
   let SK = null, skLoading = null;
-  const SK_MAX_LV = 60;
-  // Max points with every seasonal Renown reward (user, 18 Nov): 83 skill points, 342 Paragon points.
+  const SK_MAX_LV = 70; // Lord of Hatred max level (user, 18 Nov)
+  // Max points at max level with every seasonal Renown reward (user, 18 Nov): 83 skill points, 342 Paragon points.
   const SK_POINTS = 83, PG_POINTS = 342;
   function loadSkills() {
     if (SK) return Promise.resolve(SK);
@@ -2780,6 +2780,7 @@
     if (!s || typeof s !== "object" || s.cls !== cls) s = state.sandbox.skills = { cls, lv: (s && s.lv) || SK_MAX_LV, pts: {} };
     if (!s.pts || typeof s.pts !== "object") s.pts = {};
     if (!(s.lv >= 1 && s.lv <= SK_MAX_LV)) s.lv = SK_MAX_LV;
+    if (s.lvv !== 2) { if (s.lv === 60) s.lv = SK_MAX_LV; s.lvv = 2; } // 60 was the old default max
     return s;
   }
   const skTree = () => (SK && SK.trees[sandboxClass()]) || null;
