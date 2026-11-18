@@ -328,7 +328,8 @@
         const id = n.ref || ctx.affix;
         const a = codex.affixes[id];
         if (!a || !a.v || a.v[head] == null) return UNKNOWN;
-        const formula = a.v[head];
+        let formula = a.v[head];
+        if (a.vg && a.vg[head] && (formula === "" || formula === "0")) formula = gbFormula(a.vg[head], ctx.world.ip) || formula; // value from a GameBalance formula
         const v = evalFormula(formula, { ...ctx, affix: id });
         // Affix bonuses (never on values flagged bIgnoreAffixBonuses):
         //   Legendary aspects: slot bonus, amulet +50% / 2H weapon +100% (flLegendaryAffix*Bonus)
@@ -1190,7 +1191,7 @@
     if (!all || typeof all !== "object") return out;
     const aff = Engine.codex.affixes || {};
     for (const [k, m] of Object.entries(all)) {
-      if (!state.byId.has(k) || !m) continue;
+      if (!m || !(k.startsWith("leg:") ? state.sandbox.leg && state.sandbox.leg[k.slice(4)] : state.byId.has(k))) continue;
       const c = { ga: Array.isArray(m.ga) ? m.ga.map(Boolean) : [], temper: null, mw: Math.max(0, Math.min(MW_CAP(), +m.mw || 0)),
         cap: Number.isInteger(m.cap) ? m.cap : -1, tf: (Array.isArray(m.tf) ? m.tf : []).filter((a) => aff[a]).slice(0, TF_MAX), lock: Boolean(m.lock),
         rand: (Array.isArray(m.rand) ? m.rand : []).slice(0, BASE_AFFIXES).map((a) => (aff[a] ? a : "")), tga: false };
@@ -1213,6 +1214,8 @@
       const ch = /[?&]charms=([^&]+)/.exec(location.hash), seal = /[?&]seal=([^&]+)/.exec(location.hash);
       state.sandbox.charms = ch ? decodeURIComponent(ch[1]).split(",").filter((k) => state.pins.includes(k)) : [];
       state.sandbox.seal = seal && SEALS[seal[1]] ? seal[1] : "";
+      const smm = /[?&]sm=([^&]+)/.exec(location.hash);
+      if (smm) { const [p, a] = decodeURIComponent(smm[1]).split("~"); state.sandbox.sealMods = { p: (p || "").split("."), a: (a || "").split(".") }; } else state.sandbox.sealMods = { p: [], a: [] };
       state.sandbox.torch = /[?&]torch=1/.test(location.hash);
       const lg = /[?&]leg=([^&]+)/.exec(location.hash);
       state.sandbox.leg = {};
@@ -1386,6 +1389,24 @@
     mythic3: ["Seal of the Severed Finger (Mythic)", 5, { uniques: 2, item: "Talisman_Seal_MythicUnique_01" }],
   };
   const sealOf = () => SEALS[state.sandbox.seal] || SEALS.legendary;
+  /* Seal powers and affixes (user, 18 Nov): every seal has a power tied to a charm set (Talisman_SealAffix_Set_*: works
+   * while that set has a charm in the Talisman); some Mythic seals have 2, and both on the same set stack (optimal).
+   * Rolls (user, 18 Nov): Magic 1 affix, Rare 2 affixes, Legendary 1 affix + 1 set power; Annihilus and the Mythic seals
+   * have fixed affixes (item data) + set power(s): Annihilus 1, Mythic up to 2. Affixes roll from Talisman_SealAffix_Normal_*.
+   * state.sandbox.sealMods = { p: [set powers], a: [affixes] } */
+  const sealKeyNow = () => state.sandbox.seal || "legendary";
+  const sealPowSlots = () => (sealKeyNow().startsWith("mythic") ? 2 : sealKeyNow() === "magic" || sealKeyNow() === "rare" ? 0 : 1);
+  const sealAffSlots = () => ({ magic: 1, rare: 2, legendary: 1, legendary6: 1 })[sealKeyNow()] || 0;
+  const sealMods = () => { const m = state.sandbox.sealMods; return m && typeof m === "object" ? { p: Array.isArray(m.p) ? m.p : [], a: Array.isArray(m.a) ? m.a : [] } : { p: [], a: [] }; };
+  /** Chosen seal powers / affixes within the seal's slots, each { id, set, on, r: rendered } */
+  function sealModLines() {
+    const T = Engine.codex.talisman || {}, W = { t: state.sandbox.t, rank: 1, ip: 900 }, m = sealMods();
+    const powers = new Map((T.sealPowers || []).map((x) => [x.id, x]));
+    const setsOn = new Set(state.sandbox.sets.map((x) => (talismanIdx().piece.get(x.p) || {}).set).filter(Boolean).map((st) => st.id));
+    const pw = m.p.slice(0, sealPowSlots()).filter((id) => powers.has(id)).map((id) => ({ id, set: powers.get(id).set, on: setsOn.has(powers.get(id).set), r: Engine.renderAffix(id, W)[0] }));
+    const af = m.a.slice(0, sealAffSlots()).filter((id) => (T.sealPool || []).includes(id)).map((id) => ({ id, on: true, r: Engine.renderAffix(id, W)[0] }));
+    return { pw, af };
+  }
   // Hellfire Torch (S15 Mythic charm): a unique charm that also grants +1 Unique Charm (Unique_Charm_Count_Bonus).
   const TORCH_ID = "S15_Charm_Unique_HellfireTorch";
   const codexItem = (id) => Engine.codex.items.find((x) => x.id === id);
@@ -1637,7 +1658,11 @@
     const r = state.byId.get(key), e = state.sandbox.leg[spec];
     if (!r) return null;
     const world = { t: state.sandbox.t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP, slotBonus: aspectSlotBonus(legBonusSlot(spec, e)) };
-    return { power: Engine.renderAffix(r.id, world)[0] || null, imp: [], stats: [], mythicLines: [], crafted: false };
+    const m = modsOf("leg:" + spec);
+    // A legendary's 4 rolled affixes (and temper / masterwork / Transfiguration) from the item editor.
+    const base = m ? renderItem({ stats: [] }, { t: world.t, rank: world.rank, ip: world.ip }, false, m) : null;
+    return { power: Engine.renderAffix(r.id, world)[0] || null, imp: [], stats: base ? base.stats : [], mythicLines: [], crafted: false,
+      temper: base ? base.temper : [], transfig: base ? base.transfig : [], mods: base ? base.mods : null };
   }
   const slotNameOf = (spec) => (spec.startsWith("g:") ? spec.split(":")[1] + (spec.startsWith("g:Ring") ? " " + (+spec.split(":")[2] + 1) : "")
     : (weaponRule(sandboxClass()).slots[spec.slice(2)] || spec.slice(2)));
@@ -1885,6 +1910,16 @@
   const plainOf = (id, t) => (Engine.renderAffix(id, { t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP })[0] || {}).plain || id;
   const affixName = (id) => ((Engine.codex.affixes || {})[id] || {}).n;
 
+  /** The record the item editor works on: a unique / Mythic, or "leg:<slot spec>" for a legendary in a slot
+   * (no fixed affixes: all 4 are rolled from the slot's pool). */
+  function modsRec(key) {
+    if (!key) return null;
+    if (!key.startsWith("leg:")) return state.byId.get(key) || null;
+    const spec = key.slice(4), e = state.sandbox.leg[spec], a = e && state.byId.get(e.a);
+    if (!a) return null;
+    const slot = spec.startsWith("g:") ? spec.split(":")[1] : legBonusSlot(spec, e) === "2h" ? "2H Weapon" : spec === "w:off" && !["Barbarian", "Rogue"].includes(sandboxClass()) ? "Off-Hand" : "1H Weapon";
+    return { key, kind: "item", rarity: "Legendary", name: `Legendary ${slotNameOf(spec)} (${a.name})`, slot, raw: { stats: [] } };
+  }
   let modsKey = null;
   function openMods(key) {
     let el = document.getElementById("mods");
@@ -1922,7 +1957,7 @@
     modsKey = null;
   }
   function modsAction(act, val) {
-    const r = state.byId.get(modsKey);
+    const r = modsRec(modsKey);
     if (!r) return;
     const all = state.sandbox.mods || (state.sandbox.mods = {});
     const m = all[modsKey] || (all[modsKey] = { ga: [], temper: null, mw: 0, cap: -1, tf: [], lock: false, rand: [] });
@@ -1949,7 +1984,7 @@
     if (focusAct === "mw") { const s = document.querySelector('#mods [data-mact="mw"]'); if (s) s.focus(); }
   }
   function drawMods() {
-    const el = document.getElementById("mods"), r = state.byId.get(modsKey);
+    const el = document.getElementById("mods"), r = modsRec(modsKey);
     if (!el || !r) return;
     const t = state.sandbox.t, m = modsOf(modsKey) || { ga: [], temper: null, mw: 0, cap: -1, tf: [], lock: false, rand: [] };
     const lock = m.lock, dis = lock ? " disabled" : "", cap = MW_CAP(), g = glb();
@@ -2106,7 +2141,7 @@
           const t2 = spec === "w:main" && !INHERENT_2H.has(spec) && !WEAPON_RULES[cls] && !only2H()
             ? `<button type="button" class="sb-cell__toggle mono pd__toggle" data-leg2h="${spec}" aria-pressed="${Boolean(e.two)}" title="Two-handed weapon: aspect ×2, no off-hand">2H</button>` : "";
           return { label, key: "leg:" + spec, ic: r.icon, name: r.name, rar: "legendary", sub: "Legendary · " + r.name + (bonus === "amulet" ? " ×1.5" : bonus === "2h" ? " ×2" : ""),
-            clear: `data-legremove="${esc(spec)}"`, extra: t2 };
+            clear: `data-legremove="${esc(spec)}"`, extra: t2 + (() => { const md = modsOf("leg:" + spec); return `<button type="button" class="pd__mods mono${hasMods(md) ? " is-on" : ""}${md && md.lock ? " is-locked" : ""}" data-mods="leg:${esc(spec)}" aria-label="Modify this legendary: 4 affixes, Greater Affixes, temper, masterwork, Transfiguration" title="${md && md.lock ? "Transfigured: locked" : "4 affixes, Greater Affixes, temper, masterwork, Transfiguration"}">${md && md.lock ? "🔒" : "⚒"}</button>`; })() };
         }
         return { label };
       }
@@ -2300,6 +2335,26 @@
         <div class="sb-setcharm__affixes">${sel(0)}${sel(1)}</div></div>`;
     }).join("");
 
+    function sealModsHTML() {
+      const T = Engine.codex.talisman || {}, cls = sandboxClass(), m = sealMods(), W = { t: state.sandbox.t, rank: 1, ip: 900 };
+      const setsById = new Map((T.sets || []).map((x) => [x.id, x]));
+      const strip = (id) => { const r = Engine.renderAffix(id, W)[0]; return r ? r.plain.replace(/^[^:]*:\s*/, "") : id; };
+      const powOpts = (T.sealPowers || []).filter((x) => { const st = setsById.get(x.set); return st && (!st.c.length || !cls || st.c.includes(cls)); });
+      const bySet = new Map();
+      for (const x of powOpts) { const st = setsById.get(x.set); if (!bySet.has(st.name)) bySet.set(st.name, []); bySet.get(st.name).push(x); }
+      const powSel = (i) => `<select class="input mono" data-sealpow="${i}" aria-label="Seal set power ${i + 1}"><option value="">Set power ${i + 1}: none</option>${[...bySet].map(([nm, xs]) => `<optgroup label="${esc(nm)}">${xs.map((x) => `<option value="${esc(x.id)}"${m.p[i] === x.id ? " selected" : ""}>${esc(nm)}: ${esc(strip(x.id))}</option>`).join("")}</optgroup>`).join("")}</select>`;
+      const affSel = (i) => `<select class="input mono" data-sealaff="${i}" aria-label="Seal affix ${i + 1}"><option value="">Affix ${i + 1}: none</option>${(T.sealPool || []).map((id) => `<option value="${esc(id)}"${m.a[i] === id ? " selected" : ""}>${esc(strip(id))}</option>`).join("")}</select>`;
+      const L = sealModLines();
+      const same = L.pw.length === 2 && L.pw[0].set === L.pw[1].set;
+      const list = [...L.pw.map((x) => `<li class="${x.on ? "is-on" : "is-off"}">${x.r ? x.r.html : esc(x.id)} <span class="hint mono">${x.on ? "ACTIVE" : "NEEDS A " + esc((setsById.get(x.set) || {}).name || "") + " CHARM"}</span></li>`), ...L.af.map((x) => `<li class="is-on">${x.r ? x.r.html : esc(x.id)}</li>`)].join("");
+      const nP = sealPowSlots(), nA = sealAffSlots();
+      return `<div class="sb-sealmods"><h4 class="sb-build__sub mono">SEAL // ${nA ? `${nA} AFFIX${nA > 1 ? "ES" : ""}` : "FIXED AFFIXES ABOVE"}${nP ? ` · ${nP} SET POWER${nP > 1 ? "S" : ""}` : ""}</h4>
+        ${nP ? `<div class="sb-sealmods__row">${Array.from({ length: nP }, (_, i) => powSel(i)).join("")}</div>` : ""}
+        ${nA ? `<div class="sb-sealmods__row">${Array.from({ length: nA }, (_, i) => affSel(i)).join("")}</div>` : ""}
+        ${list ? `<ul class="sb-sealmods__list">${list}</ul>` : ""}
+        ${same ? `<p class="sb-note mono">BOTH SET POWERS ON ${esc((setsById.get(L.pw[0].set) || {}).name || "").toUpperCase()} // they stack: the optimal roll.</p>` : ""}
+        <p class="hint">Seal rolls: Magic 1 affix, Rare 2, Legendary 1 affix + 1 set power, Annihilus fixed affixes + 1 set power, Mythic seals fixed affixes + up to 2 set powers. A set power works while its charm set has a charm in the Talisman; 2 on the same set stack (the best roll).</p></div>`;
+    }
     const sealItem = sealOf()[2].item && codexItem(sealOf()[2].item);
     const sealIc = (sealItem && sealItem.ic) || ((Engine.codex.talisman || {}).seals || {})[sealOf()[2].icon];
     const linesOf = (it) => { if (!it) return []; const r = renderItem(it, { t: state.sandbox.t, rank: 1, ip: 900 }, false); return [r.power, ...r.imp, ...r.stats].filter(Boolean); };
@@ -2334,7 +2389,7 @@
     const talisman = `<section class="sb-build">
       <div class="sb-build__head"><h3 class="sb-loadout__title mono">TALISMAN // ${talismanUsed()} / ${nSlots} CHARMS</h3>
         <label class="sb-seal"><span class="mono">SEAL</span>${sealIc && !hexPanel ? `<span class="ico-well sb-seal__ico">${itemIcon(sealIc)}</span>` : ""}<select class="input mono" data-seal aria-label="Talisman seal">${sealOpts}</select></label></div>
-      ${sealPowers}
+      ${sealPowers}${sealModsHTML()}
       ${hexPanel ? `<div class="tal-wrap">${hexPanel}</div>` : `<div class="sb-cells">${charmCells}</div>`}
       <p class="hint mono sb-uniq">UNIQUE CHARMS ${uniqueCount()} / ${uniqueLimit()}${sealOf()[2].setReduce ? " // SET BONUSES NEED 1 FEWER CHARM (MIN 2)" : ""}</p>
       ${uniqueCount() > uniqueLimit() ? `<p class="sb-note mono">TOO MANY UNIQUE CHARMS // the ${esc(sealName)} allows ${uniqueLimit()}. Remove one, or use a Seal of the Golden Epiphany (3), the Severed Finger (2) or the Hellfire Torch (+1).</p>` : ""}
@@ -2365,6 +2420,7 @@
       for (const k of state.sandbox.charms) { const r = state.byId.get(k), ch = r && charmOf(r); if (ch) add("charm:" + k, r.name + " (charm)", renderItem(ch, W, false)); }
       if (state.sandbox.torch && codexItem(TORCH_ID)) add("torch", "Hellfire Torch", renderItem(codexItem(TORCH_ID), { ...W, ip: 900 }, false));
       if (sealItem) add("seal", sealName, renderItem(sealItem, { ...W, ip: 900 }, false));
+      { const SL = sealModLines(); [...SL.pw.filter((x) => x.on), ...SL.af].forEach((x, j) => { if (x.r) src.push({ id: `sealmod:${x.id}:${j}`, name: `${sealName} (${x.set ? "set power" : "affix"})`, lines: [x.r.plain.replace(/^[^:]*:\s*/, "")] }); }); }
       const W850 = { t: state.sandbox.t, rank: 1, ip: 850 };
       const skS = state.sandbox.skills, skT = SK && skS && skS.cls === sandboxClass() && SK.trees[skS.cls];
       if (skT) for (const [k, v] of Object.entries(skS.pts || {})) {
@@ -3685,7 +3741,7 @@
         return;
       }
       const legRm = e.target.closest("[data-legremove]");
-      if (legRm) { delete state.sandbox.leg[legRm.dataset.legremove]; saveSandbox(); hideTooltip(); renderSandbox(); return; }
+      if (legRm) { delete state.sandbox.leg[legRm.dataset.legremove]; if (state.sandbox.mods) delete state.sandbox.mods["leg:" + legRm.dataset.legremove]; saveSandbox(); hideTooltip(); renderSandbox(); return; }
       const leg2 = e.target.closest("[data-leg2h]");
       if (leg2) {
         const en = state.sandbox.leg[leg2.dataset.leg2h];
@@ -3789,6 +3845,10 @@
         return;
       }
       if (el.matches("[data-gt]")) { state.sandbox.gt = +el.value; saveSandbox(); renderSandbox(); return; }
+      if (el.matches("[data-sealpow], [data-sealaff]")) {
+        const m = sealMods(), arr = el.matches("[data-sealpow]") ? m.p : m.a, i = +(el.dataset.sealpow ?? el.dataset.sealaff);
+        arr[i] = el.value; state.sandbox.sealMods = m; saveSandbox(); renderSandbox(); return;
+      }
       if (!el.matches("[data-seal]")) return;
       state.sandbox.seal = el.value;
       saveSandbox();
@@ -3803,7 +3863,7 @@
       sb.cls = els.sbClass.value;
       if (had) {
         state.pins = [];
-        Object.assign(sb, { charms: [], sets: [], torch: false, leg: {}, mythic: [], slot: {}, sock: {}, mods: {} });
+        Object.assign(sb, { charms: [], sets: [], torch: false, leg: {}, mythic: [], slot: {}, sock: {}, mods: {}, sealMods: { p: [], a: [] } });
         savePins();
         toast(`Class set to ${sb.cls || "Auto"}: gear and charms cleared.`, ["UNDO", () => {
           state.pins = before.pins; state.sandbox = before.sb;
@@ -3815,7 +3875,7 @@
     });
     els.sbClear.addEventListener("click", () => { state.pins = []; state.sandbox.charms = []; state.sandbox.sets = []; state.sandbox.torch = false; state.sandbox.leg = {}; state.sandbox.sock = {}; state.sandbox.mods = {}; saveSandbox(); savePins(); renderSandbox(); state.mode = null; });
     els.sbShare.addEventListener("click", async () => {
-      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}${Object.keys(state.sandbox.sock).length ? "&sock=" + encodeURIComponent(Object.entries(state.sandbox.sock).map(([sp, v]) => [sp, ...v].join("~")).join(",")) + "&gt=" + state.sandbox.gt : ""}${Object.keys(state.sandbox.mods || {}).length ? "&mods=" + encodeURIComponent(encodeMods(state.sandbox.mods)) : ""}${encodeSkills() ? "&sk=" + encodeURIComponent(encodeSkills()) : ""}${encodeParagon() ? "&pg=" + encodeURIComponent(encodeParagon()) : ""}`;
+      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}${Object.keys(state.sandbox.sock).length ? "&sock=" + encodeURIComponent(Object.entries(state.sandbox.sock).map(([sp, v]) => [sp, ...v].join("~")).join(",")) + "&gt=" + state.sandbox.gt : ""}${Object.keys(state.sandbox.mods || {}).length ? "&mods=" + encodeURIComponent(encodeMods(state.sandbox.mods)) : ""}${sealMods().p.some(Boolean) || sealMods().a.some(Boolean) ? "&sm=" + encodeURIComponent(sealMods().p.join(".") + "~" + sealMods().a.join(".")) : ""}${encodeSkills() ? "&sk=" + encodeURIComponent(encodeSkills()) : ""}${encodeParagon() ? "&pg=" + encodeURIComponent(encodeParagon()) : ""}`;
       try { await navigator.clipboard.writeText(url); els.sbShare.textContent = "COPIED"; }
       catch { window.prompt("Copy this link:", url); }
       setTimeout(() => (els.sbShare.textContent = "COPY LINK"), 1400);

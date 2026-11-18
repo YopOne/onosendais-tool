@@ -1136,3 +1136,10 @@ html[data-sb-ip="900"] .pd__slot--unique { --spark: var(--spark-anc); --spark-hi
 .sk-syn .mono { font-size: 0.66rem; letter-spacing: 0.12em; color: #d6a8ff; }
 .sk-syn-total { color: #f0dcff; font-size: 1rem; }
 .sk-li__syn { color: #d6a8ff !important; border: 1px solid rgba(214, 168, 255, 0.4); border-radius: 3px; padding: 0 4px; }
+.sb-sealmods { display: grid; gap: 8px; margin: 8px 0; }
+.sb-sealmods__row { display: flex; flex-wrap: wrap; gap: 6px; }
+.sb-sealmods__row .input { flex: 1 1 240px; min-width: 0; }
+.sb-sealmods__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 0.86rem; }
+.sb-sealmods__list .is-off { color: var(--faint); }
+.sb-sealmods__list .mono { font-size: 0.66rem; letter-spacing: 0.1em; }
+.sb-sealmods .hint { margin: 0; font-size: 0.78rem; }

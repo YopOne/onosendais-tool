@@ -277,23 +277,51 @@ def main():
         if desc:
             rec["t"] = desc
 
-        values, lines, no_bonus = {}, [], []
+        values, lines, no_bonus, value_gb, desc_specs = {}, [], [], {}, []
         for at in raw.get("ptItemAffixAttributes", []):
             spec = at.get("tAttribute", {})
             attr = spec.get("__eAttribute_name__", "")
             formula = (spec.get("szAttributeFormula") or {}).get("value", "")
             if attr.startswith("Affix_Value") or attr.startswith("Affix_Flat_Value"):
                 values[attr] = formula
+                gbid = (spec.get("gbidFormula") or {}).get("name")
+                if gbid and formula in ("", "0"):
+                    value_gb[attr] = gbid  # the value comes from a GameBalance formula (e.g. seal affixes)
+                    gb_used.add(gbid)
                 if at.get("bIgnoreAffixBonuses"):
                     no_bonus.append(attr)  # immune to Mythic Unique Potency
                 continue
-            if desc or attr not in attr_desc:
+            if desc:
+                desc_specs.append(spec)
+                continue
+            if attr not in attr_desc:
                 continue
             # Generic stat line (implicits / forced stats on uniques)
             lines.append(stat_line(spec))
+        # Descriptions that quote the affix's own attribute ([Attr#Tag * 100|%x|], e.g. seal set powers): turn the
+        # description into a stat line whose {VALUE} is that attribute's formula.
+        if desc and not lines and len(desc_specs) == 1:
+            spec = desc_specs[0]
+            attr = spec.get("__eAttribute_name__", "")
+            pat = re.compile(r"\b" + re.escape(attr) + r"(#[A-Za-z0-9_]+)?\b")
+            if attr and pat.search(desc):
+                ln = stat_line(dict(spec, __eAttribute_name__=attr)) if attr in attr_desc else {"a": attr}
+                ln["t"] = pat.sub("{VALUE}", desc)
+                if not (ln.get("g") or ln.get("f") or ln.get("s")):
+                    gbid = (spec.get("gbidFormula") or {}).get("name")
+                    f = (spec.get("szAttributeFormula") or {}).get("value", "")
+                    if gbid:
+                        ln["g"] = gbid
+                        gb_used.add(gbid)
+                    elif f not in ("", "0"):
+                        ln["f"] = f
+                lines.append(ln)
+                rec.pop("t", None)
 
         if values:
             rec["v"] = values
+        if value_gb:
+            rec["vg"] = value_gb
         if lines:
             rec["l"] = lines
         if no_bonus:
@@ -553,6 +581,23 @@ def main():
                 continue
             if add_affix(aid):
                 talisman["pool"].append(aid)
+        # Regular seal affixes (Talisman_SealAffix_Normal_*): rolled on Magic / Rare / Legendary seals.
+        talisman["sealPool"] = [os.path.basename(p)[: -len(".aff.json")] for p in sorted(glob.glob(os.path.join(affix_dir, "Talisman_SealAffix_Normal_*.aff.json")))
+                                if add_affix(os.path.basename(p)[: -len(".aff.json")])]
+        # Seal set powers (Talisman_SealAffix_Set_<Class|Generic>_NN_*): each works while its charm set is equipped
+        # (arEnableCondition X2_Talisman_Set_..._Equipped); the set is named at the start of the text ({c_set}Name{/c}:).
+        set_by_name = {x["name"]: x["id"] for x in sets_by_id.values()}
+        talisman["sealPowers"] = []
+        for path in sorted(glob.glob(os.path.join(affix_dir, "Talisman_SealAffix_Set_*.aff.json"))):
+            aid = os.path.basename(path)[: -len(".aff.json")]
+            if "PreTorment" in aid or not add_affix(aid):
+                continue
+            rec = affixes[aid]
+            text = rec.get("t") or (rec.get("l") or [{}])[0].get("t", "")
+            m = re.match(r"\s*\{c_set\}(.+?)\{/c\}", text or "")
+            sid = set_by_name.get(m.group(1).strip()) if m else None
+            if sid:
+                talisman["sealPowers"].append({"id": aid, "set": sid})
 
     # ---------- Tempering manuals (Recipe/Tempering_*: Blacksmith, adds a 5th affix) ----------
     # temperingData: gbidItemLabelGroup (Weapons/Offensive/...) -> allowed item labels via
@@ -636,7 +681,7 @@ def main():
 
     used = {a for r in items for a in r.get("imp", []) + r.get("stats", []) + ([r["power"]] if r.get("power") else [])}
     used |= {a["id"] for a in aspects}
-    used |= {t["a"] for x in talisman["sets"] for t in x["tiers"]} | set(talisman["pool"])
+    used |= {t["a"] for x in talisman["sets"] for t in x["tiers"]} | set(talisman["pool"]) | {x["id"] for x in talisman.get("sealPowers", [])} | set(talisman.get("sealPool", []))
     used |= {a for m in temper["manuals"] for a in m["a"]} | {x["id"] for x in transfig} | {x["id"] for x in affix_pool}
     out_affixes = {k: v for k, v in affixes.items() if v and k in used}
 
@@ -662,6 +707,7 @@ def main():
     gb_path = os.path.join(args.d4data, "json", "base", "meta", "GameBalance", "AttributeFormulas.gam.json")
     if os.path.exists(gb_path):
         used_gb = {l["g"] for a in out_affixes.values() for l in a.get("l", []) if l.get("g")}
+        used_gb |= {g for a in out_affixes.values() for g in (a.get("vg") or {}).values()}
         for e in load(gb_path)["ptData"][0]["tEntries"]:
             name = e["tHeader"]["szName"]
             if name in used_gb:
