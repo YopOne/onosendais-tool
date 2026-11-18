@@ -179,7 +179,30 @@ def extract_paragon(meta_dir, stl_dir, icons, stat_line, attr_desc, skill_text, 
         m = re.search(r'"arGlyphRadiusLevels":\s*\[([^\]]*)\]', open(gl, encoding="utf-8").read())
         if m:
             radius = [int(float(x)) for x in re.findall(r"[-0-9.]+", m.group(1))]
-    return {"boards": boards, "nodes": nodes, "thresholds": thresholds, "gb": gb, "budget": budget, "glyphs": glyphs, "radius": radius}
+    # Glyph upgrade chance by (Pit tier cleared - glyph level): [start delta, span, chance, levels per success].
+    upgrade = []
+    if os.path.exists(gl):
+        gj = _load(gl)
+        def _find(o, key):
+            if isinstance(o, dict):
+                for k, v in o.items():
+                    if k == key:
+                        return v
+                    r = _find(v, key)
+                    if r is not None:
+                        return r
+            if isinstance(o, list):
+                for v in o:
+                    r = _find(v, key)
+                    if r is not None:
+                        return r
+            return None
+        for e in _find(gj, "arGlyphChanceUpgradeEntries") or []:
+            lo, span = e["tDeltaLevel"]["rangeValue1"], e["tDeltaLevel"]["rangeValue2"]
+            if lo > -1000:
+                upgrade.append([lo, span, round(e.get("flSuccessChance") or 0, 4), e.get("dwLevelsPerUpgrade") or 1])
+    return {"boards": boards, "nodes": nodes, "thresholds": thresholds, "gb": gb, "budget": budget, "glyphs": glyphs, "radius": radius,
+            "upgrade": upgrade}
 
 
 def extract(meta_dir, stl_dir, power_dir, icons=None, stat_line=None, attr_desc=None):

@@ -3059,6 +3059,8 @@
     view.addEventListener("change", (e) => {
       const gs = e.target.closest("[data-pgglyph]");
       if (gs) { const s = pgState(), bi = gs.dataset.pgglyph; if (gs.value) s.glyphs[bi] = { g: gs.value, lv: (s.glyphs[bi] && s.glyphs[bi].lv) || PG_GLYPH_MAX }; else delete s.glyphs[bi]; saveSandbox(); renderSkills(); return; }
+      const pit = e.target.closest("[data-pgpit]");
+      if (pit) { const s = pgState(); s.pit = Math.max(1, Math.min(PIT_MAX, Math.round(+pit.value || PIT_MAX))); saveSandbox(); renderSkills(); return; }
       const gl = e.target.closest("[data-pgglv]");
       if (gl) { const s = pgState(), bi = gl.dataset.pgglv; if (s.glyphs[bi]) { s.glyphs[bi].lv = Math.max(1, Math.min(PG_GLYPH_MAX, Math.round(+gl.value || 1))); saveSandbox(); renderSkills(); } return; }
       const c = e.target.closest("[data-skcls]"); if (!c) return;
@@ -3091,9 +3093,17 @@
   /* ---------- Glyphs (phase 3) ----------
    * s.glyphs = { "<board index>": { g: glyph id, lv: 1-100 } }. A glyph works when its board's socket node is taken.
    * Radius from arGlyphRadiusLevels [0,0,0,25,50] read as index + 1: 3 at level 1, 4 at 25, 5 at 50 (assumed);
-   * cells count when dx² + dy² <= r² + r on the same board (a rounded circle, assumed).
-   * Glyphs turn Legendary at level 46 (assumed): affixes with eRequiredRarity 2 need it. */
-  const PG_GLYPH_MAX = 100, PG_GLYPH_LEG = 46;
+   * the area is a diamond, |dx| + |dy| <= r on the same board, reaching furthest north / south / east / west (user, 18 Nov).
+   * Glyphs are levelled only by clearing the Pit (max Pit tier 150, max glyph level 150) and turn Legendary at level 51
+   * for a small amount of gem fragments (user, 18 Nov): affixes with eRequiredRarity 2 need it. */
+  const PG_GLYPH_MAX = 150, PG_GLYPH_LEG = 51, PIT_MAX = 150;
+  /** Upgrade chance after a Pit clear at `pit` for a glyph at `lv` (arGlyphChanceUpgradeEntries): { chance, levels }. */
+  function glyphUpgrade(pit, lv) {
+    const d = pit - lv;
+    const e = (PG().upgrade || []).find(([lo, span]) => d >= lo && d <= lo + span);
+    if (e) return { chance: e[2], levels: e[3] };
+    return d > 0 ? { chance: 1, levels: 5 } : { chance: 0, levels: 1 };
+  }
   const glyphDefs = () => PG().glyphs || {};
   function glyphRadius(lv) {
     const arr = PG().radius || [];
@@ -3114,7 +3124,7 @@
       const sock = [...grid.values()].find((c) => c.bi === +bi && c.node.sock);
       if (!sock) continue;
       const lv = Math.max(1, Math.min(PG_GLYPH_MAX, e.lv || 1)), r = glyphRadius(lv), rarity = lv >= PG_GLYPH_LEG ? 2 : 1;
-      const inR = [...grid.values()].filter((c) => c.bi === +bi && c !== sock && (c.gx - sock.gx) ** 2 + (c.gy - sock.gy) ** 2 <= r * r + r);
+      const inR = [...grid.values()].filter((c) => c.bi === +bi && c !== sock && Math.abs(c.gx - sock.gx) + Math.abs(c.gy - sock.gy) <= r);
       const on = taken.has(sock.key);
       const stat = {};
       for (const c of inR) if (taken.has(c.key)) for (const ln of c.node.l || []) { const v = Engine.lineValue(ln, W); if (v != null) stat[ln.a] = (stat[ln.a] || 0) + v; }
@@ -3366,7 +3376,9 @@
       const d = pgDef(cls, b.id), e = s.glyphs[bi], info = tot.glyphs.find((g) => g.bi === bi);
       const sel = `<select class="input mono" data-pgglyph="${bi}" aria-label="Glyph for ${esc(d ? d.n : "")}"><option value="">No glyph</option>${glyphOpts.filter(([id]) => !usedG.has(id) || (e && e.g === id)).map(([id, g]) => `<option value="${esc(id)}"${e && e.g === id ? " selected" : ""}>${esc(g.n)}</option>`).join("")}</select>`;
       const lv = e ? `<label class="pg-glv mono">LV <input class="input mono" type="number" min="1" max="${PG_GLYPH_MAX}" value="${e.lv || 1}" data-pgglv="${bi}" aria-label="Glyph level"></label>` : "";
-      const body = info ? `<p class="hint mono">${info.on ? "ACTIVE" : "SOCKET NOT TAKEN"} · RADIUS ${info.r} · ${info.rarity === 2 ? "LEGENDARY" : "RARE"}</p><ul class="pg-gaff">${info.affs.map((x) => `<li class="${x.ok ? "is-on" : "is-off"}">${x.html}${x.sum ? `<br><b>= ${x.sum.html}</b>` : ""}${x.note ? `<br><span class="hint">${esc(x.note)}</span>` : ""}</li>`).join("")}</ul>` : "";
+      const up = e && glyphUpgrade(s.pit || PIT_MAX, e.lv || 1);
+      const upTxt = e && (e.lv || 1) < PG_GLYPH_MAX ? `<p class="hint">Pit ${s.pit || PIT_MAX} clear: ${Math.round(up.chance * 100)}% per upgrade${up.levels > 1 ? `, +${up.levels} levels` : ""}${(e.lv || 1) < PG_GLYPH_LEG ? ` · Legendary at ${PG_GLYPH_LEG} (gem fragments)` : ""}</p>` : "";
+      const body = info ? `<p class="hint mono">${info.on ? "ACTIVE" : "SOCKET NOT TAKEN"} · RADIUS ${info.r} · ${info.rarity === 2 ? "LEGENDARY" : "RARE"}</p>${upTxt}<ul class="pg-gaff">${info.affs.map((x) => `<li class="${x.ok ? "is-on" : "is-off"}">${x.html}${x.sum ? `<br><b>= ${x.sum.html}</b>` : ""}${x.note ? `<br><span class="hint">${esc(x.note)}</span>` : ""}</li>`).join("")}</ul>` : "";
       return `<li class="pg-glyph">${d ? `<span class="pg-gname"><span class="mono">${bi + 1}</span> ${esc(d.n)}</span>` : ""}<span class="pg-gsel">${sel}${lv}</span>${body}</li>`;
     }).join("");
     const coreOrder = ["Strength_Core", "Intelligence_Core", "Willpower_Core", "Dexterity_Core"];
@@ -3383,11 +3395,11 @@
         <svg class="sk-svg pg-svg" viewBox="${skView.vb.join(" ")}" data-skfull="${full.join(" ")}" role="group" aria-label="${esc(cls)} Paragon boards">${boardsSvg}${cellsSvg}${gateSvg}</svg>
         <aside class="sk-side"><h3 class="sb-loadout__title mono">${esc(cls).toUpperCase()} // PARAGON</h3>
           <ul class="pg-boards">${boardsList}</ul>
-          <h4 class="mods__h mono">GLYPHS <span>one per board socket</span></h4><ul class="pg-glyphs">${glyphPanel}</ul>
+          <h4 class="mods__h mono">GLYPHS <span>one per board socket</span></h4><label class="pg-glv mono">PIT TIER CLEARED <input class="input mono" type="number" min="1" max="${PIT_MAX}" value="${s.pit || PIT_MAX}" data-pgpit aria-label="Pit tier cleared"></label><ul class="pg-glyphs">${glyphPanel}</ul>
           ${lines.length ? `<h4 class="mods__h mono">TOTALS</h4><ul class="pg-totals">${lines.map((x) => `<li>${x.r.html}</li>`).join("")}</ul>` : ""}
           ${tot.rare.length ? `<h4 class="mods__h mono">RARE BONUSES <span>${tot.rare.filter((x) => x.met).length} / ${tot.rare.length}</span></h4>` : ""}
           ${tot.legend.length ? `<h4 class="mods__h mono">LEGENDARY</h4><ul class="pg-totals">${tot.legend.map((c) => `<li data-key="pg:${c.key}">${esc(c.node.n || "")}</li>`).join("")}</ul>` : ""}
-          <p class="hint">Start at the bottom node and click next to taken nodes to take them (right-click / long-press removes the end of a path). Click a <b>+</b> beside a gate to attach a board and pick its rotation. Rare nodes give their bonus when your Paragon attributes reach the requirement (it grows +75 per board: 190 on the first). Totals count Paragon only, not gear. Put a glyph in each board's socket (and take the socket node): it counts the stats you take within its radius (shown on the board); it becomes Legendary at level ${PG_GLYPH_LEG}. Damage lines go to the Sandbox DAMAGE panel.</p>
+          <p class="hint">Start at the bottom node and click next to taken nodes to take them (right-click / long-press removes the end of a path). Click a <b>+</b> beside a gate to attach a board and pick its rotation. Rare nodes give their bonus when your Paragon attributes reach the requirement (it grows +75 per board: 190 on the first). Totals count Paragon only, not gear. Put a glyph in each board's socket (and take the socket node): it counts the stats you take within its diamond-shaped radius (shown on the board). Glyphs level only by clearing the Pit (up to tier ${PIT_MAX}, glyph level ${PG_GLYPH_MAX}); the upgrade chance depends on the Pit tier versus the glyph level, and at level ${PG_GLYPH_LEG} a glyph turns Legendary for a few gem fragments. Damage lines go to the Sandbox DAMAGE panel.</p>
         </aside>
       </div>`;
   }
