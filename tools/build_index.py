@@ -472,9 +472,52 @@ def main():
           "seal": 3814032020, "sealActive": 3168201781}
     talisman["ui"] = {k: v for k, v in ((k, icons and icons.for_handle(h)) for k, h in ui.items()) if v}
 
+    # ---------- Gems: socket effects by target (0 weapon, 1 armor, 2 jewelry) ----------
+    # Item/Gem_<Type>_0N.itm ptSocketedEffects: eSocketTarget + attributes; the text is the AttributeDescriptions
+    # entry whose hash is tStringLabel. Tiers 1-9 (Crude ... Flawless Horadric); Gem_Mythic_01 is one tier.
+    attr_by_hash, attr_by_label = {}, {}
+    for e in (load(os.path.join(stl_dir, "AttributeDescriptions.stl.json")).get("arStrings") or []):
+        attr_by_hash[e.get("hLabel")] = attr_by_label[e.get("szLabel")] = e.get("szText", "")
+
+    def gem_text(tmpl, v):
+        def sub(m):
+            expr, fmt = m.group(1), m.group(2) or ""
+            x = v * 100 if "*100" in expr else v
+            dec = 1 if fmt.startswith("1") else 0
+            num = f"{x:.{dec}f}".rstrip("0").rstrip(".") if dec else f"{x:,.0f}"
+            return ("+" if "~" in fmt and x >= 0 else "") + num + ("%" if "%" in fmt else "")
+        return re.sub(r"\[\{[vV][aA][lL][uU][eE]\}([^|\]]*)(?:\|([^|\]]*)\|)?\]", sub, tmpl)
+
+    gems = {"types": []}
+    for gtype in ("Ruby", "Sapphire", "Emerald", "Topaz", "Amethyst", "Diamond", "Skull", "Mythic"):
+        tiers = []
+        for n in range(1, 10):
+            gp = os.path.join(item_dir, f"Gem_{gtype}_{n:02d}.itm.json")
+            if not os.path.exists(gp):
+                continue
+            j = load(gp)
+            eff = {}
+            for se in j.get("ptSocketedEffects") or []:
+                attrs = se.get("ptAttributes") or []
+                if not attrs:
+                    continue
+                v = float(attrs[0]["szAttributeFormula"]["value"])
+                # The Mythic gem's label points at the flat "All Stats" text; its attribute is a percent.
+                t = attr_by_label.get(attrs[0].get("__eAttribute_name__")) if "Percent" in (attrs[0].get("__eAttribute_name__") or "") else None
+                t = t or attr_by_hash.get(se.get("tStringLabel"), "")
+                eff[str(se.get("eSocketTarget"))] = gem_text(t, v) if t else ""
+            gid = f"Gem_{gtype}_{n:02d}"
+            rec = {"id": gid, "name": strings(stl_dir, "Item_" + gid).get("Name", gid), "eff": eff}
+            ic = icons and icons.for_item(j, (), item_dir)
+            if ic:
+                rec["ic"] = ic
+            tiers.append(rec)
+        if tiers:
+            gems["types"].append({"type": gtype, "tiers": tiers})
+
     # Paperdoll art (2DUI_InventoryGrid slot frames, 2DUI_PaperDoll_EmptySlotIcons, class sigils from
     # 2DUI_ClassIcons_Rendered / _X2_Rendered). The figures themselves are original SVGs in data/figures/.
-    pd_frames = {"slot": 512199407, "small": 3647096516, "gold": 1364076039, "blocked": 2149698886}
+    pd_frames = {"slot": 512199407, "small": 3647096516, "gold": 1364076039, "blocked": 2149698886, "socket": 771034155}
     pd_empty = {"Amulet": 2202388031, "Boots": 3582054718, "Gloves": 3588665509, "Helm": 2061009597, "Pants": 3598153405,
                 "Ring": 2061373383, "Shield": 2900456848, "Weapon": 3602502790, "Chest": 3580974264, "Bow": 1093193533}
     pd_sigil = {"Barbarian": 1787428350, "Druid": 3153547071, "Necromancer": 3164919806, "Rogue": 3170027305,
@@ -602,7 +645,10 @@ def main():
         d = load(path)
         bs = d.get("arBodySlots") or []
         if 9 in bs or 10 in bs:
-            item_types[os.path.basename(path)[: -len(".itt.json")]] = {"c": class_list(d.get("fUsableByClass")) or CLASSES[:], "b": bs, "w": 0 in (d.get("arItemLabels") or [])}
+            # Gem socket target: the type's stat weights say whether it counts as a weapon (focus, totem, book)
+            # or armor (shield). 0 weapon, 1 armor.
+            item_types[os.path.basename(path)[: -len(".itt.json")]] = {"c": class_list(d.get("fUsableByClass")) or CLASSES[:], "b": bs, "w": 0 in (d.get("arItemLabels") or []),
+                                                                     "g": 0 if (d.get("unk_b2500f1") or 0) > 0 else 1}
 
     codex = {
         "meta": {
@@ -622,6 +668,7 @@ def main():
         "runes": runes,
         "talisman": talisman,
         "paperdoll": paperdoll,
+        "gems": gems,
         "itemTypes": item_types,
     }
 

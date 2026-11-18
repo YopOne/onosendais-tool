@@ -607,7 +607,7 @@
     mode: null,
     activeCard: null,
     pins: [],
-    sandbox: { t: 1, rank: 16, ip: 850, mythic: [], slot: {}, charms: [], sets: [], leg: {} }, // slot: aspect key -> "amulet" | "2h"
+    sandbox: { t: 1, rank: 16, ip: 850, mythic: [], slot: {}, charms: [], sets: [], leg: {}, sock: {}, gt: 9 }, // slot: aspect key -> "amulet" | "2h"
     view: { mythic: false, ip: IP.standard }, // Database view: Standard 850 / Ancestral 900 / crafted Mythic
     curation: null,
   };
@@ -875,6 +875,8 @@
     const world = { t: state.sandbox.t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP };
     const [kind, ...rest] = key.split(":");
     const id = rest.join(":");
+    if (kind === "gem") { const [type, tg] = id.split("|"); const h = gemTooltip(type, tg === "" || tg == null ? null : +tg); return h && { html: h, rarity: "gem" }; }
+    if (kind === "rune") { const h = runeTooltip(id); return h && { html: h, rarity: "rune" }; }
     if (kind === "set") { const x = state.sandbox.sets[+id], p = x && talismanIdx().piece.get(x.p); return p && { html: setCharmTooltip(p, x.a), rarity: "set" }; }
     if (kind === "piece") { const p = talismanIdx().piece.get(id); return p && { html: setCharmTooltip(p, []), rarity: "set" }; }
     if (kind === "leg") {
@@ -1092,6 +1094,10 @@
       const sc = /[?&]sets=([^&]+)/.exec(location.hash);
       state.sandbox.sets = sc ? decodeURIComponent(sc[1]).split(",").map((x) => { const [p, a1, a2] = x.split("~"); return { p, a: [a1 || "", a2 || ""] }; }).filter((x) => talismanIdx().piece.has(x.p)) : [];
       state.sandbox.cls = cls && Engine.codex.meta.classes.includes(decodeURIComponent(cls[1])) ? decodeURIComponent(cls[1]) : "";
+      const so = /[?&]sock=([^&]+)/.exec(location.hash), gt = /[?&]gt=(\d)/.exec(location.hash);
+      state.sandbox.sock = {};
+      if (so) for (const x of decodeURIComponent(so[1]).split(",")) { const [sp, ...v] = x.split("~"); if (/^(g|w):/.test(sp)) state.sandbox.sock[sp] = v.map((y) => (/^(g|r):/.test(y) ? y : "")); }
+      state.sandbox.gt = gt ? +gt[1] : 9;
       saveSandbox();
       savePins();
       return;
@@ -1103,6 +1109,8 @@
     if (!Array.isArray(state.sandbox.charms)) state.sandbox.charms = [];
     if (!Array.isArray(state.sandbox.sets)) state.sandbox.sets = [];
     if (!state.sandbox.leg || typeof state.sandbox.leg !== "object") state.sandbox.leg = {};
+    if (!state.sandbox.sock || typeof state.sandbox.sock !== "object") state.sandbox.sock = {};
+    if (!(state.sandbox.gt >= 1 && state.sandbox.gt <= 9)) state.sandbox.gt = 9;
     state.sandbox.sets = state.sandbox.sets.filter((x) => x && talismanIdx().piece.has(x.p));
     state.sandbox.charms = state.sandbox.charms.filter((k) => state.pins.includes(k));
   }
@@ -1354,6 +1362,72 @@
   const INHERENT_2H = new Set(["w:blunt", "w:slash", "w:ranged"]);
   /** Generic-rule classes with no 1H weapons (Spiritborn): the main hand is always 2H. */
   const only2H = () => { const c = sandboxClass(); return Boolean(c && !WEAPON_RULES[c] && Engine.codex && !class1H(c).length); };
+
+  /* ---------- Sockets: gems and runes ----------
+   * Sockets per slot (game rules): Helm, Chest, Pants and 2H weapons 2; 1H weapons, off-hands, Amulet and
+   * Rings 1; Gloves and Boots none. A gem's effect depends on the socket target (codex.gems, from
+   * ptSocketedEffects): 0 weapon, 1 armor, 2 jewelry. Off-hands follow their item type (focus, totem, book:
+   * weapon; shield: armor). Runes: one Ritual + one Invocation in a 2-socket item make a runeword.
+   * state.sandbox.sock: { slot spec: ["g:Ruby" | "r:<rune id>" | "", …] }, gem quality state.sandbox.gt (1-9). */
+  const GEM_TARGETS = ["Weapon", "Armor", "Jewelry"];
+  const gemTypes = () => ((Engine.codex && Engine.codex.gems) || {}).types || [];
+  function gemOf(type) {
+    const t = gemTypes().find((x) => x.type === type);
+    if (!t) return null;
+    if (t.tiers.length === 1) return t.tiers[0];
+    return t.tiers.find((x) => x.id.endsWith("_0" + state.sandbox.gt)) || t.tiers[t.tiers.length - 1];
+  }
+  const runeById = (id) => ((Engine.codex.runes || {}).runes || []).find((r) => r.id === id);
+  /** Sockets on a build slot: { n, target } (n 0 when the slot is empty or can't hold sockets). */
+  function socketInfo(spec, L) {
+    const [kind, a, b] = spec.split(":");
+    const leg = state.sandbox.leg[spec];
+    if (kind === "g") {
+      if (!L.gear[a] || (!L.gear[a][+b] && !leg)) return { n: 0 };
+      return { n: { Helm: 2, Chest: 2, Pants: 2, Amulet: 1, Ring: 1 }[a] || 0, target: a === "Amulet" || a === "Ring" ? 2 : 1 };
+    }
+    const k = L.weapons[a];
+    const twoHand = Boolean(k) && Object.values(L.weapons).filter((x) => x === k).length > 1;
+    if (twoHand && a !== "main") return { n: 0 };
+    if (!k && !leg) return { n: 0 };
+    const cls = sandboxClass();
+    const is2H = twoHand || INHERENT_2H.has(spec) || (leg && leg.two) || (a === "main" && only2H())
+      || (k && W2H.has(state.byId.get(k).raw.typeId));
+    let target = 0;
+    if (a === "off") {
+      const t = k && Engine.codex.itemTypes[state.byId.get(k).raw.typeId];
+      target = t ? (t.g ?? 0) : (cls && classOffhands(cls).every((x) => /Shield/.test(x)) ? 1 : 0);
+    }
+    return { n: is2H ? 2 : 1, target };
+  }
+  /** The slot's socket contents, trimmed to its socket count. */
+  function socketsOf(spec, L) {
+    const { n } = socketInfo(spec, L);
+    const cur = (state.sandbox.sock[spec] || []).slice(0, n);
+    while (cur.length < n) cur.push("");
+    return cur;
+  }
+  /** One socket's effect line(s) for a target. */
+  function socketLine(v, target) {
+    if (v.startsWith("g:")) { const g = gemOf(v.slice(2)); return g ? { name: g.name, ic: g.ic, text: g.eff[target] || "" } : null; }
+    if (v.startsWith("r:")) { const r = runeById(v.slice(2)); return r ? { name: `${r.name} (${r.kind})`, ic: r.ic, rune: r } : null; }
+    return null;
+  }
+  function gemTooltip(type, target) {
+    const t = gemTypes().find((x) => x.type === type), g = gemOf(type);
+    if (!g) return null;
+    const lines = [0, 1, 2].map((i) => `<li class="${target === i ? "tt__set-on" : target == null ? "" : "tt__set-off"}"><span class="mono">${GEM_TARGETS[i].toUpperCase()}</span> ${Engine.renderText(g.eff[i] || "").html}</li>`).join("");
+    return `<div class="tt__head">${g.ic ? `<span class="ico-well ico-well--tt">${itemIcon(g.ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(g.name)}</p><p class="tt__type">Gem${t.tiers.length > 1 ? "" : " · Mythic"}</p></div></div>
+      <div class="tt__body"><ul class="tt__lines tt__lines--set">${lines}</ul></div>
+      <dl class="tt__foot"><dt>SOCKET</dt><dd>The effect depends on the item: weapon, armor or jewelry${target != null ? ` (this one: ${GEM_TARGETS[target].toLowerCase()})` : ""}</dd><dt>ID</dt><dd>${esc(g.id)}</dd></dl>`;
+  }
+  function runeTooltip(id) {
+    const r = runeById(id);
+    if (!r) return null;
+    return `<div class="tt__head">${r.ic ? `<span class="ico-well ico-well--tt">${itemIcon(r.ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(r.name)}</p><p class="tt__type">${esc(r.rarity)} Rune of ${esc(r.kind)}${r.season ? " · " + esc(r.season) : ""}</p></div></div>
+      <div class="tt__body"><ul class="tt__lines"><li>${Engine.renderText(r.t || "").html}</li></ul></div>
+      <dl class="tt__foot"><dt>OFFERING</dt><dd>${r.kind === "Ritual" ? `Gains ${r.offering}` : `Needs ${r.offering}${r.cd ? `, ${r.cd}s cooldown` : ""}`}</dd><dt>RUNEWORD</dt><dd>One Ritual + one Invocation in a 2-socket Helm, Chest, Pants or 2H weapon</dd></dl>`;
+  }
   /** Aspect slot bonus for a legendary in `spec`: amulet x1.5, 2H weapon x2. */
   function legBonusSlot(spec, e) {
     if (spec.startsWith("g:Amulet")) return "amulet";
@@ -1401,6 +1475,12 @@
 
   /** Candidates for a slot spec: "w:<slot>", "g:<Slot>:<i>", "c:<i>" (charm), "aspect". */
   function pickCandidates(spec) {
+    if (spec.startsWith("s|")) {
+      const [, slot] = spec.split("|"), L = sbLayout(), { n, target } = socketInfo(slot, L);
+      const gems = gemTypes().map((t) => { const g = gemOf(t.type); return { value: "g:" + t.type, name: g.name, sub: `Gem · ${GEM_TARGETS[target]}: ${Engine.renderText(g.eff[target] || "").plain}`, icon: g.ic, rarity: t.tiers.length > 1 ? "gem" : "mythic", tip: `gem:${t.type}|${target}` }; });
+      const runes = n === 2 ? ((Engine.codex.runes || {}).runes || []).filter((r) => !r.legacy).map((r) => ({ value: "r:" + r.id, name: r.name, sub: `Rune of ${r.kind} · ${r.kind === "Ritual" ? "+" : "needs "}${r.offering} Offering · ${Engine.renderText(r.t || "").plain}`, icon: r.ic, rarity: "rune", tip: "rune:" + r.id })) : [];
+      return [{ value: "x", name: "Empty socket", sub: "Remove what's in this socket", icon: "", rarity: "common" }, ...gems, ...runes];
+    }
     const cls = sandboxClass();
     const [kind, a] = spec.split(":");
     const item = (r, sub) => ({ value: r.key, name: r.name, sub, icon: r.icon, rarity: rarityClass(r.rarity) });
@@ -1455,6 +1535,15 @@
   const talismanOccupants = () => [...(state.sandbox.torch ? [{ torch: true }] : []), ...state.sandbox.charms.map((k) => ({ k })), ...state.sandbox.sets.map((x) => ({ x }))];
 
   function applyPick(spec, value) {
+    if (spec.startsWith("s|")) {
+      const [, slot, i] = spec.split("|"), L = sbLayout();
+      const cur = socketsOf(slot, L);
+      cur[+i] = value === "x" ? "" : value;
+      state.sandbox.sock[slot] = cur;
+      if (!cur.some(Boolean)) delete state.sandbox.sock[slot];
+      saveSandbox(); renderSandbox();
+      return;
+    }
     const [kind, a, b] = spec.split(":");
     const L = sbLayout();
     const leg = state.sandbox.leg;
@@ -1538,7 +1627,8 @@
     }
     hideTooltip();
     pickerSpec = spec;
-    el._items = pickCandidates(spec).sort((x, y) => x.name.localeCompare(y.name));
+    el._items = pickCandidates(spec);
+    if (!spec.startsWith("s|")) el._items.sort((x, y) => x.name.localeCompare(y.name));
     el.querySelector(".picker__title").textContent = PICK_TITLES[spec] || `Choose: ${label}`;
     const search = el.querySelector(".picker__search");
     search.value = "";
@@ -1689,8 +1779,18 @@
         const emptyIc = (PD.empty || {})[d.empty];
         if (d.blocked) return `<div class="pd__slot is-blocked" style="${pos}" title="${esc(d.label)}: held by the 2H weapon">${itemIcon(frame, "pd__frame")}</div>`;
         return `<div class="pd__slot${d.name ? " is-full pd__slot--" + d.rar : ""}${d.weapon ? " pd__slot--weapon" : ""}" style="${pos}"${d.key ? ` data-key="${esc(d.key)}"` : ""}>
-          <button type="button" class="pd__pick" data-pick="${esc(d.spec)}" aria-label="${esc(d.label)}: ${d.name ? esc(d.name) + ". Change" : "empty. Choose an item"}">${itemIcon(frame, "pd__frame")}${d.ic ? itemIcon(d.ic, "pd__item") : emptyIc ? itemIcon(emptyIc, "pd__empty") : ""}</button>
-          ${d.name ? `<button type="button" class="sb-cell__clear pd__clear" ${d.clear} aria-label="Remove ${esc(d.name)}" title="Remove">×</button>` : ""}${d.extra || ""}</div>`;
+          <button type="button" class="pd__pick" data-pick="${esc(d.spec)}" data-label="${esc(d.label)}" aria-label="${esc(d.label)}: ${d.name ? esc(d.name) + ". Change" : "empty. Choose an item"}">${itemIcon(frame, "pd__frame")}${d.ic ? itemIcon(d.ic, "pd__item") : emptyIc ? itemIcon(emptyIc, "pd__empty") : ""}</button>
+          ${d.name ? `<button type="button" class="sb-cell__clear pd__clear" ${d.clear} aria-label="Remove ${esc(d.name)}" title="Remove">×</button>` : ""}${d.extra || ""}${socketPips(d)}</div>`;
+      };
+      // Socket pips along the bottom of a filled slot: the game's round socket frame, the gem / rune inside.
+      const socketPips = (d) => {
+        const si = socketInfo(d.spec, L);
+        if (!si.n) return "";
+        return `<span class="pd__socks">${socketsOf(d.spec, L).map((v, i) => {
+          const ln = v && socketLine(v, si.target);
+          const tip = v ? (v.startsWith("g:") ? `gem:${v.slice(2)}|${si.target}` : "rune:" + v.slice(2)) : "";
+          return `<button type="button" class="pd__sock${v ? " is-full" : ""}" data-pick="s|${esc(d.spec)}|${i}" data-label="${esc(d.label)} socket ${i + 1}"${tip ? ` data-key="${esc(tip)}"` : ""} aria-label="${esc(d.label)} socket ${i + 1}: ${ln ? esc(ln.name) : "empty"}">${PD.frames.socket ? itemIcon(PD.frames.socket, "pd__sockframe") : ""}${ln && ln.ic ? itemIcon(ln.ic, "pd__sockic") : ""}</button>`;
+        }).join("")}</span>`;
       };
       const sigil = cls && (PD.sigil || {})[cls];
       const photo = (PD.portrait || {})[cls || "any"];
@@ -1702,12 +1802,51 @@
           ${pdSlots.map(cellHTML).join("")}</div>
         <ul class="pd__list">${pdSlots.map((d) => `<li class="${d.blocked ? "is-blocked" : d.name ? "pd__li--" + d.rar : "is-empty"}"><span class="mono">${esc(d.label)}</span> ${d.blocked ? "held by the 2H weapon" : d.name ? esc(d.name) : "empty"}</li>`).join("")}</ul></div>`;
     })() : "";
+    // Sockets panel: gem quality, each socketed slot's gems / runeword, and gem totals.
+    function socketsHTML() {
+      const ruby = (gemTypes().find((t) => t.type === "Ruby") || { tiers: [] }).tiers;
+      const tierName = (g) => g.name.replace(/\s*Ruby$/, "") || "Normal";
+      const seen = new Set();
+      const tierOpts = ruby.map((g, i) => ({ n: i + 1, label: tierName(g) })).reverse().filter((o) => !seen.has(o.label) && seen.add(o.label)).reverse()
+        .map((o) => `<option value="${o.n}"${state.sandbox.gt === o.n ? " selected" : ""}>${esc(o.label)}</option>`).join("");
+      const totals = new Map();
+      const rows = pdSlots.filter((d) => !d.blocked).map((d) => {
+        const si = socketInfo(d.spec, L);
+        if (!si.n) return "";
+        const socks = socketsOf(d.spec, L), lines = socks.map((v) => (v ? socketLine(v, si.target) : null));
+        const gemLis = lines.filter((x) => x && !x.rune).map((x) => {
+          totals.set(x.text, (totals.get(x.text) || 0) + 1);
+          return `<li><span class="sk__name">${esc(x.name)}</span> ${Engine.renderText(x.text).html}</li>`;
+        }).join("");
+        const runes = lines.filter((x) => x && x.rune).map((x) => x.rune);
+        const rit = runes.filter((r) => r.kind === "Ritual"), inv = runes.filter((r) => r.kind === "Invocation");
+        let rw = "";
+        if (rit.length === 1 && inv.length === 1) {
+          const a = rit[0], b = inv[0];
+          rw = `<li class="sk__rw"><span class="sk__name">Runeword: ${esc(a.phrase || a.name)} ${esc(b.phrase || b.name)}</span>
+            <span class="gt-rune-ritual">When:</span> ${Engine.renderText(a.t).html} <span class="mono hint">(+${a.offering})</span>
+            <span class="gt-rune-invoke">Then:</span> ${Engine.renderText(b.t).html} <span class="mono hint">(needs ${b.offering})</span></li>`;
+        } else if (runes.length) {
+          rw = `<li class="sk__warn mono">${runes.length === 1 ? `${esc(runes[0].name)} does nothing alone: add a ${runes[0].kind === "Ritual" ? "Rune of Invocation" : "Rune of Ritual"} in the other socket` : "A runeword needs one Rune of Ritual and one Rune of Invocation"}</li>`;
+        }
+        const used = socks.filter(Boolean).length;
+        return `<li class="sk__slot"><span class="mono sk__label">${esc(d.label)} <span class="sk__tg">${GEM_TARGETS[si.target]} · ${used}/${si.n}</span></span>
+          ${gemLis || rw ? `<ul class="sk__lines">${gemLis}${rw}</ul>` : `<span class="sk__empty">empty: click a socket on the item</span>`}</li>`;
+      }).filter(Boolean).join("");
+      const tot = [...totals].map(([t, q]) => `<li>${Engine.renderText(t).html}${q > 1 ? ` <span class="mono sk__x">×${q}</span>` : ""}</li>`).join("");
+      return `<div class="sk"><div class="sk__head"><h4 class="sb-build__sub mono">SOCKETS</h4>
+          <label class="sk__gt"><span class="mono">GEM QUALITY</span><select class="input mono" data-gt aria-label="Gem quality">${tierOpts}</select></label></div>
+        ${rows ? `<ul class="sk__slots">${rows}</ul>` : `<p class="hint">Equip an item to socket it.</p>`}
+        ${tot ? `<p class="sb-build__sub mono">GEM TOTALS</p><ul class="sk__tot">${tot}</ul>` : ""}
+        <p class="hint">Click a socket under an item to add a gem or rune. Helm, Chest, Pants and 2H weapons have 2 sockets; 1H weapons, off-hands, the Amulet and Rings 1; Gloves and Boots none. A gem's bonus depends on the item: weapon (damage multiplier), armor (a main stat, barrier, healing) or jewelry (resistance). Runes need a 2-socket item: one Rune of Ritual plus one Rune of Invocation make a runeword (see Runes &amp; Recipes).</p></div>`;
+    }
     const build = `<section class="sb-build">
       <div class="sb-build__head"><h3 class="sb-loadout__title mono">BUILD // ${esc(cls || "any class")}</h3>
         <span class="hint">${esc(rule.text.replace(/^[a-z]/, (c) => c.toUpperCase()))}.${state.sandbox.cls ? "" : cls ? " Class taken from your items." : " Set a class to use its weapon rules."}</span></div>
       ${pdHTML || `<h4 class="sb-build__sub mono">WEAPONS</h4><div class="sb-cells">${wCells}</div>
       <h4 class="sb-build__sub mono">ARMOR &amp; JEWELRY</h4><div class="sb-cells">${gCells}</div>`}
       ${overflow.length ? `<p class="sb-note mono">NOT EQUIPPED // ${overflow.map((k) => esc(state.byId.get(k).name)).join(", ")}: no free slot. Remove it, or press CHARM below to move it to the Talisman.</p>` : ""}
+      ${pdHTML ? socketsHTML() : ""}
     </section>`;
 
     const nameOf = (k) => esc(state.byId.get(k).name);
@@ -2177,7 +2316,7 @@
       }
       const pk = e.target.closest("[data-pick]");
       if (pk && !pk.closest("#picker")) {
-        const label = (pk.querySelector(".sb-cell__label") || pk).textContent.trim();
+        const label = pk.dataset.label || (pk.querySelector(".sb-cell__label") || pk).textContent.trim();
         openPicker(pk.dataset.pick, label);
         return;
       }
@@ -2275,6 +2414,7 @@
         saveSandbox(); renderSandbox();
         return;
       }
+      if (el.matches("[data-gt]")) { state.sandbox.gt = +el.value; saveSandbox(); renderSandbox(); return; }
       if (!el.matches("[data-seal]")) return;
       state.sandbox.seal = el.value;
       saveSandbox();
@@ -2284,12 +2424,12 @@
     // roll / rank / item power settings stay). UNDO in the toast puts the old build back.
     els.sbClass.addEventListener("change", () => {
       const sb = state.sandbox;
-      const had = state.pins.length || sb.charms.length || sb.sets.length || sb.torch || Object.keys(sb.leg).length;
+      const had = state.pins.length || sb.charms.length || sb.sets.length || sb.torch || Object.keys(sb.leg).length || Object.keys(sb.sock || {}).length;
       const before = { pins: state.pins.slice(), sb: JSON.parse(JSON.stringify(sb)) };
       sb.cls = els.sbClass.value;
       if (had) {
         state.pins = [];
-        Object.assign(sb, { charms: [], sets: [], torch: false, leg: {}, mythic: [], slot: {} });
+        Object.assign(sb, { charms: [], sets: [], torch: false, leg: {}, mythic: [], slot: {}, sock: {} });
         savePins();
         toast(`Class set to ${sb.cls || "Auto"}: gear and charms cleared.`, ["UNDO", () => {
           state.pins = before.pins; state.sandbox = before.sb;
@@ -2299,9 +2439,9 @@
       saveSandbox();
       renderSandbox();
     });
-    els.sbClear.addEventListener("click", () => { state.pins = []; state.sandbox.charms = []; state.sandbox.sets = []; state.sandbox.torch = false; state.sandbox.leg = {}; saveSandbox(); savePins(); renderSandbox(); state.mode = null; });
+    els.sbClear.addEventListener("click", () => { state.pins = []; state.sandbox.charms = []; state.sandbox.sets = []; state.sandbox.torch = false; state.sandbox.leg = {}; state.sandbox.sock = {}; saveSandbox(); savePins(); renderSandbox(); state.mode = null; });
     els.sbShare.addEventListener("click", async () => {
-      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}`;
+      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}${Object.keys(state.sandbox.sock).length ? "&sock=" + encodeURIComponent(Object.entries(state.sandbox.sock).map(([sp, v]) => [sp, ...v].join("~")).join(",")) + "&gt=" + state.sandbox.gt : ""}`;
       try { await navigator.clipboard.writeText(url); els.sbShare.textContent = "COPIED"; }
       catch { window.prompt("Copy this link:", url); }
       setTimeout(() => (els.sbShare.textContent = "COPY LINK"), 1400);
