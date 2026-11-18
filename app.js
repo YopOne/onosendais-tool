@@ -310,8 +310,8 @@
         const v = evalFormula(formula, { ...ctx, affix: id });
         // Affix bonuses (never on values flagged bIgnoreAffixBonuses):
         //   Legendary aspects: slot bonus, amulet +50% / 2H weapon +100% (flLegendaryAffix*Bonus)
-        //   Unique powers: amulet +50% too (confirmed in game: crafted Mythic Moloch's Beating Flame,
-        //   max 20% -> 39% = 20 x 1.5 x 1.3), times Mythic Unique Potency,
+        //   Unique powers: on a Mythic amulet, +50% too (confirmed in game: Moloch's Beating Flame is
+        //   15-20% as a unique, 39% = 20 x 1.5 x 1.3 as a crafted Mythic), times Mythic Unique Potency,
         //   Item_Affix_Bonus_Per_Magic_Type(2) = x1.3 (Elegy 50% -> 65%), unless the formula applies it itself.
         if (v === UNKNOWN || (a.nb && a.nb.includes(head))) return v;
         if (a.lg) return v * (1 + (ctx.world.slotBonus || 0));
@@ -632,8 +632,9 @@
     // Mythics are always item power 900. A crafted Mythic is made in the Cube from the same unique at 900
     // (Ancestral); it keeps every affix, promoted to its maximum value.
     // Crafted: every affix, including the unique power, is promoted to its maximum value.
-    // Unique powers on an amulet get the amulet affix bonus (x1.5), like legendary aspects do.
-    const slotBonus = isAmulet(it) ? aspectSlotBonus("amulet") : 0;
+    // A Mythic amulet's unique power gets the amulet affix bonus (x1.5), like legendary aspects do.
+    // Plain unique amulets don't (in game: Moloch's Beating Flame 15-20% as a unique, 39% as a Mythic).
+    const slotBonus = isAmulet(it) && (orig || c) ? aspectSlotBonus("amulet") : 0;
     const pw = { ...base, mythic: orig, crafted: c, forceMax: c, potency: c ? Engine.mythicPotency() : 0, slotBonus, ip: orig || c ? IP.mythic : base.ip };
     const sw = pw;
     return {
@@ -820,7 +821,7 @@
       r.kind === "item" ? ["SLOT", r.slot] : null,
       r.kind === "item" ? ["SOURCE", r.drop ? r.drop.text : "Unknown: not in the boss loot table or any recipe"] : null,
       r.maxRank ? ["RANKS", `1–${r.maxRank}`] : null,
-      r.kind === "item" && r.slot === "Amulet" && r.raw.power ? ["AMULET", "Unique power ×1.5 (amulet bonus), included above"] : null,
+      r.kind === "item" && r.slot === "Amulet" && r.raw.power && (rendered.crafted || r.rarity === "Mythic") ? ["AMULET", "Mythic amulet: unique power ×1.5 (amulet bonus), included above"] : null,
       r.kind === "aspect" ? ["IMPRINT", "Non-unique gear via the Codex of Power (salvage at the Blacksmith). Amulet 150% · 2H weapon 200% (try it in the Sandbox)"] : null,
       rendered.crafted ? ["MYTHIC", "Crafted: base stats at max, unique power +Unique Potency"] : null,
       ["ID", r.id],
