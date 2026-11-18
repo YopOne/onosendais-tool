@@ -2853,6 +2853,32 @@
     }
     return out;
   }
+  /** Powers on the Sandbox build that can change skills: equipped uniques / Mythics, legendary aspects in free slots,
+   * unique charms and the Hellfire Torch. [{ name, html, plain }] */
+  function skGearPowers() {
+    if (!state.byId.size) return [];
+    const W = { t: state.sandbox.t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP };
+    const L = sbLayout(), out = [];
+    const keys = new Set([...Object.values(L.weapons), ...Object.values(L.gear).flat()].filter(Boolean));
+    for (const k of keys) { const r = state.byId.get(k), rd = r && renderedAt(r, W); if (rd && rd.power) out.push({ name: r.name, html: rd.power.html, plain: rd.power.plain }); }
+    for (const [sp, e] of Object.entries(state.sandbox.leg || {})) { const r = state.byId.get(e.a), rd = r && renderLegAspect(r.key, sp); if (rd && rd.power) out.push({ name: r.name, html: rd.power.html, plain: rd.power.plain }); }
+    for (const k of state.sandbox.charms || []) { const r = state.byId.get(k), ch = r && charmOf(r), rd = ch && renderItem(ch, W, false); if (rd && rd.power) out.push({ name: r.name + " (charm)", html: rd.power.html, plain: rd.power.plain }); }
+    return out;
+  }
+  /** Gear powers that touch one skill: by name, or by a category it has ("Archfiend Skills"), including categories gear
+   * adds ("Blazing Scream is now an Archfiend Skill"); plus upgrades / variants gear grants "for free". */
+  function skGearFor(skillPower, modName) {
+    const st = SK && SK.skills[skillPower];
+    if (!st) return { hits: [], free: false, cats: [] };
+    const gp = skGearPowers(), nm = st.n.toLowerCase();
+    const has = (txt, w) => new RegExp("(^|[^a-z])" + w.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "([^a-z]|$)").test(txt);
+    const cats = [...(st.tg || [])];
+    for (const g of gp) { const m = new RegExp(st.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + " is now an? ([A-Z][A-Za-z ]+?) Skill", "i").exec(g.plain); if (m && !cats.includes(m[1])) cats.push(m[1]); }
+    // "X is now an Archfiend Skill" converts X; it isn't a bonus to every Archfiend Skill, so it doesn't count as a category hit.
+    const hits = gp.filter((g) => { const t = g.plain.toLowerCase(), tc = t.replace(/is now an? [a-z ]+? skill/g, ""); return has(t, nm) || cats.some((c) => has(tc, c + " skill")) || (modName && has(t, modName.toLowerCase())); });
+    const free = !!modName && gp.some((g) => has(g.plain.toLowerCase(), nm) && new RegExp(modName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + " (Variant|Upgrade)s? for free", "i").test(g.plain));
+    return { hits, free, cats };
+  }
   function skTooltip(cls, i) {
     const tree = SK && SK.trees[cls], n = tree && tree.nodes[+i];
     if (!n || !n.p) return null;
@@ -2863,6 +2889,8 @@
     const ctx = { power: n.p, world: { t: 1, rank: 1, skillRank: rank }, depth: 0 };
     const isMod = n.k === "mod", m = isMod ? st.m[n.m] || {} : null;
     const body = Engine.render(isMod ? m.d : st.d, ctx);
+    const gf = skGearFor(n.p, isMod ? m.n : null);
+    const gearHtml = gf.free || gf.hits.length ? `<div class="tt__sep"></div><p class="hint mono sk-tt-gearh" style="margin:0 0 4px">FROM YOUR GEAR${!isMod && gf.cats.length ? ` · ${esc(gf.cats.join(" · "))} skill` : ""}:</p>${gf.free ? `<p class="tt__power sk-tt-free">Granted for free by your gear.</p>` : ""}<ul class="tt__lines sk-tt-gear">${gf.hits.map((g) => `<li><b>${esc(g.name)}</b>: ${g.html}</li>`).join("")}</ul>` : "";
     // Each skill has 3 branches; each ends in a pick-one group: 2 Upgrades (pick 1 of 2) or 3 Variants (pick 1 of 3).
     let group = "";
     if (isMod && n.ex != null) {
@@ -2883,7 +2911,7 @@
     ].filter(Boolean);
     const ic = (isMod && m.ic) || st.ic;
     return `<div class="tt__head">${ic ? `<span class="ico-well ico-well--tt ico-well--skill">${itemIcon(ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(isMod ? m.n : st.n)}</p><p class="tt__type">${esc(cls)} ${isMod ? (n.ex != null && tree.nodes.filter((x) => x.ex === n.ex).length >= 3 ? "Skill Variant" : "Skill Upgrade") + " · " + esc(st.n) : "Skill"}${!isMod ? ` · Rank ${rank}` : ""}</p></div></div>
-      <div class="tt__body"><p class="tt__power">${body.html}</p>${group ? `<div class="tt__sep"></div><p class="hint mono" style="margin:0 0 4px">OR INSTEAD:</p>${group}` : ""}</div>
+      <div class="tt__body"><p class="tt__power">${body.html}</p>${gearHtml}${group ? `<div class="tt__sep"></div><p class="hint mono" style="margin:0 0 4px">OR INSTEAD:</p>${group}` : ""}</div>
       <dl class="tt__foot">${foot.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
   }
 
@@ -2976,7 +3004,8 @@
       }
       const st = SK.skills[n.p] || {}, ic = n.k === "mod" ? ((st.m || {})[n.m] || {}).ic || st.ic : st.ic;
       const can = !skCanAdd(tree, s, i, act), state = pts > 0 ? 0 : can ? 1 : 2;
-      const cl = pts > 0 ? " is-taken" : can ? " is-open" : " is-locked";
+      const gfx = skGearFor(n.p, n.k === "mod" ? ((st.m || {})[n.m] || {}).n : null);
+      const cl = (pts > 0 ? " is-taken" : can ? " is-open" : " is-locked") + (n.k === "mod" ? (gfx.free ? " is-free" : "") : gfx.hits.length ? " has-gear" : "");
       const g = n.k === "skill" ? gear[(st.n || "").toLowerCase()] || 0 : 0;
       let art;
       if (n.k === "skill") {
@@ -2995,7 +3024,8 @@
       const label = n.k === "skill" ? `<text class="sk-name" x="${x}" y="${crowded ? y - sz / 2 - 60 : y + sz / 2 + 150}" text-anchor="middle">${esc(st.n || "")}</text>` : "";
       const bx = x + sz * 0.2, by = y + sz * 0.2;
       const badge = pts > 0 || g ? `<g class="sk-badge"><rect x="${bx}" y="${by}" width="${g ? 460 : 280}" height="210" rx="56"/><text x="${bx + (g ? 230 : 140)}" y="${by + 158}" text-anchor="middle">${pts}${g ? "+" + g : ""}</text></g>` : "";
-      return `<g class="sk-node sk-node--${n.k}${cl}" data-sknode="${i}" data-key="skill:${esc(cls)}:${i}" tabindex="0" role="button" aria-label="${esc(skNodeName(n))}: ${pts} of ${n.max}">${art}${badge}${label}</g>`;
+      const gearMark = n.k === "skill" && gfx.hits.length ? `<g class="sk-gear"><circle cx="${x - sz * 0.3}" cy="${y - sz * 0.3}" r="160"/><text x="${x - sz * 0.3}" y="${y - sz * 0.3 + 70}" text-anchor="middle">✦</text></g>` : n.k === "mod" && gfx.free ? `<g class="sk-gear"><circle cx="${x - sz * 0.38}" cy="${y - sz * 0.38}" r="120"/><text x="${x - sz * 0.38}" y="${y - sz * 0.38 + 56}" text-anchor="middle">✓</text></g>` : "";
+      return `<g class="sk-node sk-node--${n.k}${cl}" data-sknode="${i}" data-key="skill:${esc(cls)}:${i}" tabindex="0" role="button" aria-label="${esc(skNodeName(n))}: ${pts} of ${n.max}">${art}${badge}${gearMark}${label}</g>`;
     }).join("");
     // Allocated list, grouped by skill.
     const taken = N.map((n, i) => ({ n, i, p: s.pts[i] || 0 })).filter((x) => x.p > 0);

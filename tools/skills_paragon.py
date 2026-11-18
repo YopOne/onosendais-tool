@@ -225,6 +225,19 @@ def extract(meta_dir, stl_dir, power_dir, icons=None, stat_line=None, attr_desc=
         s = _strings(stl_dir, "Power_" + pname)
         pj = pow_json(pname) or {}
         rec = {"n": s.get("name") or pname.split("_", 1)[-1], "d": s.get("desc", ""), "m": {}}
+        # Skill categories from the power's tags (Skill_Primary_Core -> Core, Skill_Hellfire -> Hellfire, ...), used to
+        # match gear text like "Your Archfiend Skills ...". Per-skill and search tags are skipped.
+        tags = [(pj.get("tPrimaryTag") or {}).get("gbidSkillTag") or {}] + [t.get("gbidSkillTag") or {} for t in pj.get("arSkillTags") or []]
+        cats = []
+        for t in tags:
+            nm = (t or {}).get("name") or ""
+            if not nm.startswith("Skill_") or re.match(r"Skill_(Barbarian|Druid|Necro|Necromancer|Paladin|Rogue|Sorc|Sorcerer|Spiritborn|Warlock)_", nm):
+                continue
+            c = nm.replace("Skill_Primary_", "").replace("Skill_", "").replace("_", " ").strip()
+            if c and c.lower() != rec["n"].lower().replace(" ", "") and c.lower() != rec["n"].lower() and c not in cats:
+                cats.append(c)
+        if cats:
+            rec["tg"] = cats
         ic = icons and icons.for_handle(pj.get("hIconNormal"))
         if ic:
             rec["ic"] = ic

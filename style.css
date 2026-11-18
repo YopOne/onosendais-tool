@@ -1125,3 +1125,10 @@ html[data-sb-ip="900"] .pd__slot--unique { --spark: var(--spark-anc); --spark-hi
 .sk-tt-group { margin: 0; font-size: 0.8rem; }
 .sk-tt-group .mono { color: #ff8a3c; font-size: 0.68rem; letter-spacing: 0.12em; }
 .sk-tt-alt li { font-size: 0.82rem; color: var(--muted); }
+.sk-gear circle { fill: #1b0f22; stroke: #d6a8ff; stroke-width: 18; filter: drop-shadow(0 0 30px rgba(200, 140, 255, 0.8)); }
+.sk-gear text { font: 700 190px var(--font-mono); fill: #f0dcff; pointer-events: none; }
+.sk-node.is-free image { filter: drop-shadow(0 0 40px rgba(200, 140, 255, 0.85)); }
+.sk-tt-gearh { color: #d6a8ff !important; }
+.sk-tt-free { margin: 0 0 4px; color: #d6a8ff; font-size: 0.84rem; }
+.sk-tt-gear li { font-size: 0.84rem; }
+.sk-tt-gear b { color: var(--c-important); }
