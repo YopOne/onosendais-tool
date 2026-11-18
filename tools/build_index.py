@@ -392,6 +392,53 @@ def main():
             aspects_by_name[key] = (score, arec)
     aspects = sorted((r for _, r in aspects_by_name.values()), key=lambda r: r["name"])
 
+    # ---------- Talisman set charms ----------
+    # Talisman_Charm_Set_<Class>_<set>_<piece>: one charm per type (Phoba, Fer, Mlor, Linta, Berú) per set.
+    # SetItemBonus/<set>.set: bonus tiers (2 / 3 / 5 different pieces) as Talisman_SetPower_* affixes.
+    # Random affix pool: Talisman_Charm_* affixes allowed on charms (item label 71), minus *_MagicOnly
+    # and the unique charm powers.
+    set_dir = os.path.join(meta_dir, "SetItemBonus")
+    talisman = {"sets": [], "pool": []}
+    sets_by_id = {}
+    for path in sorted(glob.glob(os.path.join(item_dir, "Talisman_Charm_Set_*.itm.json"))):
+        j = load(path)
+        sid = (j.get("snoSetItemBonus") or {}).get("name")
+        if not sid:
+            continue
+        cid = os.path.basename(path)[: -len(".itm.json")]
+        cs = strings(stl_dir, "Item_" + cid)
+        name = cs.get("Name", "")
+        if not name or JUNK_NAME.search(name):
+            continue
+        st = sets_by_id.get(sid)
+        if st is None:
+            sp = os.path.join(set_dir, sid + ".set.json")
+            if not os.path.exists(sp):
+                continue
+            tiers = []
+            for t in load(sp).get("ptTiers", []):
+                a = (t.get("snoAffix") or {}).get("name")
+                if a and add_affix(a):
+                    tiers.append({"n": t.get("nRequired", 0), "a": a})
+            st = sets_by_id[sid] = {"id": sid, "name": strings(stl_dir, "SetItemBonus_" + sid).get("Name") or sid,
+                                    "c": class_list(j.get("fUsableByClass")) or [], "tiers": tiers, "pieces": []}
+        piece = {"id": cid, "name": name, "type": name.split(" of ")[0].strip()}
+        if cs.get("Flavor"):
+            piece["flavor"] = cs["Flavor"]
+        ic = icons and (icons.for_handle((j.get("hSetCharmIcon") or {}).get("hImageHandle")) or icons.for_item(j))
+        if ic:
+            piece["ic"] = ic
+        st["pieces"].append(piece)
+    talisman["sets"] = sorted((x for x in sets_by_id.values() if x["tiers"]), key=lambda x: (x["c"][:1] or ["~"], x["name"]))
+    if have_affix:
+        for path in sorted(glob.glob(os.path.join(affix_dir, "Talisman_Charm_*.aff.json"))):
+            aid = os.path.basename(path)[: -len(".aff.json")]
+            # Talisman_Charm_Affix_* are the unique charms' own powers, not random rolls.
+            if aid.endswith("_MagicOnly") or aid.startswith("Talisman_Charm_Affix_") or 71 not in (load(path).get("arAllowedItemLabels") or []):
+                continue
+            if add_affix(aid):
+                talisman["pool"].append(aid)
+
     # ---------- Power script formulas (PowerTag refs) ----------
     powers = {}
     pending = set(powertags)
@@ -409,6 +456,7 @@ def main():
 
     used = {a for r in items for a in r.get("imp", []) + r.get("stats", []) + ([r["power"]] if r.get("power") else [])}
     used |= {a["id"] for a in aspects}
+    used |= {t["a"] for x in talisman["sets"] for t in x["tiers"]} | set(talisman["pool"])
     out_affixes = {k: v for k, v in affixes.items() if v and k in used}
 
     # ---------- Mythic bonus affixes (S14_Mythic_*: Unique Potency, CDR, +All Skills) ----------
@@ -496,6 +544,7 @@ def main():
         "globals": globals_out,
         "drops": drops,
         "runes": runes,
+        "talisman": talisman,
     }
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)

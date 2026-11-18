@@ -555,6 +555,29 @@ h1, h2, h3 { margin: 0; }
 .sb-slot--empty dd { color: var(--faint); font-style: italic; }
 .sb-loadout .hint { margin: 0; }
 .sb-slot--charm { border-color: color-mix(in srgb, var(--r-unique) 45%, transparent); background: color-mix(in srgb, var(--r-unique) 7%, transparent); }
+:root { --r-set: #2fd06f; }
+.sb-slot--set { border-color: color-mix(in srgb, var(--r-set) 45%, transparent); background: color-mix(in srgb, var(--r-set) 7%, transparent); }
+.sb-setcharms { display: grid; gap: 8px; }
+.sb-setcharm { padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--r-set) 30%, var(--line)); border-radius: 4px; display: grid; gap: 8px; }
+.sb-setcharm.is-dup { border-color: var(--accent); }
+.sb-setcharm__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sb-setcharm__name { font: 700 0.95rem var(--font-display); color: var(--r-set); flex: 1 1 auto; min-width: 0; }
+.sb-setcharm__type { font-size: 0.7rem; letter-spacing: 0.12em; color: var(--faint); }
+.is-dup .sb-setcharm__type { color: var(--accent); }
+.sb-setcharm__affixes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 6px; }
+.sb-setcharm__affixes select { appearance: auto; min-width: 0; width: 100%; font-size: 0.74rem; }
+.sb-sets { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+.sb-set { display: grid; gap: 6px; }
+.sb-set__name { margin: 0; font: 700 1rem var(--font-display); color: var(--r-set); }
+.sb-set__name .mono { font-size: 0.74rem; color: var(--text-soft); margin-left: 6px; }
+.sb-set__cls { font-size: 0.68rem !important; color: var(--faint) !important; letter-spacing: 0.12em; }
+.sb-set__types { margin: 0; display: flex; gap: 6px; flex-wrap: wrap; font-size: 0.7rem; }
+.sb-set__types span { padding: 1px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--faint); }
+.sb-set__types span.on { color: var(--r-set); border-color: color-mix(in srgb, var(--r-set) 50%, transparent); }
+.sb-set__tiers { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 0.82rem; line-height: 1.45; color: var(--faint); }
+.sb-set__tiers li { opacity: 0.55; }
+.sb-set__tiers li.is-on { opacity: 1; color: var(--text-soft); }
+.sb-set__tiers li .mono { color: var(--r-set); margin-right: 4px; }
 .sb-slot--locked { opacity: 0.45; border-style: dashed; }
 .sb-slot--locked dd { color: var(--faint); font-style: italic; }
 .sb-seal { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
