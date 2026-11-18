@@ -1089,3 +1089,35 @@ html[data-sb-ip="900"] .pd__slot--unique { --spark: var(--spark-anc); --spark-hi
 .pg-gaff li.is-off { color: var(--faint); }
 .pg-gaff li.is-on { color: var(--text); }
 .pg-gname { display: flex; gap: 8px; align-items: baseline; } .pg-gname .mono { color: var(--faint); font-size: 0.7rem; }
+
+/* Paragon board picker: legendary power + rotation previews */
+.pg-pickpanel { width: min(1020px, 100%); }
+.pg-picks { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.pg-pick { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: rgba(255, 255, 255, 0.02); }
+.pg-pick__head b { font: 700 1rem var(--font-display); color: var(--c-important); }
+.pg-pick__leg { margin: 0; font-size: 0.84rem; line-height: 1.45; color: var(--text); }
+.pg-pick__leg .mono { font-size: 0.66rem; letter-spacing: 0.14em; color: #ff8a3c; margin-right: 6px; }
+.pg-prevs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.pg-prev { display: grid; gap: 4px; justify-items: center; padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: #0b0b0e; color: var(--muted); cursor: pointer; }
+.pg-prev:hover:not([disabled]), .pg-prev:focus-visible { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.pg-prev[disabled] { opacity: 0.35; cursor: not-allowed; }
+.pg-prev .mono { font-size: 0.7rem; }
+.pg-mini { width: 100%; max-width: 190px; aspect-ratio: 1; display: block; }
+.pgm-bg { fill: #141418; stroke: #2c2a26; stroke-width: 0.12; }
+.pgm-stub { fill: #c4161c; }
+.pgm { fill: #3a3a42; }
+.pgm--magic { fill: #4f7fd6; }
+.pgm--rare { fill: #e2c25a; }
+.pgm--legendary { fill: #ff8a3c; }
+.pgm--socket { fill: #b58cff; }
+.pgm--gate { fill: #8a8a94; }
+.pgm--join { fill: #ff3131; }
+.pgm--start { fill: #ff3131; }
+.pgm:hover { stroke: #fff; stroke-width: 0.12; }
+.pg-key { padding: 0 5px; border-radius: 3px; color: #111; font-weight: 700; }
+.pg-key--join { background: #ff3131; color: #fff; }
+.pg-key--magic { background: #4f7fd6; color: #fff; }
+.pg-key--rare { background: #e2c25a; }
+.pg-key--legendary { background: #ff8a3c; }
+.pg-key--socket { background: #b58cff; }
+@media (max-width: 640px) { .pg-prevs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

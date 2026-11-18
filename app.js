@@ -983,6 +983,7 @@
     }
     if (kind === "skill") { const [c, i] = id.split(":"); const h = skTooltip(c, i); return h && { html: h, rarity: "skill" }; }
     if (kind === "pg") { const h = SK && pgTooltip(id); return h && { html: h, rarity: "skill" }; }
+    if (kind === "pgdef") { const h = SK && pgDefTooltip(id); return h && { html: h, rarity: "skill" }; }
     if (kind === "torch") {
       const it = codexItem(TORCH_ID);
       if (!it) return null;
@@ -3325,7 +3326,7 @@
     if (!el) {
       el = document.createElement("div");
       el.id = "pgpick"; el.className = "picker"; el.hidden = true;
-      el.innerHTML = `<div class="picker__panel mods" role="dialog" aria-modal="true" aria-labelledby="pgpick-title"><div class="picker__head"><h3 id="pgpick-title" class="picker__title">Attach a Paragon board</h3><button type="button" class="btn btn--ghost mono" data-pgclose aria-label="Close">×</button></div><div class="mods__body"></div></div>`;
+      el.innerHTML = `<div class="picker__panel mods pg-pickpanel" role="dialog" aria-modal="true" aria-labelledby="pgpick-title"><div class="picker__head"><h3 id="pgpick-title" class="picker__title">Attach a Paragon board</h3><button type="button" class="btn btn--ghost mono" data-pgclose aria-label="Close">×</button></div><div class="mods__body"></div></div>`;
       document.body.appendChild(el);
       el.addEventListener("click", (e) => {
         if (e.target === el || e.target.closest("[data-pgclose]")) { el.hidden = true; return; }
@@ -3335,14 +3336,53 @@
       el.addEventListener("keydown", (e) => { if (e.key === "Escape") el.hidden = true; });
     }
     const used = new Set(s.boards.map((b) => b.id));
+    const W = { t: 1, rank: 1, ip: Engine.DEFAULT_IP };
+    const SIDES = ["north", "east", "south", "west"];
     const rows = pgBoardDefs(cls).filter((d) => !d.start && !used.has(d.id)).map((d) => {
-      const leg = d.cells.map(([, n]) => (PG().nodes || {})[n]).find((n) => n && n.r === "legendary");
-      const rot = [0, 1, 2, 3].map((r) => { const ok = pgPlace(cls, s, d, r, gate); return `<button type="button" class="btn btn--ghost mono" data-pgadd="${esc(d.id)}|${r}"${ok ? "" : " disabled title=\"Overlaps another board\""}>${r * 90}°</button>`; }).join("");
-      return `<li class="mods__stat"><span class="mods__text"><b>${esc(d.n)}</b>${leg && leg.n && leg.n !== d.n ? ` <span class="hint">· ${esc(leg.n)}</span>` : ""}</span><span class="pg-rot">${rot}</span></li>`;
+      const legE = d.cells.find(([, n]) => ((PG().nodes || {})[n] || {}).r === "legendary"), leg = legE && (PG().nodes || {})[legE[1]];
+      const pw = leg && leg.pw && SK.skills[leg.pw];
+      const power = pw ? Engine.render(pw.d, { power: leg.pw, world: W, depth: 0 }).html : "";
+      const rares = d.cells.filter(([, n]) => ((PG().nodes || {})[n] || {}).r === "rare").length;
+      const previews = [0, 1, 2, 3].map((r) => {
+        const ok = pgPlace(cls, s, d, r, gate);
+        return `<button type="button" class="pg-prev" data-pgadd="${esc(d.id)}|${r}"${ok ? "" : " disabled"} aria-label="${esc(d.n)} rotated ${r * 90}°${ok ? "" : ": overlaps another board"}">${pgMiniBoard(cls, d, r, gate)}<span class="mono">${r * 90}°${ok ? "" : " · overlaps"}</span></button>`;
+      }).join("");
+      return `<li class="pg-pick"><div class="pg-pick__head"><b>${esc(d.n)}</b>${leg && leg.n && leg.n !== d.n ? ` <span class="hint">· ${esc(leg.n)}</span>` : ""} <span class="hint mono">${rares} rare · glyph socket</span></div>
+        ${power ? `<p class="pg-pick__leg"><span class="mono">LEGENDARY</span> ${power}</p>` : ""}
+        <div class="pg-prevs">${previews}</div></li>`;
     }).join("");
-    el.querySelector(".mods__body").innerHTML = `<p class="hint">Pick a board and its rotation (0° = as in the data). Its gate on the facing edge joins this gate.</p><ul class="mods__list">${rows || '<li class="hint">Every board is already placed.</li>'}</ul>`;
+    el.querySelector(".mods__body").innerHTML = `<p class="hint">Each board is shown in its 4 rotations, north up like the map. The new board attaches to the ${SIDES[gate.side]}: its <b class="pg-key pg-key--join">red gate</b> joins the gate you clicked, and the red bar beside it is your current board. Node colours: <b class="pg-key pg-key--magic">magic</b> <b class="pg-key pg-key--rare">rare</b> <b class="pg-key pg-key--legendary">legendary</b> <b class="pg-key pg-key--socket">glyph socket</b>. Hover a node for its stats; click a rotation to attach it.</p><ul class="pg-picks">${rows || '<li class="hint">Every board is already placed.</li>'}</ul>`;
     el.hidden = false;
     el.querySelector("[data-pgclose]").focus();
+  }
+  /** Small preview of a board at a rotation: nodes by rarity, the gate that joins the clicked gate marked. */
+  function pgMiniBoard(cls, d, r, gate) {
+    const want = (gate.side + 2) % 4;
+    const cells = d.cells.map(([idx, name]) => {
+      const [x, y] = pgRot(idx % d.w, Math.floor(idx / d.w), r, d.w, d.h), n = (PG().nodes || {})[name] || {};
+      const isGate = /Gate/.test(name), side = y === 0 ? 0 : x === d.w - 1 ? 1 : y === d.h - 1 ? 2 : x === 0 ? 3 : -1;
+      const kind = isGate ? (side === want ? "join" : "gate") : n.sock ? "socket" : n.r || "normal";
+      return `<rect class="pgm pgm--${kind}" x="${x + 0.09}" y="${y + 0.09}" width="0.82" height="0.82" rx="0.15" data-key="pgdef:${esc(d.id)}|${idx}"/>`;
+    }).join("");
+    // A stub outside the joining edge: where your current board is.
+    const stub = [[`${d.w / 2 - 2}`, "-0.9", "4", "0.6"], [`${d.w + 0.3}`, `${d.h / 2 - 2}`, "0.6", "4"], [`${d.w / 2 - 2}`, `${d.h + 0.3}`, "4", "0.6"], ["-0.9", `${d.h / 2 - 2}`, "0.6", "4"]][want];
+    return `<svg class="pg-mini" viewBox="-1.2 -1.2 ${d.w + 2.4} ${d.h + 2.4}" aria-hidden="true"><rect class="pgm-bg" x="0" y="0" width="${d.w}" height="${d.h}" rx="0.6"/><rect class="pgm-stub" x="${stub[0]}" y="${stub[1]}" width="${stub[2]}" height="${stub[3]}" rx="0.3"/>${cells}</svg>`;
+  }
+  /** Tooltip for a node of a board that isn't placed yet (picker previews). */
+  function pgDefTooltip(id) {
+    const [bid, idx] = id.split("|"), cls = sandboxClass(), d = pgDef(cls, bid), cell = d && d.cells.find(([i]) => String(i) === idx);
+    if (!cell) return null;
+    const n = (PG().nodes || {})[cell[1]] || {}, s = pgState(), W = { t: 1, rank: 1, ip: Engine.DEFAULT_IP, boardIndex: s.boards.length };
+    const lines = (n.l || []).map((ln, i) => `<li${(n.b || []).includes(i) ? ' class="tt__ga"' : ""}>${Engine.renderLine(ln, W).html}</li>`).join("");
+    let bonus = "";
+    if (n.th && n.b) {
+      const req = (PG().thresholds || {})[n.th[0]] || [];
+      bonus = `<p class="tt__power pg-bonus-off">Bonus: ${n.b.map((i) => (n.l || [])[i] ? Engine.renderLine(n.l[i], W).html : "").join(", ")} if ${esc(req.map((t) => `${Math.round(Engine.evalFormula(t.f, W) || 0)} ${t.a.replace(/_Total$/, "")}`).join(", "))} (as board ${s.boards.length + 1})</p>`;
+    }
+    const pw = n.pw && SK.skills[n.pw] ? `<p class="tt__power">${Engine.render(SK.skills[n.pw].d, { power: n.pw, world: W, depth: 0 }).html}</p>` : "";
+    const nm = n.n || (/Gate/.test(cell[1]) ? "Board Gate" : n.sock ? "Glyph Socket" : cell[1]);
+    return `<div class="tt__head">${n.ic ? `<span class="ico-well ico-well--tt pg-tt-ic">${itemIcon(n.ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(nm)}</p><p class="tt__type">${esc({ normal: "Normal", magic: "Magic", rare: "Rare", legendary: "Legendary" }[n.r] || "")} Paragon Node · ${esc(d.n)}</p></div></div>
+      <div class="tt__body">${lines ? `<ul class="tt__lines">${lines}</ul>` : ""}${bonus}${pw}${n.sock ? '<p class="hint">Glyph socket.</p>' : ""}</div>`;
   }
   function pgAddBoard(id, r) {
     const cls = sandboxClass(), s = pgState(), gate = pgPickGate, def = pgDef(cls, id);
