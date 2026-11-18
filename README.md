@@ -33,4 +33,6 @@ See `status.md` for current progress and known issues, and `blueprint.md` for th
 
 ## Credits
 
-Fan-made and not affiliated with Blizzard Entertainment. Diablo IV game text and data © Blizzard Entertainment. Boss drop and rune location data from the [Maxroll](https://maxroll.gg/d4) cheat sheets.
+Fan-made and not affiliated with Blizzard Entertainment.
+
+©2026 Blizzard Entertainment, Inc. All rights reserved. Diablo, Diablo IV, and Blizzard Entertainment are trademarks or registered trademarks of Blizzard Entertainment, Inc. in the U.S. and/or other countries. All game assets, images, and data remain the property of Blizzard Entertainment. Boss drop and rune location data from the [Maxroll](https://maxroll.gg/d4) cheat sheets.
