@@ -596,6 +596,14 @@ def main():
             text = rec.get("t") or (rec.get("l") or [{}])[0].get("t", "")
             m = re.match(r"\s*\{c_set\}(.+?)\{/c\}", text or "")
             sid = set_by_name.get(m.group(1).strip()) if m else None
+            if not sid:
+                # Fallback by number (the text sometimes spells the set differently, e.g. "Cain's Wild Lighting"):
+                # Set_<Class>_NN -> Talisman_<Barb|Druid|Necro|Pala|Rogue|Sorc|Spirit|Warlock>_NN, Generic_NN -> Talisman_Small_GenericNN.
+                mm = re.match(r"Talisman_SealAffix_Set_([A-Za-z]+)_(\d+)_", aid)
+                pre = {"Barbarian": "Barb", "Necromancer": "Necro", "Paladin": "Pala", "Sorcerer": "Sorc", "Spiritborn": "Spirit"}
+                if mm:
+                    cand = f"Talisman_Small_Generic{mm.group(2)}" if mm.group(1) == "Generic" else f"Talisman_{pre.get(mm.group(1), mm.group(1))}_{mm.group(2)}"
+                    sid = cand if cand in sets_by_id else None
             if sid:
                 talisman["sealPowers"].append({"id": aid, "set": sid})
 
