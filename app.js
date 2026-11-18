@@ -2729,6 +2729,8 @@
      ========================================================== */
   let SK = null, skLoading = null;
   const SK_MAX_LV = 60;
+  // Max points with every seasonal Renown reward (user, 18 Nov): 83 skill points, 342 Paragon points.
+  const SK_POINTS = 83, PG_POINTS = 342;
   function loadSkills() {
     if (SK) return Promise.resolve(SK);
     if (!skLoading) skLoading = fetch("data/index/skills.json", { cache: "no-cache" }).then((r) => r.json()).then((d) => {
@@ -2773,6 +2775,7 @@
     if (n.lv && s.lv < n.lv) return `Needs level ${n.lv}`;
     if (!act.reach.has(i) && !act.active.has(i)) return n.k === "mod" ? "Take the skill (and reach this branch) first" : "Reach this cluster first";
     if ((s.pts[i] || 0) >= n.max) return `Max rank ${n.max}`;
+    if (skSpent(s) >= SK_POINTS) return `All ${SK_POINTS} skill points are spent`;
     if (n.ex != null) {
       const other = tree.nodes.findIndex((x, j) => j !== i && x.ex === n.ex && (s.pts[j] || 0) > 0);
       if (other >= 0) return `Pick one: ${skNodeName(tree.nodes[other])} is taken in this group`;
@@ -2901,7 +2904,7 @@
     root.innerHTML = `
       <div class="sk-bar">${clsSel}
         <label class="sk-ctl sk-ctl--lv"><span class="mono">LEVEL <b>${s.lv}</b></span><input type="range" min="1" max="${SK_MAX_LV}" value="${s.lv}" data-sklv aria-label="Player level"></label>
-        <span class="sk-ctl mono">POINTS SPENT <b>${skSpent(s)}</b></span>
+        <span class="sk-ctl mono${skSpent(s) > SK_POINTS ? " sk-over" : ""}">SKILL POINTS <b>${skSpent(s)} / ${SK_POINTS}</b></span>
         <span class="sk-tools"><button type="button" class="btn btn--ghost mono" data-skzoom="1" aria-label="Zoom in">+</button><button type="button" class="btn btn--ghost mono" data-skzoom="-1" aria-label="Zoom out">−</button><button type="button" class="btn btn--ghost mono" data-skfit>FIT</button><button type="button" class="btn btn--ghost mono" data-skreset${taken.length ? "" : " disabled"}>RESET TREE</button></span>
       </div>
       <div class="sk-wrap">

@@ -1040,3 +1040,4 @@ html[data-sb-ip="900"] .pd__slot--unique { --spark: var(--spark-anc); --spark-hi
 .sk-list .mono { font-size: 0.68rem; color: var(--faint); }
 .sk-li__mod { width: 100%; padding-left: 28px; font-size: 0.8rem; color: var(--c-random); }
 @media (max-width: 900px) { .sk-wrap { grid-template-columns: 1fr; } .sk-svg { height: 70vh; } .sk-tools { margin-left: 0; } }
+.sk-over b { color: var(--accent); }
