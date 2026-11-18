@@ -244,9 +244,8 @@ def extract(item_dir, stl_dir, recipe_dir, src_path, items):
             continue
         r = parse(rid)
         r["ins"][0]["n"], r["ins"][0]["q"] = first, 1
-        for e in r["ins"][1:]:
-            if not e.get("n"):
-                e["n"] = "other material (not named in the data)"
+        # Per roll: 1 Attuned + 100 Raw Primordial Dust (user, 18 Nov). The data's extra unnamed ingredient isn't a cost.
+        r["ins"] = r["ins"][:1] + [e for e in r["ins"][1:] if e.get("ref")]
         st = {}
         sp = os.path.join(stl_dir, f"Recipe_{rid}.stl.json")
         if os.path.exists(sp):
