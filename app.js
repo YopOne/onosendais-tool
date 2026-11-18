@@ -1204,13 +1204,20 @@
   }
 
   let toastTimer = 0;
-  function toast(msg) {
+  /** Brief message at the bottom; with action = [label, fn] it gets a button (e.g. UNDO) and stays a little longer. */
+  function toast(msg, action) {
     let el = document.getElementById("toast");
     if (!el) { el = document.createElement("div"); el.id = "toast"; el.className = "toast mono"; el.setAttribute("role", "status"); document.body.appendChild(el); }
     el.textContent = msg;
+    if (action) {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "toast__btn mono"; b.textContent = action[0];
+      b.addEventListener("click", () => { el.hidden = true; action[1](); });
+      el.appendChild(b);
+    }
     el.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => (el.hidden = true), 5000);
+    toastTimer = setTimeout(() => (el.hidden = true), action ? 8000 : 5000);
   }
 
   /* ---------- Gear slots and the Talisman ----------
@@ -2273,9 +2280,23 @@
       saveSandbox();
       renderSandbox();
     });
+    // A new class starts a new build: gear and charms from the old class are cleared (seal and the
+    // roll / rank / item power settings stay). UNDO in the toast puts the old build back.
     els.sbClass.addEventListener("change", () => {
-      state.sandbox.cls = els.sbClass.value;
-      try { localStorage.setItem(SB_KEY, JSON.stringify(state.sandbox)); } catch { /* ignore */ }
+      const sb = state.sandbox;
+      const had = state.pins.length || sb.charms.length || sb.sets.length || sb.torch || Object.keys(sb.leg).length;
+      const before = { pins: state.pins.slice(), sb: JSON.parse(JSON.stringify(sb)) };
+      sb.cls = els.sbClass.value;
+      if (had) {
+        state.pins = [];
+        Object.assign(sb, { charms: [], sets: [], torch: false, leg: {}, mythic: [], slot: {} });
+        savePins();
+        toast(`Class set to ${sb.cls || "Auto"}: gear and charms cleared.`, ["UNDO", () => {
+          state.pins = before.pins; state.sandbox = before.sb;
+          savePins(); saveSandbox(); renderSandbox();
+        }]);
+      }
+      saveSandbox();
       renderSandbox();
     });
     els.sbClear.addEventListener("click", () => { state.pins = []; state.sandbox.charms = []; state.sandbox.sets = []; state.sandbox.torch = false; state.sandbox.leg = {}; saveSandbox(); savePins(); renderSandbox(); state.mode = null; });

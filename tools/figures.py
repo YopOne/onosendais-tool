@@ -8,7 +8,7 @@ each class's archetypal gear (horned helm and great axe, wolf pelt and staff, ho
     python3 tools/figures.py        -> data/figures/<class>.svg  (viewBox 0 0 300 600)
 
 The Sandbox prefers game art when it's available: build_index.py calls portraits(), which cuts each
-class out of the Season 15 battle pass armor art (2DUI/ sheet) into data/figures/<class>.webp. The SVGs
+class from its shop armor bundle art (2DUI/ sheets) into data/figures/<class>.webp. The SVGs
 are the fallback (and the "no class" wanderer).
 """
 
@@ -257,20 +257,21 @@ def wanderer():
     return s, a
 
 
-# Class portraits from shop / battle pass art. Most come from the Season 15 battle pass armor catalog
-# (all eight classes in their pass armor in one group shot, 5120×2160). The Druid stands behind the
-# Warlock and the Necromancer behind the Barbarian there, so theirs come from the newest shop pack
-# art for those classes (CollectionPack_Druid07, CollectionPack_Necromancer08).
-# class: (sheet, x, y, w, h) in sheet pixels.
+# Class portraits from shop art: the newest solo armor bundle per class (2DUI_Bundle_HArmor_<cls>_storNNN
+# background, 5120×2160, the figure stands at x≈3400), skipping crossover sets. With no class picked the
+# Season 15 battle pass armor catalog group shot is shown. class: (sheet, x, y, w, h) in sheet pixels.
 S15 = "2DUI_BP_S15_Catalog_Armor_Background [2669461].png"
+HA = "2DUI_Bundle_HArmor_{} [{}].png"
 PORTRAITS = {
-    "Spiritborn": (S15, 2340, 450, 560, 1260), "Paladin": (S15, 2772, 500, 560, 1160),
-    "Rogue": (S15, 3070, 560, 560, 1140),
-    "Barbarian": (S15, 3360, 780, 560, 960), "Sorcerer": (S15, 3637, 560, 520, 1100),
-    "Warlock": (S15, 3882, 640, 560, 1100),
-    "any": (S15, 2400, 400, 2160, 1400),  # no class picked: the whole group
-    "Druid": ("2DUI_Bundle_AddOn_CollectionPack_Druid07_background [2644146].png", 2780, 250, 1140, 1910),
-    "Necromancer": ("2DUI_Bundle_AddOn_CollectionPack_Necromancer08_background [2644154].png", 2700, 180, 1500, 1980),
+    "Barbarian": (HA.format("bar_stor265_background", 2660701), 2760, 0, 1300, 2160),
+    "Druid": (HA.format("dru_stor247_background", 2611482), 2760, 0, 1300, 2160),
+    "Necromancer": (HA.format("nec_stor275_background", 2673583), 2760, 0, 1300, 2160),
+    "Paladin": (HA.format("pal_stor189_background", 2627400), 2690, 0, 1300, 2160),
+    "Rogue": (HA.format("rog_stor278_background", 2652332), 2850, 0, 1300, 2160),
+    "Sorcerer": (HA.format("sor_stor268_background", 2580746), 2760, 0, 1300, 2160),
+    "Spiritborn": (HA.format("spi_stor218_background", 2647962), 2650, 0, 1300, 2160),
+    "Warlock": (HA.format("war_stor175_background", 2626054), 2760, 0, 1300, 2160),
+    "any": (S15, 2400, 400, 2160, 1400),  # no class picked: all eight in the S15 battle pass armor
 }
 
 
