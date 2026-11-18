@@ -772,7 +772,7 @@
     count: $("result-count"), reset: $("filter-reset"), grid: $("catalog-grid"), empty: $("catalog-empty"),
     tooltip: $("tooltip"),
     sbRoll: $("sb-roll"), sbRollOut: $("sb-roll-out"), sbRank: $("sb-rank"), sbRankOut: $("sb-rank-out"), sbIp: $("sb-ip"), sbIpOut: $("sb-ip-out"),
-    sbAdd: $("sb-add"), sbOptions: $("sb-options"), sbList: $("sb-list"), sbShare: $("sb-share"), sbClear: $("sb-clear"),
+    sbAdd: $("sb-add"), sbOptions: $("sb-options"), sbList: $("sb-list"), sbShare: $("sb-share"), sbClear: $("sb-clear"), sbClass: $("sb-class"),
   };
   const esc = Engine.esc;
   const rarityClass = (r) => String(r || "unique").toLowerCase();
@@ -1003,6 +1003,11 @@
     const fromHash = /[?&]pins=([^&]+)/.exec(location.hash);
     if (fromHash) {
       state.pins = decodeURIComponent(fromHash[1]).split(",").filter((k) => state.byId.has(k));
+      const cls = /[?&]cls=([^&]+)/.exec(location.hash);
+      try { Object.assign(state.sandbox, JSON.parse(localStorage.getItem(SB_KEY)) || {}); } catch { /* ignore */ }
+      if (!Array.isArray(state.sandbox.mythic)) state.sandbox.mythic = [];
+      if (!state.sandbox.slot || typeof state.sandbox.slot !== "object") state.sandbox.slot = {};
+      state.sandbox.cls = cls && Engine.codex.meta.classes.includes(decodeURIComponent(cls[1])) ? decodeURIComponent(cls[1]) : "";
       savePins();
       return;
     }
@@ -1022,9 +1027,98 @@
     els.pinCount.hidden = !state.pins.length;
   }
 
+  /* ---------- Weapon loadout rules ----------
+   * Barbarian (Arsenal): a 2H bludgeoning + a 2H slashing weapon + two 1H weapons (dual wield).
+   * Rogue: a bow or crossbow + two daggers or swords.
+   * Every other class: a 2H weapon, or a 1H weapon + an off-hand (shield, focus, totem).
+   * Each weapon type lists the slot sets it can fill; a 2H weapon fills both hands.
+   */
+  const W1H = new Set(["Sword", "Axe", "Mace", "Dagger", "Wand", "Scythe", "Flail", "Axe_Berserker_Axe", "Sword_Phase_Blade"]);
+  const WOFF = new Set(["Shield", "Focus", "FocusBookOffHand", "OffHandTotem"]);
+  const WEAPON_RULES = {
+    Barbarian: {
+      text: "Barbarian: a 2H bludgeoning weapon, a 2H slashing weapon and two 1H weapons (dual wield)",
+      slots: { blunt: "2H Bludgeoning", slash: "2H Slashing", main: "Dual Wield 1", off: "Dual Wield 2" },
+      fits: (t) => (t === "Mace2H" ? [["blunt"]] : ["Axe2H", "Sword2H", "Polearm"].includes(t) ? [["slash"]]
+        : ["Sword", "Axe", "Mace", "Axe_Berserker_Axe", "Sword_Phase_Blade"].includes(t) ? [["main"], ["off"]] : null),
+    },
+    Rogue: {
+      text: "Rogue: a bow or crossbow and two daggers or swords",
+      slots: { ranged: "Ranged", main: "Melee 1", off: "Melee 2" },
+      fits: (t) => (["Bow", "Crossbow2H"].includes(t) ? [["ranged"]] : ["Dagger", "Sword", "Sword_Phase_Blade"].includes(t) ? [["main"], ["off"]] : null),
+    },
+    any: {
+      text: "a 2H weapon, or a 1H weapon and an off-hand",
+      slots: { main: "Main Hand", off: "Off-Hand" },
+      fits: (t) => (W1H.has(t) ? [["main"]] : WOFF.has(t) ? [["off"]] : [["main", "off"]]),
+    },
+  };
+  const isWeapon = (r) => r && r.kind === "item" && ["1H Weapon", "2H Weapon", "Off-Hand"].includes(r.slot);
+
+  /** The build's class: the Sandbox's Class setting, or (Auto) the one class every class-locked pin allows. */
+  function sandboxClass(pins = state.pins) {
+    if (state.sandbox.cls) return state.sandbox.cls;
+    let common = null;
+    for (const k of pins) {
+      const r = state.byId.get(k);
+      if (!r || r.kind !== "item" || !r.classes.length) continue;
+      common = common ? common.filter((c) => r.classes.includes(c)) : [...r.classes];
+    }
+    return common && common.length === 1 ? common[0] : "";
+  }
+  const weaponRule = (cls) => WEAPON_RULES[cls] || WEAPON_RULES.any;
+
+  /** Place weapons in priority order. Returns { slot: key } and the keys that don't fit. */
+  function fitWeapons(keys, cls) {
+    const rule = weaponRule(cls), used = {}, unfit = [];
+    for (const k of keys) {
+      const choices = rule.fits(state.byId.get(k).raw.typeId) || [];
+      const pick = choices.find((set) => set.every((sl) => !used[sl]));
+      if (pick) pick.forEach((sl) => (used[sl] = k)); else unfit.push(k);
+    }
+    return { used, unfit };
+  }
+
+  let toastTimer = 0;
+  function toast(msg) {
+    let el = document.getElementById("toast");
+    if (!el) { el = document.createElement("div"); el.id = "toast"; el.className = "toast mono"; el.setAttribute("role", "status"); document.body.appendChild(el); }
+    el.textContent = msg;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (el.hidden = true), 5000);
+  }
+
+  /** Equip `key`: unequip the weapons it can't be used with. Returns false if the class can't use it at all. */
+  function equipWeapon(key) {
+    const r = state.byId.get(key);
+    const current = sandboxClass();
+    if (current && r.classes.length && !r.classes.includes(current)) {
+      toast(`${r.name} can't be equipped by a ${current} (${r.classLabel} only).`);
+      return false;
+    }
+    const cls = current || sandboxClass([...state.pins, key]);
+    const rule = weaponRule(cls);
+    if (!rule.fits(r.raw.typeId)) {
+      toast(`${r.name} can't be equipped: ${rule.text}.`);
+      return false;
+    }
+    const others = state.pins.filter((k) => isWeapon(state.byId.get(k))).reverse(); // newest first keep priority
+    const { unfit } = fitWeapons([key, ...others], cls);
+    if (unfit.length) {
+      state.pins = state.pins.filter((k) => !unfit.includes(k));
+      toast(`Unequipped ${unfit.map((k) => state.byId.get(k).name).join(", ")}: ${rule.text}.`);
+      document.querySelectorAll(".pin[data-pin]").forEach((b) => {
+        if (unfit.includes(b.dataset.pin)) { b.setAttribute("aria-pressed", "false"); b.textContent = "+"; b.title = "Add to Theorycraft Sandbox"; }
+      });
+    }
+    return true;
+  }
+
   function togglePin(key) {
     const i = state.pins.indexOf(key);
-    if (i >= 0) state.pins.splice(i, 1); else state.pins.push(key);
+    if (i >= 0) state.pins.splice(i, 1);
+    else if (!isWeapon(state.byId.get(key)) || equipWeapon(key)) state.pins.push(key);
     savePins();
     document.querySelectorAll(`.pin[data-pin="${CSS.escape(key)}"]`).forEach((b) => {
       const on = state.pins.includes(key);
@@ -1055,6 +1149,12 @@
     els.sbRankOut.textContent = rank;
     els.sbIp.value = ip;
     els.sbIpOut.textContent = ip;
+    if (!els.sbClass.options.length) {
+      els.sbClass.innerHTML = `<option value="">Auto</option>` + Engine.codex.meta.classes.slice().sort().map((c) => `<option>${esc(c)}</option>`).join("");
+    }
+    els.sbClass.value = state.sandbox.cls || "";
+    const auto = !state.sandbox.cls && sandboxClass();
+    els.sbClass.options[0].textContent = auto ? `Auto (${auto})` : "Auto";
 
     if (!state.pins.length) {
       els.sbList.innerHTML = `<div class="sb-empty">NO ENTRIES PINNED<br>// press + on a card in the Database or Aspect Codex, or add one by name</div>`;
@@ -1066,7 +1166,24 @@
     const limitNote = craftedN > 1
       ? `<p class="sb-note mono">${craftedN} CRAFTED MYTHICS // only 1 can be equipped at a time. Iconic Mythics (boss drops) and random Mythics from the Blacksmith or Jeweler don't count toward the limit.</p>`
       : "";
-    els.sbList.innerHTML = limitNote + state.pins.map((key) => {
+    // Weapon loadout: which pinned weapon sits in which slot, and any that can't be equipped together.
+    const cls = sandboxClass();
+    const rule = weaponRule(cls);
+    const weapons = state.pins.filter((k) => isWeapon(state.byId.get(k)));
+    let loadout = "";
+    if (weapons.length) {
+      const { used, unfit } = fitWeapons(weapons, cls);
+      const cells = Object.entries(rule.slots).map(([sl, label]) => {
+        const k = used[sl];
+        const twoHand = k && Object.values(used).filter((x) => x === k).length > 1;
+        if (twoHand && sl !== "main") return "";
+        return `<div class="sb-slot${k ? "" : " sb-slot--empty"}"><dt>${esc(twoHand ? "Both Hands" : label)}</dt><dd>${k ? esc(state.byId.get(k).name) : "empty"}</dd></div>`;
+      }).join("");
+      loadout = `<section class="sb-loadout"><h3 class="sb-loadout__title mono">WEAPONS // ${esc(cls || "any class")}</h3><dl class="sb-loadout__slots">${cells}</dl>
+        <p class="hint">${esc(rule.text.replace(/^[a-z]/, (c) => c.toUpperCase()))}.${state.sandbox.cls ? "" : cls ? " Class taken from your pinned items." : " Pick a class to use Barbarian or Rogue weapon rules."}</p>
+        ${unfit.length ? `<p class="sb-note mono">CAN'T BE EQUIPPED TOGETHER // ${esc(unfit.map((k) => state.byId.get(k).name).join(", "))}. Remove one, or change the class.</p>` : ""}</section>`;
+    }
+    els.sbList.innerHTML = limitNote + loadout + state.pins.map((key) => {
       const r = state.byId.get(key);
       if (!r) return "";
       const rendered = renderedAt(r, { t, rank, ip });
@@ -1465,9 +1582,14 @@
       if (r && !state.pins.includes(r.key)) togglePin(r.key);
       els.sbAdd.value = "";
     });
+    els.sbClass.addEventListener("change", () => {
+      state.sandbox.cls = els.sbClass.value;
+      try { localStorage.setItem(SB_KEY, JSON.stringify(state.sandbox)); } catch { /* ignore */ }
+      renderSandbox();
+    });
     els.sbClear.addEventListener("click", () => { state.pins = []; savePins(); renderSandbox(); state.mode = null; });
     els.sbShare.addEventListener("click", async () => {
-      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}`;
+      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}`;
       try { await navigator.clipboard.writeText(url); els.sbShare.textContent = "COPIED"; }
       catch { window.prompt("Copy this link:", url); }
       setTimeout(() => (els.sbShare.textContent = "COPY LINK"), 1400);

@@ -98,7 +98,8 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 - **Assumptions:** some recipe outputs are a loot table without a name in the data; those are named from the recipe file and marked "output from recipe name". Which runes are "current" comes from Maxroll's list. No recipe crafts the Season 15 uniques; they only drop in the capstone dungeons.
 
 **Theorycraft Sandbox** (`#/sandbox`)
-- Pin uniques and aspects; sliders for roll quality, aspect rank and item power; MYTHIC toggle per unique; AMULET / 2H toggles per aspect; share links; raw source JSON viewer (local only).
+- Pin uniques and aspects; sliders for roll quality, aspect rank and item power; MYTHIC toggle per unique; AMULET / 2H toggles per aspect; share links (pins + class); raw source JSON viewer (local only).
+- **Weapon loadout (18 Nov):** a Class picker (Auto = the one class all class-locked pins share) sets the weapon rules. **Barbarian:** 2H bludgeoning (Mace2H) + 2H slashing (Axe2H, Sword2H, Polearm) + two 1H (dual wield). **Rogue:** bow or crossbow + two daggers or swords. **Every other class:** a 2H, or a 1H + an off-hand (shield, focus, totem). Equipping a weapon unequips the ones it can't be used with (newest pins win) and shows a notice; a weapon the build's class can't use (wrong class, or a type with no slot, e.g. a shield for a Barbarian) is refused. A WEAPONS strip shows which pin is in which slot. Armor, jewelry and aspects aren't slot-checked.
 
 **Layout and theme**
 - Phones: each filter group is one swipeable row, the nav scrolls to the active tab, long values wrap. All four views checked at 390px with no horizontal scroll.
@@ -106,11 +107,12 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 
 ## Suggested next steps
 
-1. Export the `2DUI_Aspect_*` atlases into `webp_icons/` and rebuild for aspect icons.
-2. In game, compare one crafted Mythic tooltip with the Sandbox (#2: bonus lines, potency maths).
-3. Optional: say what an `Owner.*` or health-scaled value depends on (e.g. "scales with weapon damage") instead of a bare `#` (#4).
-4. Optional: show aspect slot values (amulet / 2H) directly in the Aspect Codex tooltip, not only in the Sandbox.
-5. When Season 16 data lands in d4data: refresh `data/` and `d4data/`, update `data/sources/` from Maxroll, rebuild and push.
+1. Optional: per-class weapon types for the generic rule (e.g. Sorcerers can't use a 2H axe); today any 1H/2H/off-hand type fits, only Barbarian and Rogue are type-checked. Also optional: slot limits for armor and jewelry (1 helm, 2 rings…).
+2. Export the `2DUI_Aspect_*` atlases into `webp_icons/` and rebuild for aspect icons.
+3. In game, compare one crafted Mythic tooltip with the Sandbox (#2: bonus lines, potency maths).
+4. Optional: say what an `Owner.*` or health-scaled value depends on (e.g. "scales with weapon damage") instead of a bare `#` (#4).
+5. Optional: show aspect slot values (amulet / 2H) directly in the Aspect Codex tooltip, not only in the Sandbox.
+6. When Season 16 data lands in d4data: refresh `data/` and `d4data/`, update `data/sources/` from Maxroll, rebuild and push.
 
 ## Known issues / open items 🔧
 
