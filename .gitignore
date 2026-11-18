@@ -3,6 +3,8 @@
 /data/Item/
 /data/Power/
 /data/StringList/
+# Raw icon export (~115 MB); tools/build_index.py copies the used ones to data/icons/
+/webp_icons/
 
 # Earlier experiments, not used by the site
 /maxroll-d4-scraper/

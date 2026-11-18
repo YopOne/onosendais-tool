@@ -40,6 +40,10 @@
     "2H Weapon": '<path d="M13.5 2.5 5.5 10.5M2.5 2.5l8 8"/><path d="M3.8 9l3.2 3.2M12.2 9 9 12.2"/><path d="M4.5 11.5l-2 2M11.5 11.5l2 2"/>',
     "Off-Hand": '<path d="M8 2l5 2v4c0 3-2.2 5-5 6-2.8-1-5-3-5-6V4z"/><path d="M8 4.5v7"/>',
   };
+  /* In-game inventory art: data/icons/<image handle>.webp, linked by "ic" in the codex (tools/icons.py). */
+  const itemIcon = (ic, cls = "") => ic
+    ? `<img class="ico${cls ? " " + cls : ""}" src="data/icons/${ic}.webp" alt="" loading="lazy" decoding="async" draggable="false">`
+    : "";
   const slotIcon = (slot) => SLOT_ICONS[slot]
     ? `<svg class="slot-ico" viewBox="0 0 16 16" aria-hidden="true" focusable="false">${SLOT_ICONS[slot]}</svg>`
     : "";
@@ -704,6 +708,7 @@
         type: it.type,
         classes: it.c || [],
         flavor: it.flavor || "",
+        icon: it.ic || "",
         power, imp, stats,
         drop: dropInfo(it, codex.drops),
         raw: it,
@@ -724,6 +729,7 @@
         classes: a.c || [],
         maxRank: a.rk || null,
         flavor: "",
+        icon: asp.ic || "",
         power, imp: [], stats: [], mythicLines: [], crafted: false,
         raw: asp,
       });
@@ -776,8 +782,13 @@
     return `
       <article class="card card--${rarityClass(shownRarity(r))}" tabindex="0" data-key="${esc(r.key)}" aria-describedby="tooltip">
         <span class="card__meta">${r.kind === "item" ? slotIcon(r.slot) : ""}${esc(meta)}</span>
-        <span class="card__name">${esc(r.name)}</span>
-        <span class="card__effect">${cardSummaryHTML(r)}</span>
+        <span class="card__main">
+          <span class="card__text">
+            <span class="card__name">${esc(r.name)}</span>
+            <span class="card__effect">${cardSummaryHTML(r)}</span>
+          </span>
+          ${r.icon ? `<span class="ico-well">${itemIcon(r.icon)}</span>` : ""}
+        </span>
         <span class="card__foot">
           <span class="tag tag--cls">${esc(r.classLabel)}</span>
           ${r.kind === "item" ? `<span class="tag">${esc(r.type)}</span>` : r.maxRank ? `<span class="tag">Rank 1–${r.maxRank}</span>` : ""}
@@ -811,7 +822,8 @@
 
     return `
       <div class="tt__head">
-        <div>
+        ${r.icon ? `<span class="ico-well ico-well--tt">${itemIcon(r.icon)}</span>` : ""}
+        <div class="tt__title">
           <p class="tt__name">${esc(r.name)}</p>
           <p class="tt__type">${esc(typeLine)}</p>
         </div>
@@ -1116,7 +1128,7 @@
     const r = runeIdx.get(id);
     if (!r) return esc(id);
     const cls = r.kind === "Ritual" ? "rchip--ritual" : "rchip--invoke";
-    return `<button type="button" class="rchip ${cls}${r.season ? " rchip--s15" : ""}" data-rune="${esc(id)}" title="${esc(r.kind)} · ${esc(r.rarity)}${r.season ? " · " + esc(r.season) : ""}">${q > 1 ? `<span class="rchip__q">${q}×</span>` : ""}${esc(r.name)}</button>`;
+    return `<button type="button" class="rchip ${cls}${r.season ? " rchip--s15" : ""}" data-rune="${esc(id)}" title="${esc(r.kind)} · ${esc(r.rarity)}${r.season ? " · " + esc(r.season) : ""}">${itemIcon(r.ic, "ico--chip")}${q > 1 ? `<span class="rchip__q">${q}×</span>` : ""}${esc(r.name)}</button>`;
   }
 
   function ingHTML(i) {
@@ -1159,8 +1171,11 @@
     const meta = [r.kind, r.season || r.rarity, r.legacy ? "Legacy" : ""].filter(Boolean).join(" · ");
     const search = [r.name, r.kind, r.rarity, r.season, r.legacy ? "legacy" : "", r.phrase, Engine.renderText(r.t || "").plain, ...r.drops.map(bossLabel), ...uses].join(" ").toLowerCase();
     return `<article class="rcard rcard--${r.kind === "Ritual" ? "ritual" : "invoke"}${r.legacy ? " rcard--legacy" : ""}" id="rune-${esc(r.id)}" data-kind="${r.kind}" data-season="${r.season ? "s15" : r.legacy ? "legacy" : "core"}" data-search="${esc(search)}">
-      <span class="card__meta">${esc(meta)}</span>
-      <span class="rcard__name">${esc(r.name)}</span>
+      <div class="rcard__head">
+        ${r.ic ? `<span class="ico-well ico-well--rune">${itemIcon(r.ic)}</span>` : ""}
+        <div><span class="card__meta">${esc(meta)}</span>
+        <span class="rcard__name">${esc(r.name)}</span></div>
+      </div>
       <p class="rcard__text">${text}</p>
       <dl class="rcard__facts">${facts.map(([k, v]) => `<dt>${k}</dt><dd>${esc(String(v))}</dd>`).join("")}</dl>
       ${src.length ? `<div class="rcard__block"><span class="rcard__label">GET IT</span>${src.map((x) => `<div class="rcard__line">${x}</div>`).join("")}</div>` : ""}

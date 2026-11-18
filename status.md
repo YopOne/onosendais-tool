@@ -1,6 +1,6 @@
 # Onosendai's Tool: Project Status
 
-_Last updated: 17 Nov 2026 (night). Everything below is pushed and live._
+_Last updated: 18 Nov 2026. Everything below is pushed and live._
 
 ## Overview
 
@@ -14,6 +14,7 @@ A vanilla HTML/CSS/JS single-page app: a searchable Diablo 4 database of uniques
 data/Item, data/Power, data/StringList
   + d4data: Affix roll values, Aspect list, Recipes, GameBalance (stat formulas, skill tags), Global (constants)
   + data/sources: boss drops and rune locations (hand-maintained from Maxroll)
+  + webp_icons/ (exported inventory art) + d4data Texture, Actor → data/icons/
         │
         ▼  python3 tools/build_index.py   (~3s, standard library only)
 data/index/codex.json   (~1.1 MB: raw templates, formulas, static values, recipes)
@@ -24,7 +25,7 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 
 - **Run locally:** `python3 -m http.server`, then open http://localhost:8000.
 - **After replacing the `/data` folders or updating `data/sources/`:** run `python3 tools/build_index.py` again.
-- **For GitHub Pages:** the site only needs `index.html`, `style.css`, `app.js` and `data/index/`. The raw folders (~575 MB) are only used by the Sandbox's "raw source files" viewer, which hides itself when they're missing.
+- **For GitHub Pages:** the site only needs `index.html`, `style.css`, `app.js`, `data/index/` and `data/icons/`. The raw folders (~575 MB) are only used by the Sandbox's "raw source files" viewer, which hides itself when they're missing.
 
 ## Deployment 🚀
 
@@ -55,6 +56,14 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 - **Global constants** (`codex.globals`) from `Global/globals.glo.json`: aspect slot bonuses and the Sacred / Ancestral affix scalars (1.25 / 1.5).
 - **Health-scaled stats:** `Thorns_Flat`, `Flat_Hitpoints_Max_Bonus`, `Flat_Hitpoints_On_Hit` and other stats with an `_Unscaled_By_Player_Health` twin store a fraction that the game scales with player health. They're flagged and show `#`. The `_Unscaled_` versions are real numbers and are shown.
 - **Curation:** drops QA/TEST fixtures (`QA_`/`TEST_`/`zz` ids, `PACTTEST_`, `*_test_*`, `Debug`, `[ph_` names) and any aspect or unique whose text is dev placeholder (`WIP`, `REDESIGN`, "(PH) I need a new design!"), with that unique's Season 10 slot-swap copies. Charm copies are kept as separate entries so they can't replace the real gear item.
+
+**Inventory icons (`tools/icons.py`, added 18 Nov)**
+- `webp_icons/` (~13,000 frames, 115 MB, not in git) holds the game's inventory art, exported as `<atlas> [<atlas snoID>] - <frame index> <frame name>.webp`.
+- How an item finds its picture: item `tInvImages[class]` (per-class art, e.g. unique armor; same class order as `fUsableByClass`) → Actor `hDefaultImage` → hash of the actor name → a webp whose frame name is the actor name. Then the base item, then a same-named item. Handles are `h = h*33 + c` over the lowercased frame name; `Texture/<atlas>.tex.json` lists each frame's `hImageHandle` in frame order.
+- Only the icons in use are copied to `data/icons/<handle hex>.webp` (406 files, ~2.5 MB); the codex stores the handle as `ic`.
+- Coverage: **all 357 visible uniques and all 64 runes.** Shown on cards (an icon well beside the name), in tooltips and the Sandbox (tooltip header), on rune cards and in rune chips.
+- **Aspects have no icons yet:** their `hIconOverride` points to `2DUI_Aspect_*` atlases, which aren't in the export (it only has `2DInventory_*`). Add those atlases to `webp_icons/` and rebuild; they'll be picked up automatically.
+- The build now takes ~18 s (it scans the Texture metadata).
 
 **Formula and text engine (`app.js`)**
 - Evaluates `Affix_Value_N` rolls, static values, links to other affixes, `PowerTag` / `SF_N` script formulas and legendary rank scaling.
@@ -95,10 +104,11 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 
 ## Suggested next steps
 
-1. In game, compare one crafted Mythic tooltip with the Sandbox (#2: bonus lines, potency maths).
-2. Optional: say what an `Owner.*` or health-scaled value depends on (e.g. "scales with weapon damage") instead of a bare `#` (#4).
-3. Optional: show aspect slot values (amulet / 2H) directly in the Aspect Codex tooltip, not only in the Sandbox.
-4. When Season 16 data lands in d4data: refresh `data/` and `d4data/`, update `data/sources/` from Maxroll, rebuild and push.
+1. Export the `2DUI_Aspect_*` atlases into `webp_icons/` and rebuild for aspect icons.
+2. In game, compare one crafted Mythic tooltip with the Sandbox (#2: bonus lines, potency maths).
+3. Optional: say what an `Owner.*` or health-scaled value depends on (e.g. "scales with weapon damage") instead of a bare `#` (#4).
+4. Optional: show aspect slot values (amulet / 2H) directly in the Aspect Codex tooltip, not only in the Sandbox.
+5. When Season 16 data lands in d4data: refresh `data/` and `d4data/`, update `data/sources/` from Maxroll, rebuild and push.
 
 ## Known issues / open items 🔧
 
@@ -117,6 +127,9 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 | `index.html`, `style.css`, `app.js` | The site |
 | `tools/build_index.py` | Builds `data/index/codex.json` |
 | `tools/runes_recipes.py` | Runes, runewords and recipes for the codex |
+| `tools/icons.py` | Links items, runes (and aspects) to inventory art; copies used icons to `data/icons/` |
+| `data/icons/` | The icons the site shows (`<image handle>.webp`) |
+| `webp_icons/` | Raw icon export, all atlases (not in git) |
 | `tools/webshot.swift` | Headless WebKit screenshot and JS-error check (macOS) |
 | `data/index/codex.json` | The built index the site loads |
 | `data/sources/boss_loot.json` | Boss drop table (from Maxroll; hand-maintained) |

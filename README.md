@@ -1,6 +1,6 @@
 # Onosendai's Tool
 
-A fast, searchable Diablo IV database built from datamined game files: uniques, legendary aspects, runes, runewords and crafting recipes, with in-game style tooltips and a theorycraft sandbox.
+A fast, searchable Diablo IV database built from datamined game files: uniques, legendary aspects, runes, runewords and crafting recipes, with in-game item art, in-game style tooltips and a theorycraft sandbox.
 
 Plain HTML, CSS and JavaScript. No frameworks, no build step for the site itself.
 
@@ -26,7 +26,8 @@ The site reads one prebuilt file, `data/index/codex.json`. To rebuild it after a
 
 1. Get the datamine ([d4data](https://github.com/DiabloTools/d4data)) into `d4data/`, and copy its `Item`, `Power` and `StringList` JSON folders into `data/`. The build also reads `d4data/json/base/meta/` Affix, Aspect, Recipe, GameBalance and Global files.
 2. Update the hand-maintained sources in `data/sources/` if needed (boss drops and rune locations from Maxroll).
-3. Run `python3 tools/build_index.py` (standard library only), then commit the new `data/index/codex.json`.
+3. Optional, for icons: put the exported inventory atlases (`.webp` frames named `<atlas> [<snoID>] - <frame> <name>.webp`) in `webp_icons/`. The build copies the ones it uses to `data/icons/`.
+4. Run `python3 tools/build_index.py` (standard library only), then commit the new `data/index/codex.json` and `data/icons/`.
 
 See `status.md` for current progress and known issues, and `blueprint.md` for the original spec.
 

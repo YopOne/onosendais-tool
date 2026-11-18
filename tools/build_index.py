@@ -24,6 +24,7 @@ Sources:
   data/sources/boss_loot.json      which boss drops each unique (hand-maintained from Maxroll)
   d4data/json/base/meta/Recipe     runeword, rune and Mythic crafting recipes (see runes_recipes.py)
   data/sources/runes_maxroll.json  rune drop locations + which runes are current (from Maxroll)
+  webp_icons/ + d4data Texture, Actor  inventory icons -> data/icons/ (see icons.py; optional)
 
 Usage:
   python3 tools/build_index.py                 # defaults below
@@ -40,6 +41,7 @@ import time
 import unicodedata
 
 from runes_recipes import extract as extract_runes
+from icons import Icons
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -165,6 +167,7 @@ def main():
     ap.add_argument("--data", default=os.path.join(ROOT, "data"))
     ap.add_argument("--d4data", default=os.path.join(ROOT, "d4data"))
     ap.add_argument("--out", default=os.path.join(ROOT, "data", "index", "codex.json"))
+    ap.add_argument("--icons", default=os.path.join(ROOT, "webp_icons"), help="folder of exported .webp atlas frames")
     args = ap.parse_args()
 
     item_dir = os.path.join(args.data, "Item")
@@ -182,6 +185,12 @@ def main():
         print(f"! {affix_dir} not found: roll ranges will be missing (values shown as #).")
 
     t0 = time.time()
+    meta_dir = os.path.join(args.d4data, "json", "base", "meta")
+    icons = None
+    if os.path.isdir(args.icons) and os.path.isdir(os.path.join(meta_dir, "Texture")):
+        icons = Icons(meta_dir, args.icons, os.path.join(ROOT, "data", "icons"), CLASSES)
+    else:
+        print("! webp_icons/ or d4data Texture folder not found: data/icons/ left as is, items keep their last icons.")
     attr_desc = strings(stl_dir, "AttributeDescriptions")
     skill_tags = load_skill_tags(os.path.join(args.d4data, "json", "base", "meta", "GameBalance", "SkillTags.gam.json"), stl_dir)
     toc = load(toc_path) if os.path.exists(toc_path) else {}
@@ -319,6 +328,9 @@ def main():
         cls = class_list(j.get("fUsableByClass"))
         if cls:
             rec["c"] = cls
+        ic = icons and icons.for_item(j, cls or (), item_dir)
+        if ic:
+            rec["ic"] = ic
         if implicit:
             rec["imp"] = implicit
         if stats:
@@ -347,12 +359,16 @@ def main():
     # ---------- Legendary aspects ----------
     if os.path.isdir(aspect_dir):
         aspect_affixes = []
+        aspect_icon = {}
         for p in glob.glob(os.path.join(aspect_dir, "*.asp.json")):
-            ref = load(p).get("snoAffix") or {}
+            asp = load(p)
+            ref = asp.get("snoAffix") or {}
             if ref.get("name"):
                 aspect_affixes.append(ref["name"])
+                aspect_icon[ref["name"]] = asp.get("hIconOverride")
     else:
         print("! Aspect folder not found: falling back to StringList/Affix_legendary_*.")
+        aspect_icon = {}
         aspect_affixes = [os.path.basename(p)[len("Affix_"): -len(".stl.json")]
                           for p in glob.glob(os.path.join(stl_dir, "Affix_legendary_*.stl.json"))]
 
@@ -369,7 +385,11 @@ def main():
         score = ("_x2" in a.lower(), a)
         prev = aspects_by_name.get(key)
         if not prev or score > prev[0]:
-            aspects_by_name[key] = (score, {"id": a, "name": name})
+            arec = {"id": a, "name": name}
+            ic = icons and icons.for_handle(aspect_icon.get(a))
+            if ic:
+                arec["ic"] = ic
+            aspects_by_name[key] = (score, arec)
     aspects = sorted((r for _, r in aspects_by_name.values()), key=lambda r: r["name"])
 
     # ---------- Power script formulas (PowerTag refs) ----------
@@ -439,6 +459,26 @@ def main():
     drops = attach_drops(items, os.path.join(ROOT, "data", "sources", "boss_loot.json"))
     runes = extract_runes(item_dir, stl_dir, os.path.join(args.d4data, "json", "base", "meta", "Recipe"),
                           os.path.join(ROOT, "data", "sources", "runes_maxroll.json"), items)
+
+    if icons:
+        # Same-name copies whose own files have no art (e.g. Runeword bases) borrow it.
+        by_name = {}
+        for it in items:
+            if it.get("ic"):
+                by_name.setdefault((it["name"], it.get("charm", False)), it["ic"])
+        for it in items:
+            if not it.get("ic") and (it["name"], it.get("charm", False)) in by_name:
+                it["ic"] = by_name[(it["name"], it.get("charm", False))]
+        for r in runes.get("runes", []):
+            p = os.path.join(item_dir, r["id"] + ".itm.json")
+            ic = os.path.exists(p) and icons.for_item(load(p))
+            if ic:
+                r["ic"] = ic
+        # Icons used only by aspect/item entries dropped later still get written; that's harmless.
+        n, kb = icons.write()
+        print(f"Icons: {n} files ({kb:,.0f} KB) in data/icons/ | items {sum(1 for i in items if i.get('ic'))}/{len(items)}, "
+              f"aspects {sum(1 for a in aspects if a.get('ic'))}/{len(aspects)}, "
+              f"runes {sum(1 for r in runes.get('runes', []) if r.get('ic'))}/{len(runes.get('runes', []))}")
 
     codex = {
         "meta": {
