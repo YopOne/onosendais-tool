@@ -1010,6 +1010,7 @@
       const ch = /[?&]charms=([^&]+)/.exec(location.hash), seal = /[?&]seal=([^&]+)/.exec(location.hash);
       state.sandbox.charms = ch ? decodeURIComponent(ch[1]).split(",").filter((k) => state.pins.includes(k)) : [];
       state.sandbox.seal = seal && SEALS[seal[1]] ? seal[1] : "";
+      state.sandbox.torch = /[?&]torch=1/.test(location.hash);
       const sc = /[?&]sets=([^&]+)/.exec(location.hash);
       state.sandbox.sets = sc ? decodeURIComponent(sc[1]).split(",").map((x) => { const [p, a1, a2] = x.split("~"); return { p, a: [a1 || "", a2 || ""] }; }).filter((x) => talismanIdx().piece.has(x.p)) : [];
       state.sandbox.cls = cls && Engine.codex.meta.classes.includes(decodeURIComponent(cls[1])) ? decodeURIComponent(cls[1]) : "";
@@ -1109,17 +1110,28 @@
    * a charm slot instead of its gear slot; as a charm it carries only its unique power.
    */
   const GEAR_LIMIT = { Helm: 1, Chest: 1, Gloves: 1, Pants: 1, Boots: 1, Amulet: 1, Ring: 2 };
+  // [label, charm slots, { uniques: unique charms allowed, setReduce: fewer charms per set tier, item: seal item id }]
+  // Mythic seal powers from Talisman_SealAffix_Ancestral_0N: Diamond Mind -1 charm per set bonus (min 2),
+  // Golden Epiphany 3 unique charms, Severed Finger 2 unique charms but at most 5 slots. Others allow 1.
   const SEALS = {
-    magic: ["Magic seal", 3],
-    rare: ["Rare seal", 4],
-    legendary: ["Legendary seal", 5],
-    legendary6: ["Legendary seal + extra charm slot", 6],
-    annihilus: ["Annihilus (Season 15)", 6],
-    mythic1: ["Seal of the Diamond Mind (Mythic)", 6],
-    mythic2: ["Seal of the Golden Epiphany (Mythic)", 6],
-    mythic3: ["Seal of the Severed Finger (Mythic)", 6],
+    magic: ["Magic seal", 3, { uniques: 1 }],
+    rare: ["Rare seal", 4, { uniques: 1 }],
+    legendary: ["Legendary seal", 5, { uniques: 1 }],
+    legendary6: ["Legendary seal + extra charm slot", 6, { uniques: 1 }],
+    annihilus: ["Annihilus (Season 15)", 6, { uniques: 1, item: "S15_Charm_Unique_Annihilus" }],
+    mythic1: ["Seal of the Diamond Mind (Mythic)", 6, { uniques: 1, setReduce: 1, item: "Talisman_Seal_MythicUnique_03" }],
+    mythic2: ["Seal of the Golden Epiphany (Mythic)", 6, { uniques: 3, item: "Talisman_Seal_MythicUnique_02" }],
+    mythic3: ["Seal of the Severed Finger (Mythic)", 5, { uniques: 2, item: "Talisman_Seal_MythicUnique_01" }],
   };
   const sealOf = () => SEALS[state.sandbox.seal] || SEALS.legendary;
+  // Hellfire Torch (S15 Mythic charm): a unique charm that also grants +1 Unique Charm (Unique_Charm_Count_Bonus).
+  const TORCH_ID = "S15_Charm_Unique_HellfireTorch";
+  const codexItem = (id) => Engine.codex.items.find((x) => x.id === id);
+  const uniqueCount = () => state.sandbox.charms.length + (state.sandbox.torch ? 1 : 0);
+  const uniqueLimit = () => sealOf()[2].uniques + (state.sandbox.torch ? 1 : 0);
+  /** Room for one more unique charm: a free slot and under the seal's unique charm limit. */
+  const uniqueRoom = () => talismanUsed() < charmSlots() && uniqueCount() < uniqueLimit();
+  const setNeed = (n) => Math.max(2, n - (sealOf()[2].setReduce || 0));
   const charmSlots = () => sealOf()[1];
   let charmIdx = null;
   /** The charm version of a unique (same name, Talisman_Charm_*): unique power only. */
@@ -1132,7 +1144,7 @@
   }
   const isCharm = (k) => state.sandbox.charms.includes(k);
   /** Charm slots in use: unique charms + set charms. */
-  const talismanUsed = () => state.sandbox.charms.length + state.sandbox.sets.length;
+  const talismanUsed = () => state.sandbox.charms.length + state.sandbox.sets.length + (state.sandbox.torch ? 1 : 0);
 
   /* Set charms: 5 types per set (Phoba, Fer, Mlor, Linta, Berú); bonuses at 2 / 3 / 5 different types.
    * Each set charm rolls 2 affixes from the charm pool (skill ranks, experience, resistances...). */
@@ -1167,7 +1179,7 @@
   function displace(keys, why) {
     const toCharm = [], gone = [];
     for (const k of keys) {
-      if (charmOf(state.byId.get(k)) && talismanUsed() < charmSlots()) { state.sandbox.charms.push(k); toCharm.push(k); }
+      if (charmOf(state.byId.get(k)) && uniqueRoom()) { state.sandbox.charms.push(k); toCharm.push(k); }
       else gone.push(k);
     }
     unpinQuiet(gone);
@@ -1190,7 +1202,7 @@
       if (!rule.fits(r.raw.typeId)) { toast(`${r.name} can't be equipped: ${rule.text}.`); return false; }
       const others = state.pins.filter((k) => k !== key && !isCharm(k) && isWeapon(state.byId.get(k))).reverse();
       const { unfit } = fitWeapons([key, ...others], cls);
-      if (unfit.length && preferCharm && charmOf(r) && talismanUsed() < charmSlots()) {
+      if (unfit.length && preferCharm && charmOf(r) && uniqueRoom()) {
         state.sandbox.charms.push(key);
         toast(`${r.name} went to the Talisman as a charm: ${rule.text}.`);
         return true;
@@ -1202,7 +1214,7 @@
       const limit = GEAR_LIMIT[r.slot];
       const inSlot = state.pins.filter((k) => k !== key && !isCharm(k) && (state.byId.get(k) || {}).slot === r.slot);
       if (inSlot.length < limit) return true;
-      if (preferCharm && charmOf(r) && talismanUsed() < charmSlots()) {
+      if (preferCharm && charmOf(r) && uniqueRoom()) {
         state.sandbox.charms.push(key);
         toast(`${r.name} went to the Talisman as a charm (${r.slot} slot taken).`);
         return true;
@@ -1247,7 +1259,9 @@
     if (kind === "c") {
       const T = talismanIdx();
       const sets = T.sets.filter((st) => !cls || !st.c.length || st.c.includes(cls));
+      const torch = codexItem(TORCH_ID);
       return [
+        ...(torch && !state.sandbox.torch ? [{ value: "t:torch", name: torch.name, sub: "Mythic charm (Season 15): +1 Unique Charm, All Stats, All Resistance, +All Skills", icon: torch.ic, rarity: "mythic" }] : []),
         ...sets.flatMap((st) => st.pieces.map((p) => ({ value: "s:" + p.id, name: p.name, sub: `Set charm · ${st.name} · ${p.type}${st.c.length === 1 ? " · " + st.c[0] : ""}`, icon: p.ic, rarity: "set" }))),
         ...state.records.filter((r) => r.kind === "item" && charmOf(r) && classOk(r, cls))
           .map((r) => ({ value: "u:" + r.key, name: r.name, sub: `Unique charm (${r.slot}): unique power only`, icon: r.icon, rarity: rarityClass(r.rarity) })),
@@ -1273,6 +1287,9 @@
     if (Number.isFinite(pos)) state.pins.splice(Math.min(pos, state.pins.length), 0, key); else state.pins.push(key);
   }
 
+  /** Talisman slot order: Hellfire Torch, unique charms, set charms. */
+  const talismanOccupants = () => [...(state.sandbox.torch ? [{ torch: true }] : []), ...state.sandbox.charms.map((k) => ({ k })), ...state.sandbox.sets.map((x) => ({ x }))];
+
   function applyPick(spec, value) {
     const [kind, a, b] = spec.split(":");
     const L = sbLayout();
@@ -1285,10 +1302,16 @@
       const choice = (weaponRule(cls).fits(r.raw.typeId) || []).find((set) => set.includes(a)) || [a];
       replacePins([...new Set(choice.map((sl) => L.weapons[sl]).filter(Boolean))], value);
     } else if (kind === "c") {
-      const i = +a, occ = [...state.sandbox.charms.map((k) => ({ k })), ...state.sandbox.sets.map((x) => ({ x }))][i];
+      const i = +a, occ = talismanOccupants()[i];
+      if (occ && occ.torch) state.sandbox.torch = false;
       if (occ && occ.k) { state.sandbox.charms = state.sandbox.charms.filter((k) => k !== occ.k); state.pins = state.pins.filter((k) => k !== occ.k); }
       if (occ && occ.x) state.sandbox.sets.splice(state.sandbox.sets.indexOf(occ.x), 1);
-      if (talismanUsed() >= charmSlots()) { toast(`The Talisman is full (${charmSlots()} charm slots).`); }
+      const isUnique = !value.startsWith("s:");
+      if (talismanUsed() >= charmSlots()) toast(`The Talisman is full (${charmSlots()} charm slots).`);
+      else if (value === "t:torch") {
+        if (uniqueCount() >= uniqueLimit() + 1) toast(`Only ${uniqueLimit()} unique charms with a ${sealOf()[0]}.`);
+        else state.sandbox.torch = true;
+      } else if (isUnique && !uniqueRoom()) toast(`Only ${uniqueLimit()} unique charm${uniqueLimit() > 1 ? "s" : ""} with a ${sealOf()[0]}${state.sandbox.torch ? " and the Hellfire Torch" : ""}. A Seal of the Golden Epiphany allows 3, the Severed Finger 2, the Hellfire Torch +1.`);
       else if (value.startsWith("s:")) state.sandbox.sets.push({ p: value.slice(2), a: ["", ""] });
       else {
         const key = value.slice(2);
@@ -1315,7 +1338,7 @@
       const draw = () => {
         const q = search.value.trim().toLowerCase();
         const all = el._items || [];
-        const hits = (q ? all.filter((c) => (c.name + " " + c.sub).toLowerCase().includes(q)) : all).slice(0, 250);
+        const hits = (q ? all.filter((c) => (c.name + " " + c.sub).toLowerCase().includes(q)) : all).slice(0, 800);
         list.innerHTML = hits.length ? hits.map((c) => `<li><button type="button" class="picker__item picker__item--${esc(c.rarity)}" data-pval="${esc(c.value)}">
             <span class="picker__ico">${itemIcon(c.icon)}</span><span class="picker__text"><span class="picker__name">${esc(c.name)}</span><span class="picker__sub">${esc(c.sub)}</span></span></button></li>`).join("")
           : `<li class="hint" style="padding:12px">Nothing fits this slot${sandboxClass() ? " for a " + esc(sandboxClass()) : ""}.</li>`;
@@ -1429,10 +1452,17 @@
     const T = talismanIdx();
     const setCh = state.sandbox.sets.map((x, i) => ({ ...x, i, piece: T.piece.get(x.p) }));
     const sealOpts = Object.entries(SEALS).map(([id, [label, n]]) => `<option value="${id}"${(state.sandbox.seal || "legendary") === id ? " selected" : ""}>${esc(label)} · ${n} slots</option>`).join("");
-    const occupants = [...charms.map((k) => ({ k })), ...setCh.map((x) => ({ x }))];
+    const occupants = talismanOccupants().map((o) => (o.x ? { x: setCh.find((y) => y.p === o.x.p && y.i === state.sandbox.sets.indexOf(o.x)) } : o));
     const charmCells = Array.from({ length: 6 }, (_, i) => {
       if (i >= nSlots) return `<div class="sb-cell sb-cell--locked"><span class="sb-cell__pick" aria-disabled="true"><span class="sb-cell__ico"></span><span class="sb-cell__text"><span class="sb-cell__label mono">Charm ${i + 1}</span><span class="sb-cell__name">locked by seal</span></span></span></div>`;
       const o = occupants[i];
+      if (o && o.torch) {
+        const torch = codexItem(TORCH_ID);
+        return `<div class="sb-cell sb-cell--mythic"><button type="button" class="sb-cell__pick" data-pick="c:${i}" title="Change charm ${i + 1}">
+          <span class="sb-cell__ico">${torch && torch.ic ? itemIcon(torch.ic) : '<span class="sb-cell__plus" aria-hidden="true">✦</span>'}</span>
+          <span class="sb-cell__text"><span class="sb-cell__label mono">Charm ${i + 1} · Mythic</span><span class="sb-cell__name">Hellfire Torch</span></span></button>
+          <button type="button" class="sb-cell__clear" data-torchremove aria-label="Remove Hellfire Torch" title="Remove">×</button></div>`;
+      }
       if (o && o.x) {
         return `<div class="sb-cell sb-cell--set"><button type="button" class="sb-cell__pick" data-pick="c:${i}" title="Change charm ${i + 1}">
           <span class="sb-cell__ico">${o.x.piece.ic ? itemIcon(o.x.piece.ic) : '<span class="sb-cell__plus" aria-hidden="true">◆</span>'}</span>
@@ -1455,7 +1485,7 @@
       const dups = [...types].filter(([, q]) => q > 1).map(([ty]) => ty);
       return `<div class="sb-set"><p class="sb-set__name">${esc(st.name)} <span class="mono">${n} / ${total}</span>${st.c.length === 1 ? ` <span class="sb-set__cls mono">${esc(st.c[0])}</span>` : ""}</p>
         <p class="sb-set__types mono">${st.pieces.map((p) => `<span class="${types.has(p.type) ? "on" : ""}">${esc(p.type)}</span>`).join("")}</p>
-        <ul class="sb-set__tiers">${st.tiers.map((tr) => `<li class="${n >= tr.n ? "is-on" : ""}"><span class="mono">(${tr.n})</span> ${(Engine.renderAffix(tr.a, world)[0] || { html: "" }).html}</li>`).join("")}</ul>
+        <ul class="sb-set__tiers">${st.tiers.map((tr) => `<li class="${n >= setNeed(tr.n) ? "is-on" : ""}"><span class="mono">(${setNeed(tr.n)}${setNeed(tr.n) !== tr.n ? ` <s>${tr.n}</s>` : ""})</span> ${(Engine.renderAffix(tr.a, world)[0] || { html: "" }).html}</li>`).join("")}</ul>
         ${dups.length ? `<p class="sb-note mono">DUPLICATE ${esc(dups.join(", ").toUpperCase())} // only one of each type counts per set. Reroll the duplicate in the Horadric Cube to look for a missing type.</p>` : ""}</div>`;
     }).join("");
     const setRows = setCh.map((x) => {
@@ -1467,14 +1497,21 @@
         <div class="sb-setcharm__affixes">${sel(0)}${sel(1)}</div></div>`;
     }).join("");
 
+    const sealItem = sealOf()[2].item && codexItem(sealOf()[2].item);
+    const linesOf = (it) => { if (!it) return []; const r = renderItem(it, { t: state.sandbox.t, rank: 1, ip: 900 }, false); return [r.power, ...r.imp, ...r.stats].filter(Boolean); };
+    const powerBlock = (title, it) => { const ls = linesOf(it); return ls.length ? `<div class="sb-sealpower"><span class="mono">${esc(title)}</span><ul>${ls.map((l) => `<li>${l.html}</li>`).join("")}</ul></div>` : ""; };
+    const sealPowers = powerBlock(sealName, sealItem) + (state.sandbox.torch ? powerBlock("Hellfire Torch", codexItem(TORCH_ID)) : "");
     const talisman = `<section class="sb-build">
       <div class="sb-build__head"><h3 class="sb-loadout__title mono">TALISMAN // ${talismanUsed()} / ${nSlots} CHARMS</h3>
         <label class="sb-seal"><span class="mono">SEAL</span><select class="input mono" data-seal aria-label="Talisman seal">${sealOpts}</select></label></div>
+      ${sealPowers}
       <div class="sb-cells">${charmCells}</div>
+      <p class="hint mono sb-uniq">UNIQUE CHARMS ${uniqueCount()} / ${uniqueLimit()}${sealOf()[2].setReduce ? " // SET BONUSES NEED 1 FEWER CHARM (MIN 2)" : ""}</p>
+      ${uniqueCount() > uniqueLimit() ? `<p class="sb-note mono">TOO MANY UNIQUE CHARMS // the ${esc(sealName)} allows ${uniqueLimit()}. Remove one, or use a Seal of the Golden Epiphany (3), the Severed Finger (2) or the Hellfire Torch (+1).</p>` : ""}
       ${talismanUsed() > nSlots ? `<p class="sb-note mono">TALISMAN FULL // ${talismanUsed() - nSlots} charm${talismanUsed() - nSlots > 1 ? "s" : ""} don't fit the ${esc(sealName)}.</p>` : ""}
       ${setRows ? `<h4 class="sb-build__sub mono">SET CHARM AFFIXES</h4><div class="sb-setcharms">${setRows}</div>` : ""}
       ${bonusHTML ? `<div class="sb-sets"><h4 class="sb-build__sub mono">SET BONUSES</h4>${bonusHTML}</div>` : ""}
-      <p class="hint">Click a charm slot to add a set charm (5 types per set: Phoba, Fer, Mlor, Linta, Berú; bonuses at 2, 3 and 5; sets can be mixed) or a unique's charm (unique power only). The seal sets the slots: Magic 3, Rare 4, Legendary 5 (6 with the extra slot affix), Annihilus and Mythic seals 6.</p>
+      <p class="hint">Click a charm slot to add a set charm (5 types per set: Phoba, Fer, Mlor, Linta, Berú; bonuses at 2, 3 and 5; sets can be mixed) or a unique's charm (unique power only). The seal sets the slots: Magic 3, Rare 4, Legendary 5 (6 with the extra slot affix), Annihilus 6, Mythic seals 6 (Severed Finger 5). One unique charm is allowed, 2 with the Severed Finger, 3 with the Golden Epiphany, +1 with the Hellfire Torch; the Diamond Mind lowers every set bonus by 1 charm (min 2).</p>
     </section>`;
 
     const aspectKeys = state.pins.filter((k) => (state.byId.get(k) || {}).kind === "aspect");
@@ -1843,6 +1880,7 @@
         openPicker(pk.dataset.pick, label);
         return;
       }
+      if (e.target.closest("[data-torchremove]")) { state.sandbox.torch = false; saveSandbox(); renderSandbox(); return; }
       const setRm = e.target.closest("[data-setremove]");
       if (setRm) { state.sandbox.sets.splice(+setRm.dataset.setremove, 1); saveSandbox(); renderSandbox(); return; }
       const charmB = e.target.closest("[data-charm]");
@@ -1851,8 +1889,9 @@
         if (isCharm(k)) {
           state.sandbox.charms = state.sandbox.charms.filter((x) => x !== k);
           if (!equip(k, false)) state.sandbox.charms.push(k); // class can't use it as gear: keep it a charm
-        } else if (talismanUsed() < charmSlots()) state.sandbox.charms.push(k);
-        else toast(`The Talisman is full (${charmSlots()} charm slots with a ${sealOf()[0]}).`);
+        } else if (uniqueRoom()) state.sandbox.charms.push(k);
+        else toast(talismanUsed() >= charmSlots() ? `The Talisman is full (${charmSlots()} charm slots with a ${sealOf()[0]}).`
+          : `Only ${uniqueLimit()} unique charm${uniqueLimit() > 1 ? "s" : ""} with a ${sealOf()[0]}${state.sandbox.torch ? " and the Hellfire Torch" : ""}.`);
         savePins(); saveSandbox(); renderSandbox();
         return;
       }
@@ -1933,9 +1972,9 @@
       try { localStorage.setItem(SB_KEY, JSON.stringify(state.sandbox)); } catch { /* ignore */ }
       renderSandbox();
     });
-    els.sbClear.addEventListener("click", () => { state.pins = []; state.sandbox.charms = []; state.sandbox.sets = []; saveSandbox(); savePins(); renderSandbox(); state.mode = null; });
+    els.sbClear.addEventListener("click", () => { state.pins = []; state.sandbox.charms = []; state.sandbox.sets = []; state.sandbox.torch = false; saveSandbox(); savePins(); renderSandbox(); state.mode = null; });
     els.sbShare.addEventListener("click", async () => {
-      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}`;
+      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}`;
       try { await navigator.clipboard.writeText(url); els.sbShare.textContent = "COPIED"; }
       catch { window.prompt("Copy this link:", url); }
       setTimeout(() => (els.sbShare.textContent = "COPY LINK"), 1400);
