@@ -111,7 +111,75 @@ def extract_paragon(meta_dir, stl_dir, icons, stat_line, attr_desc, skill_text, 
         m = re.search(r'"arParagonPowerBudgetMultiplier":\s*\[([^\]]*)\]', open(gl, encoding="utf-8").read())
         if m:
             budget = [float(x) for x in re.findall(r"[-0-9.eE]+", m.group(1))]
-    return {"boards": boards, "nodes": nodes, "thresholds": thresholds, "gb": gb, "budget": budget}
+    # ---------- Glyphs (ParagonGlyph + ParagonGlyphAffix) ----------
+    # eBonusOperation: 2 = per <per> source stat taken in range -> +dest attribute; 4 = bonus attribute (Legendary glyph);
+    # 5 = passive power when a threshold of a stat is in range; 1 = +% bonus to nodes of a rarity in range.
+    # Value ("GlyphAffixScalar") = (flStartingBonusScalar + flAddedBonusScalarPerLevel x (level - 1)) x formula x 100 (assumed).
+    glyphs = {}
+    gdir = os.path.join(meta_dir, "ParagonGlyph")
+    from_classes = ["Sorcerer", "Druid", "Barbarian", "Rogue", "Necromancer", "Spiritborn", "Paladin", "Warlock"]
+    for path in sorted(glob.glob(os.path.join(gdir, "*.gph.json"))):
+        gid = os.path.basename(path)[: -len(".gph.json")]
+        if not gid.startswith("Rare_"):
+            continue
+        g = _load(path)
+        affs = []
+        for a in g.get("arAffixes") or []:
+            ap = os.path.join(meta_dir, "ParagonGlyphAffix", a["name"] + ".gaf.json")
+            if not os.path.exists(ap):
+                continue
+            d = _load(ap)
+            desc = _strings(stl_dir, "ParagonGlyphAffix_" + a["name"]).get("Desc", "")
+            rec = {"id": a["name"], "op": d.get("eBonusOperation"), "req": d.get("eRequiredRarity") or 0,
+                   "s0": d.get("flStartingBonusScalar") or 0, "s1": d.get("flAddedBonusScalarPerLevel") or 0}
+            per = d.get("unk_12a5abd") or 100
+            rec["per"] = per / 100
+            if desc:
+                rec["t"] = desc
+            f = (d.get("gbidPowerBudgetFormula") or {}).get("name")
+            if f:
+                rec["f"] = f
+                gb_names.add(f)
+            pairs = d.get("unk_e80c332") or []
+            if pairs:
+                rec["src"] = pairs[0]["tSourceAttribute"].get("__eAttribute_name__", "")
+                rec["dst"] = pairs[0]["tDestinationAttribute"].get("__eAttribute_name__", "")
+                if attr_desc.get(rec["dst"]):
+                    rec["dt"] = attr_desc[rec["dst"]]
+            if d.get("eAffectedNodeRarity"):
+                rec["rar"] = RARITY.get(d["eAffectedNodeRarity"], "")
+            th = [x.get("name") for x in d.get("arThresholdSelector") or [] if x]
+            if th:
+                tp = os.path.join(meta_dir, "ParagonThreshold", th[0] + ".pth.json")
+                if os.path.exists(tp):
+                    rec["th"] = [{"a": x["tThresholdAttribute"].get("__eAttribute_name__", ""), "f": x["tThresholdValueFormula"]["value"]}
+                                 for x in _load(tp).get("ptThresholds") or []]
+            pw = (d.get("snoBonusPassivePower") or {}).get("name")
+            if pw:
+                rec["pw"] = pw
+                skill_text(pw)
+            affs.append(rec)
+        flags = g.get("fUsableByClass") or []
+        # fUsableByClass order here: same as items (Sorcerer, Druid, Barbarian, Rogue, Necromancer, Spiritborn, Paladin, Warlock)
+        cls = [from_classes[i] for i, v in enumerate(flags) if v and i < len(from_classes)]
+        rec = {"n": (_strings(stl_dir, "Item_ParagonGlyph_" + gid).get("Name") or gid).replace("Glyph: ", ""),
+               "c": [] if len(cls) == len(from_classes) else cls, "a": affs}
+        icons_h = [h for h in g.get("arIcons") or [] if h]
+        ic = icons and next((icons.for_handle(h) for h in icons_h if icons.for_handle(h)), None)
+        if ic:
+            rec["ic"] = ic
+        glyphs[gid] = rec
+    # Re-read formulas now that the glyph ones are known.
+    if os.path.exists(gp):
+        for e in _load(gp)["ptData"][0]["tEntries"]:
+            if e["tHeader"]["szName"] in gb_names:
+                gb[e["tHeader"]["szName"]] = sorted([r["nItemPowerRangeStart"], r["tFormula"]["value"]] for r in e.get("arRanges", []))
+    radius = []
+    if os.path.exists(gl):
+        m = re.search(r'"arGlyphRadiusLevels":\s*\[([^\]]*)\]', open(gl, encoding="utf-8").read())
+        if m:
+            radius = [int(float(x)) for x in re.findall(r"[-0-9.]+", m.group(1))]
+    return {"boards": boards, "nodes": nodes, "thresholds": thresholds, "gb": gb, "budget": budget, "glyphs": glyphs, "radius": radius}
 
 
 def extract(meta_dir, stl_dir, power_dir, icons=None, stat_line=None, attr_desc=None):

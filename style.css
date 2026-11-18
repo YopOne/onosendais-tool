@@ -1077,3 +1077,19 @@ html[data-sb-ip="900"] .pd__slot--unique { --spark: var(--spark-anc); --spark-hi
 .pg-bonus-on { color: var(--c-set); }
 .pg-bonus-off { color: var(--faint); }
 .pg-tt-ic { width: 52px; height: 52px; }
+.pg-cell.in-radius rect { fill-opacity: 1; }
+.pg-cell.in-radius:not(.is-taken) rect { fill: #221a30; }
+.pg-cell.in-radius.is-taken rect { stroke: #d6a8ff; }
+.pg-cell.has-glyph rect { stroke: #d6a8ff; stroke-width: 12; filter: drop-shadow(0 0 24px rgba(200, 140, 255, 0.8)); }
+.pg-cell.has-glyph image { opacity: 1; }
+.pg-glyphs { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.pg-glyph { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 4px; font-size: 0.82rem; }
+.pg-glyph > .mono { color: var(--faint); font-size: 0.7rem; }
+.pg-gsel { display: flex; gap: 6px; flex-wrap: wrap; }
+.pg-gsel select { flex: 1 1 140px; min-width: 0; }
+.pg-glv { display: inline-flex; gap: 4px; align-items: center; font-size: 0.7rem; color: var(--faint); }
+.pg-glv input { width: 64px; }
+.pg-gaff { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.pg-gaff li.is-off { color: var(--faint); }
+.pg-gaff li.is-on { color: var(--text); }
+.pg-gname { display: flex; gap: 8px; align-items: baseline; } .pg-gname .mono { color: var(--faint); font-size: 0.7rem; }

@@ -247,6 +247,7 @@
       ParagonPowerBudgetMultiplierNodeRareMinorOffensive: () => pgBudget(5),
       ParagonPowerBudgetMultiplierNodeRareMinorDefensive: () => pgBudget(6),
       ParagonPowerBudgetMultiplierGlyphStatBonusRare: () => pgBudget(8),
+      ParagonPowerBudgetMultiplierGlyphThresholdBonusRare: () => pgBudget(10),
       // Skill formulas: Table(n, sLevel) -> GameBalance/PowerFormulaTables[n][rank] (34 = SkillRankBonus).
       Table: (c, a) => {
         const t = codex.tables && codex.tables[a[0]];
@@ -2375,6 +2376,7 @@
       if (SK && pgS && pgS.cls === sandboxClass() && (pgS.pts || []).length) {
         const g = pgGrid(pgS.cls, pgS), tot = pgTotals(pgS.cls, pgS, g);
         tot.lines.forEach((x, j) => { if (!/_Core$/.test(x.ln.a)) src.push({ id: `pg:${x.ln.a}|${x.ln.p || ""}`, name: "Paragon total", lines: [x.r.plain] }); });
+        tot.glyphs.forEach((g) => g.affs.forEach((x, j) => { if (!x.ok) return; const line = x.sum ? x.sum.plain : x.a.op === 2 ? "" : x.plain; if (line) src.push({ id: `glyph:${g.bi}:${j}`, name: `Glyph ${g.def.n}`, lines: [line] }); }));
         tot.legend.forEach((c) => { const st = SK.skills[c.node.pw]; if (st) src.push({ id: `pgleg:${c.key}`, name: `${c.node.n} (Paragon)`, lines: [Engine.render(st.d, { power: c.node.pw, world: { t: 1, rank: 1, ip: Engine.DEFAULT_IP }, depth: 0 }).plain] }); });
       }
       if (!SK && ((skS && Object.keys(skS.pts || {}).length) || (pgS && (pgS.pts || []).length))) loadSkills().then(() => { if (route() === "sandbox") renderSandbox(); });
@@ -2880,7 +2882,7 @@
     const root = els.viewSkills.querySelector(".sk");
     if (!SK) {
       root.innerHTML = `<p class="sb-empty">LOADING SKILL TREES…</p>`;
-      loadSkills().then(() => { if (route() === "skills") renderSkills(); }).catch(() => { root.innerHTML = `<p class="sb-empty">Couldn't load data/index/skills.json.</p>`; });
+      loadSkills().then(() => { if (route() === "skills") renderSkills(); }).catch((err) => { console.error(err); root.innerHTML = `<p class="sb-empty">Couldn't load or draw the skill data (${esc(err && err.message || err)}).</p>`; });
       return;
     }
     const cls = sandboxClass(), classes = Engine.codex.meta.classes;
@@ -3055,6 +3057,10 @@
       if (dropped) toast(`Level ${s.lv}: ${dropped} point${dropped > 1 ? "s" : ""} above the level removed.`);
     });
     view.addEventListener("change", (e) => {
+      const gs = e.target.closest("[data-pgglyph]");
+      if (gs) { const s = pgState(), bi = gs.dataset.pgglyph; if (gs.value) s.glyphs[bi] = { g: gs.value, lv: (s.glyphs[bi] && s.glyphs[bi].lv) || PG_GLYPH_MAX }; else delete s.glyphs[bi]; saveSandbox(); renderSkills(); return; }
+      const gl = e.target.closest("[data-pgglv]");
+      if (gl) { const s = pgState(), bi = gl.dataset.pgglv; if (s.glyphs[bi]) { s.glyphs[bi].lv = Math.max(1, Math.min(PG_GLYPH_MAX, Math.round(+gl.value || 1))); saveSandbox(); renderSkills(); } return; }
       const c = e.target.closest("[data-skcls]"); if (!c) return;
       els.sbClass.value = c.value;
       els.sbClass.dispatchEvent(new Event("change"));
@@ -3079,7 +3085,64 @@
       s = state.sandbox.paragon = { cls, boards: start ? [{ id: start.id, r: 0, x: 0, y: 0, p: -1, g: "" }] : [], pts: [] };
     }
     if (!Array.isArray(s.pts)) s.pts = [];
+    if (!s.glyphs || typeof s.glyphs !== "object") s.glyphs = {};
     return s;
+  }
+  /* ---------- Glyphs (phase 3) ----------
+   * s.glyphs = { "<board index>": { g: glyph id, lv: 1-100 } }. A glyph works when its board's socket node is taken.
+   * Radius from arGlyphRadiusLevels [0,0,0,25,50] read as index + 1: 3 at level 1, 4 at 25, 5 at 50 (assumed);
+   * cells count when dx² + dy² <= r² + r on the same board (a rounded circle, assumed).
+   * Glyphs turn Legendary at level 46 (assumed): affixes with eRequiredRarity 2 need it. */
+  const PG_GLYPH_MAX = 100, PG_GLYPH_LEG = 46;
+  const glyphDefs = () => PG().glyphs || {};
+  function glyphRadius(lv) {
+    const arr = PG().radius || [];
+    let r = 0;
+    arr.forEach((need, i) => { if (lv >= need) r = i; });
+    return r + 1;
+  }
+  const glyphScalar = (a, lv) => {
+    const f = a.f ? Engine.lineValue({ g: a.f, a: "" }, { t: 1, rank: 1, ip: Engine.DEFAULT_IP }) : 1;
+    return (a.s0 + a.s1 * (lv - 1)) * (f == null ? 0 : f) * 100;
+  };
+  /** Every socketed glyph: socket cell, cells in radius, stats in radius, each affix's state and value. */
+  function pgGlyphs(cls, s, grid, taken) {
+    const out = [], W = { t: 1, rank: 1, ip: Engine.DEFAULT_IP };
+    for (const [bi, e] of Object.entries(s.glyphs || {})) {
+      const def = glyphDefs()[e.g];
+      if (!def) continue;
+      const sock = [...grid.values()].find((c) => c.bi === +bi && c.node.sock);
+      if (!sock) continue;
+      const lv = Math.max(1, Math.min(PG_GLYPH_MAX, e.lv || 1)), r = glyphRadius(lv), rarity = lv >= PG_GLYPH_LEG ? 2 : 1;
+      const inR = [...grid.values()].filter((c) => c.bi === +bi && c !== sock && (c.gx - sock.gx) ** 2 + (c.gy - sock.gy) ** 2 <= r * r + r);
+      const on = taken.has(sock.key);
+      const stat = {};
+      for (const c of inR) if (taken.has(c.key)) for (const ln of c.node.l || []) { const v = Engine.lineValue(ln, W); if (v != null) stat[ln.a] = (stat[ln.a] || 0) + v; }
+      const affs = def.a.map((a) => {
+        const ok = on && (a.req || 0) <= rarity;
+        const val = glyphScalar(a, lv);
+        const x = { a, ok, val, html: "", plain: "", total: null, note: "" };
+        const txt = (a.t || "").replace(/\{GlyphAffixScalar\}/g, String(Math.round(val * 1000) / 1000));
+        if (a.op === 2 && a.src) {
+          const have = stat[a.src] || 0, n = Math.floor(have / (a.per || 1));
+          x.total = n * val;
+          x.note = `${Math.round(have)} ${a.src.replace(/_Core$/, "")} in range → ${n} × ${Math.round(val * 100) / 100}%`;
+          if (a.dt && ok && n) x.sum = Engine.renderLine({ t: a.dt, a: a.dst, f: String(x.total / 100) }, W);
+        }
+        if (a.op === 5 && a.th) {
+          const need = a.th.map((t) => ({ a: t.a, v: Engine.evalFormula(t.f, W) }));
+          const met = need.every((t) => (stat[t.a] || 0) >= (t.v || 0));
+          x.ok = ok && met;
+          x.note = need.map((t) => `needs ${t.v} ${t.a.replace(/_Core$/, "")} in range (${Math.round(stat[t.a] || 0)})`).join(", ");
+          const pw = a.pw && SK.skills[a.pw];
+          if (pw) { const r2 = Engine.render(pw.d, { power: a.pw, world: W, depth: 0 }); x.html = r2.html; x.plain = r2.plain; }
+        } else if (txt) { const r2 = Engine.render(txt, { affix: null, world: W, depth: 0 }); x.html = r2.html; x.plain = r2.plain; }
+        if ((a.req || 0) > rarity) x.note = `Legendary glyph (level ${PG_GLYPH_LEG}+)`;
+        return x;
+      });
+      out.push({ bi: +bi, e, def, lv, r, sock, inR, on, stat, affs, rarity });
+    }
+    return out;
   }
   const pgRot = (x, y, r, w, h) => [[x, y], [h - 1 - y, x], [w - 1 - x, h - 1 - y], [y, w - 1 - x]][r & 3];
   /** Global grid: "gx,gy" -> { bi, idx, node, def, gx, gy, lx, ly } for every placed board. */
@@ -3217,6 +3280,9 @@
     // Re-index: later boards shift down one.
     s.boards.forEach((b) => { if (b.p > bi) b.p -= 1; if (b.g) { const [gb, gi] = b.g.split("."); if (+gb > bi) b.g = (+gb - 1) + "." + gi; } });
     s.pts = s.pts.filter((k) => +k.split(".")[0] !== bi).map((k) => { const [b, i] = k.split("."); return (+b > bi ? +b - 1 : +b) + "." + i; });
+    const gl = {};
+    for (const [k, v] of Object.entries(s.glyphs || {})) if (+k !== bi) gl[+k > bi ? +k - 1 : +k] = v;
+    s.glyphs = gl;
     saveSandbox(); renderSkills();
     toast("Board removed.", ["UNDO", () => { state.sandbox.paragon = before; saveSandbox(); renderSkills(); }]);
   }
@@ -3231,7 +3297,9 @@
       e.v += v; sums.set(k, e);
     };
     const cells = [...grid.values()].filter((c) => taken.has(c.key));
-    for (const c of cells) for (const ln of c.node.l || []) add(ln, Engine.lineValue(ln, W));
+    const glyphs = pgGlyphs(cls, s, grid, taken), boost = new Map();
+    for (const g of glyphs) for (const x of g.affs) if (x.ok && x.a.op === 1 && x.a.rar) for (const c of g.inR) if (c.node.r === x.a.rar) boost.set(c.key, (boost.get(c.key) || 1) + x.val / 100);
+    for (const c of cells) for (const ln of c.node.l || []) { const v = Engine.lineValue(ln, W); add(ln, v == null ? v : v * (boost.get(c.key) || 1)); }
     const core = (a) => { const e = sums.get(a.replace(/_Total$/, "_Core") + "|"); return e ? e.v : 0; };
     const rare = [];
     for (const c of cells) {
@@ -3244,7 +3312,7 @@
     }
     for (const x of rare) if (x.met) for (const i of x.c.node.b) { const ln = (x.c.node.l || [])[i]; if (ln) add(ln, Engine.lineValue(ln, W)); }
     const lines = [...sums.values()].map(({ ln, v }) => ({ ln, v, r: Engine.renderLine({ ...ln, g: undefined, f: String(v) }, W) }));
-    return { lines, rare, legend, core };
+    return { lines, rare, legend, core, glyphs };
   }
   function pgTooltip(key) {
     const cls = sandboxClass(), s = pgState(), grid = pgGrid(cls, s);
@@ -3263,12 +3331,19 @@
     const rarityLabel = { normal: "Normal", magic: "Magic", rare: "Rare", legendary: "Legendary" }[n.r] || "";
     const taken = pgTaken(s, grid).has(key), why = taken ? "" : pgCanAdd(c, s, grid, pgTaken(s, grid));
     return `<div class="tt__head">${n.ic ? `<span class="ico-well ico-well--tt pg-tt-ic">${itemIcon(n.ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(n.n || (/Gate/.test(c.name) ? "Board Gate" : /Socket/.test(c.name) ? "Glyph Socket" : c.name))}</p><p class="tt__type">${esc(rarityLabel)} Paragon Node · ${esc(def ? def.n : "")}</p></div></div>
-      <div class="tt__body">${lines ? `<ul class="tt__lines">${lines}</ul>` : ""}${bonus}${pw}${n.sock ? '<p class="hint">Glyph socket: glyphs come in phase 3.</p>' : ""}</div>
+      <div class="tt__body">${lines ? `<ul class="tt__lines">${lines}</ul>` : ""}${bonus}${pw}${n.sock ? pgSocketTip(cls, s, grid, c) : ""}</div>
       <dl class="tt__foot"><dt>STATE</dt><dd>${taken ? "Taken" : esc(why || "Can be taken")}</dd><dt>BOARD</dt><dd>${c.bi + 1}: ${esc(def ? def.n : "")}</dd><dt>CONTROLS</dt><dd>Click: take / remove · right-click or long-press: remove</dd></dl>`;
+  }
+  function pgSocketTip(cls, s, grid, c) {
+    const g = pgGlyphs(cls, s, grid, pgTaken(s, grid)).find((x) => x.bi === c.bi);
+    if (!g) return '<p class="hint">Glyph socket: choose a glyph for this board in the GLYPHS panel.</p>';
+    return `<p class="tt__power"><b>Glyph: ${esc(g.def.n)}</b> · level ${g.lv} · radius ${g.r}${g.on ? "" : " · take this node to activate it"}</p><ul class="tt__lines">${g.affs.map((x) => `<li class="${x.ok ? "" : "pg-bonus-off"}">${x.html}${x.sum ? ` <b>= ${x.sum.html}</b>` : ""}${x.note ? `<br><span class="hint">${esc(x.note)}</span>` : ""}</li>`).join("")}</ul>`;
   }
   function renderParagon(root, clsSel, cls) {
     const s = pgState(), grid = pgGrid(cls, s), taken = pgTaken(s, grid), gates = pgFreeGates(cls, s, grid);
     const U = 100;
+    const tot = pgTotals(cls, s, grid);
+    const radiusKeys = new Set(tot.glyphs.flatMap((g) => g.inR.map((c) => c.key)));
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     s.boards.forEach((b) => { const d = pgDef(cls, b.id); if (!d) return; x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y); x1 = Math.max(x1, b.x + d.w); y1 = Math.max(y1, b.y + d.h); });
     for (const g of gates) { x0 = Math.min(x0, g.tx - 1); y0 = Math.min(y0, g.ty - 1); x1 = Math.max(x1, g.tx + 2); y1 = Math.max(y1, g.ty + 2); }
@@ -3278,12 +3353,22 @@
     const boardsSvg = s.boards.map((b, bi) => { const d = pgDef(cls, b.id); return d ? `<g class="pg-board"><rect x="${b.x * U}" y="${b.y * U}" width="${d.w * U}" height="${d.h * U}" rx="40"/><text x="${(b.x + d.w / 2) * U}" y="${(b.y + (d.start ? 16.5 : d.h / 2)) * U}" text-anchor="middle">${esc(d.n)}</text></g>` : ""; }).join("");
     const cellsSvg = [...grid.values()].map((c) => {
       const t = taken.has(c.key), kind = /Gate/.test(c.name) ? "gate" : c.node.sock ? "socket" : c.node.start ? "start" : c.node.r || "normal";
+      const gl = c.node.sock && s.glyphs[c.bi] && glyphDefs()[s.glyphs[c.bi].g];
       const can = !t && !pgCanAdd(c, s, grid, taken);
       const sz = kind === "legendary" ? 96 : kind === "rare" || kind === "socket" || kind === "gate" || kind === "start" ? 88 : 76, o = (U - sz) / 2;
-      return `<g class="pg-cell pg-cell--${kind}${t ? " is-taken" : can ? " is-open" : ""}" data-pgcell="${c.key}" data-key="pg:${c.key}"><rect x="${c.gx * U + o}" y="${c.gy * U + o}" width="${sz}" height="${sz}" rx="${kind === "socket" ? sz / 2 : 12}"/>${c.node.ic && kind !== "normal" ? `<image href="data/icons/${c.node.ic}.webp" x="${c.gx * U + o + 8}" y="${c.gy * U + o + 8}" width="${sz - 16}" height="${sz - 16}"/>` : ""}</g>`;
+      const ic = gl ? gl.ic : c.node.ic && kind !== "normal" ? c.node.ic : "";
+      return `<g class="pg-cell pg-cell--${kind}${t ? " is-taken" : can ? " is-open" : ""}${radiusKeys.has(c.key) ? " in-radius" : ""}${gl ? " has-glyph" : ""}" data-pgcell="${c.key}" data-key="pg:${c.key}"><rect x="${c.gx * U + o}" y="${c.gy * U + o}" width="${sz}" height="${sz}" rx="${kind === "socket" ? sz / 2 : 12}"/>${ic ? `<image href="data/icons/${ic}.webp" x="${c.gx * U + o + 8}" y="${c.gy * U + o + 8}" width="${sz - 16}" height="${sz - 16}"/>` : ""}</g>`;
     }).join("");
     const gateSvg = s.boards.length < PG_MAX_BOARDS ? gates.map((g) => `<g class="pg-attach" data-pggate="${g.c.key}" role="button" aria-label="Attach a board here"><circle cx="${(g.tx + 0.5) * U}" cy="${(g.ty + 0.5) * U}" r="60"/><text x="${(g.tx + 0.5) * U}" y="${(g.ty + 0.5) * U + 32}" text-anchor="middle">+</text></g>`).join("") : "";
-    const tot = pgTotals(cls, s, grid);
+    const usedG = new Set(Object.values(s.glyphs).map((e) => e.g));
+    const glyphOpts = Object.entries(glyphDefs()).filter(([, d]) => !d.c.length || d.c.includes(cls)).sort((a, b) => a[1].n.localeCompare(b[1].n));
+    const glyphPanel = s.boards.map((b, bi) => {
+      const d = pgDef(cls, b.id), e = s.glyphs[bi], info = tot.glyphs.find((g) => g.bi === bi);
+      const sel = `<select class="input mono" data-pgglyph="${bi}" aria-label="Glyph for ${esc(d ? d.n : "")}"><option value="">No glyph</option>${glyphOpts.filter(([id]) => !usedG.has(id) || (e && e.g === id)).map(([id, g]) => `<option value="${esc(id)}"${e && e.g === id ? " selected" : ""}>${esc(g.n)}</option>`).join("")}</select>`;
+      const lv = e ? `<label class="pg-glv mono">LV <input class="input mono" type="number" min="1" max="${PG_GLYPH_MAX}" value="${e.lv || 1}" data-pgglv="${bi}" aria-label="Glyph level"></label>` : "";
+      const body = info ? `<p class="hint mono">${info.on ? "ACTIVE" : "SOCKET NOT TAKEN"} · RADIUS ${info.r} · ${info.rarity === 2 ? "LEGENDARY" : "RARE"}</p><ul class="pg-gaff">${info.affs.map((x) => `<li class="${x.ok ? "is-on" : "is-off"}">${x.html}${x.sum ? `<br><b>= ${x.sum.html}</b>` : ""}${x.note ? `<br><span class="hint">${esc(x.note)}</span>` : ""}</li>`).join("")}</ul>` : "";
+      return `<li class="pg-glyph">${d ? `<span class="pg-gname"><span class="mono">${bi + 1}</span> ${esc(d.n)}</span>` : ""}<span class="pg-gsel">${sel}${lv}</span>${body}</li>`;
+    }).join("");
     const coreOrder = ["Strength_Core", "Intelligence_Core", "Willpower_Core", "Dexterity_Core"];
     const lines = tot.lines.slice().sort((a, b) => (coreOrder.indexOf(a.ln.a) + 1 || 99) - (coreOrder.indexOf(b.ln.a) + 1 || 99) || a.r.plain.localeCompare(b.r.plain));
     const boardsList = s.boards.map((b, bi) => { const d = pgDef(cls, b.id); const leaf = bi > 0 && !s.boards.some((x) => x.p === bi); return `<li><span class="mono">${bi + 1}</span> ${esc(d ? d.n : b.id)} <span class="hint">${b.r * 90}°</span>${leaf ? ` <button type="button" class="sb-cell__clear" data-pgrm="${bi}" aria-label="Remove board ${esc(d ? d.n : "")}">×</button>` : ""}</li>`; }).join("");
@@ -3298,23 +3383,26 @@
         <svg class="sk-svg pg-svg" viewBox="${skView.vb.join(" ")}" data-skfull="${full.join(" ")}" role="group" aria-label="${esc(cls)} Paragon boards">${boardsSvg}${cellsSvg}${gateSvg}</svg>
         <aside class="sk-side"><h3 class="sb-loadout__title mono">${esc(cls).toUpperCase()} // PARAGON</h3>
           <ul class="pg-boards">${boardsList}</ul>
+          <h4 class="mods__h mono">GLYPHS <span>one per board socket</span></h4><ul class="pg-glyphs">${glyphPanel}</ul>
           ${lines.length ? `<h4 class="mods__h mono">TOTALS</h4><ul class="pg-totals">${lines.map((x) => `<li>${x.r.html}</li>`).join("")}</ul>` : ""}
           ${tot.rare.length ? `<h4 class="mods__h mono">RARE BONUSES <span>${tot.rare.filter((x) => x.met).length} / ${tot.rare.length}</span></h4>` : ""}
           ${tot.legend.length ? `<h4 class="mods__h mono">LEGENDARY</h4><ul class="pg-totals">${tot.legend.map((c) => `<li data-key="pg:${c.key}">${esc(c.node.n || "")}</li>`).join("")}</ul>` : ""}
-          <p class="hint">Start at the bottom node and click next to taken nodes to take them (right-click / long-press removes the end of a path). Click a <b>+</b> beside a gate to attach a board and pick its rotation. Rare nodes give their bonus when your Paragon attributes reach the requirement (it grows +75 per board: 190 on the first). Totals count Paragon only, not gear. Damage lines go to the Sandbox DAMAGE panel.</p>
+          <p class="hint">Start at the bottom node and click next to taken nodes to take them (right-click / long-press removes the end of a path). Click a <b>+</b> beside a gate to attach a board and pick its rotation. Rare nodes give their bonus when your Paragon attributes reach the requirement (it grows +75 per board: 190 on the first). Totals count Paragon only, not gear. Put a glyph in each board's socket (and take the socket node): it counts the stats you take within its radius (shown on the board); it becomes Legendary at level ${PG_GLYPH_LEG}. Damage lines go to the Sandbox DAMAGE panel.</p>
         </aside>
       </div>`;
   }
   const encodeParagon = () => {
     const s = state.sandbox.paragon;
-    if (!s || !(s.pts || []).length && (s.boards || []).length < 2) return "";
-    return s.boards.map((b) => [b.id.replace(/^Paragon_/, ""), b.r, b.x, b.y, b.p, b.g].join("~")).join(",") + "|" + s.pts.join(",");
+    if (!s || !(s.pts || []).length && (s.boards || []).length < 2 && !Object.keys(s.glyphs || {}).length) return "";
+    return s.boards.map((b) => [b.id.replace(/^Paragon_/, ""), b.r, b.x, b.y, b.p, b.g].join("~")).join(",") + "|" + s.pts.join(",") + "|" + Object.entries(s.glyphs || {}).map(([k, v]) => [k, v.g, v.lv].join("~")).join(",");
   };
   function parseParagon(str, cls) {
     if (!str) return null;
-    const [bs, ps] = decodeURIComponent(str).split("|");
+    const [bs, ps, gs] = decodeURIComponent(str).split("|");
+    const glyphs = {};
+    for (const x of (gs || "").split(",").filter(Boolean)) { const [k, g, lv] = x.split("~"); if (/^\d+$/.test(k) && g) glyphs[k] = { g, lv: Math.max(1, Math.min(PG_GLYPH_MAX, +lv || 1)) }; }
     const boards = (bs || "").split(",").filter(Boolean).map((x) => { const [id, r, gx, gy, p, g] = x.split("~"); return { id: "Paragon_" + id, r: +r & 3, x: +gx || 0, y: +gy || 0, p: +p, g: g || "" }; });
-    return { cls, boards, pts: (ps || "").split(",").filter((k) => /^\d+\.\d+$/.test(k)) };
+    return { cls, boards, pts: (ps || "").split(",").filter((k) => /^\d+\.\d+$/.test(k)), glyphs };
   }
 
   /** Share link: sk=<level>.<node>:<pts>.<node>:<pts>... */
