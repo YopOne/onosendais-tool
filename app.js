@@ -877,7 +877,7 @@
     const [kind, ...rest] = key.split(":");
     const id = rest.join(":");
     if (kind === "gem") { const [type, tg] = id.split("|"); const h = gemTooltip(type, tg === "" || tg == null ? null : +tg); return h && { html: h, rarity: "gem" }; }
-    if (kind === "rune") { const h = runeTooltip(id); return h && { html: h, rarity: "rune" }; }
+    if (kind === "rune") { const [rid, slot] = id.split("|"); const h = runeTooltip(rid, slot); return h && { html: h, rarity: "rune" }; }
     if (kind === "set") { const x = state.sandbox.sets[+id], p = x && talismanIdx().piece.get(x.p); return p && { html: setCharmTooltip(p, x.a), rarity: "set" }; }
     if (kind === "piece") { const p = talismanIdx().piece.get(id); return p && { html: setCharmTooltip(p, []), rarity: "set" }; }
     if (kind === "leg") {
@@ -1434,11 +1434,32 @@
       <div class="tt__body"><ul class="tt__lines tt__lines--set">${lines}</ul></div>
       <dl class="tt__foot"><dt>SOCKET</dt><dd>The effect depends on the item: weapon, armor or jewelry${target != null ? ` (this one: ${GEM_TARGETS[target].toLowerCase()})` : ""}</dd><dt>ID</dt><dd>${esc(g.id)}</dd></dl>`;
   }
-  function runeTooltip(id) {
+  /** The runeword a Ritual + Invocation pair makes: name (the two runes' phrases) and its mechanics. */
+  function runewordHTML(a, b) {
+    const per = a.offering ? Math.ceil(b.offering / a.offering) : Infinity;
+    return `<p class="tt__setname">Runeword: ${esc(a.phrase || a.name)} ${esc(b.phrase || b.name)}</p>
+      <ul class="tt__lines tt__lines--rw">
+        <li><span class="gt-rune-ritual">When:</span> ${Engine.renderText(a.t || "").html} <span class="mono hint">(+${a.offering} Offering)</span></li>
+        <li><span class="gt-rune-invoke">Then:</span> ${Engine.renderText(b.t || "").html} <span class="mono hint">(needs ${b.offering}${b.cd ? `, ${b.cd}s cooldown` : ""})</span></li>
+        <li class="mono hint">≈ ${Number.isFinite(per) ? per : "∞"} ${esc(a.name)} trigger${per === 1 ? "" : "s"} per ${esc(b.name)} cast${b.overflow ? ` · overflow: ${esc(b.overflow)}` : ""}</li>
+      </ul>`;
+  }
+  /** Tooltip for a rune; with slot (a socketed or about-to-be-socketed rune) it adds the runeword it forms
+   * with the rune in the item's other socket, or what's missing. */
+  function runeTooltip(id, slot) {
     const r = runeById(id);
     if (!r) return null;
-    return `<div class="tt__head">${r.ic ? `<span class="ico-well ico-well--tt">${itemIcon(r.ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(r.name)}</p><p class="tt__type">${esc(r.rarity)} Rune of ${esc(r.kind)}${r.season ? " · " + esc(r.season) : ""}</p></div></div>
-      <div class="tt__body"><ul class="tt__lines"><li>${Engine.renderText(r.t || "").html}</li></ul></div>
+    let combo = "";
+    if (slot) {
+      const [spec, idx] = slot.split("@");
+      const others = (state.sandbox.sock[spec] || []).filter((v, i) => i !== +idx && v && v.startsWith("r:")).map((v) => runeById(v.slice(2))).filter(Boolean);
+      const mate = others.find((o) => o.kind !== r.kind);
+      if (mate) combo = runewordHTML(r.kind === "Ritual" ? r : mate, r.kind === "Ritual" ? mate : r);
+      else if (others.length) combo = `<p class="tt__warn mono">Two Runes of ${esc(r.kind)} don't make a runeword: swap one for a Rune of ${r.kind === "Ritual" ? "Invocation" : "Ritual"}.</p>`;
+      else combo = `<p class="tt__warn mono">Add a Rune of ${r.kind === "Ritual" ? "Invocation (the effect)" : "Ritual (the condition)"} in the other socket to make a runeword.</p>`;
+    }
+    return `<div class="tt__head">${r.ic ? `<span class="ico-well ico-well--tt">${itemIcon(r.ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(r.name)}${r.phrase ? ` <span class="tt__phrase">“${esc(r.phrase)}”</span>` : ""}</p><p class="tt__type">${esc(r.rarity)} Rune of ${esc(r.kind)}${r.season ? " · " + esc(r.season) : ""}</p></div></div>
+      <div class="tt__body"><ul class="tt__lines"><li>${Engine.renderText(r.t || "").html}</li></ul>${combo ? `<div class="tt__sep"></div>${combo}` : ""}</div>
       <dl class="tt__foot"><dt>OFFERING</dt><dd>${r.kind === "Ritual" ? `Gains ${r.offering}` : `Needs ${r.offering}${r.cd ? `, ${r.cd}s cooldown` : ""}`}</dd><dt>RUNEWORD</dt><dd>One Ritual + one Invocation in a 2-socket Helm, Chest, Pants or 2H weapon</dd></dl>`;
   }
   /** Aspect slot bonus for a legendary in `spec`: amulet x1.5, 2H weapon x2. */
@@ -1489,9 +1510,9 @@
   /** Candidates for a slot spec: "w:<slot>", "g:<Slot>:<i>", "c:<i>" (charm), "aspect". */
   function pickCandidates(spec) {
     if (spec.startsWith("s|")) {
-      const [, slot] = spec.split("|"), L = sbLayout(), { n, target } = socketInfo(slot, L);
+      const [, slot, idx] = spec.split("|"), L = sbLayout(), { n, target } = socketInfo(slot, L);
       const gems = gemTypes().map((t) => { const g = gemOf(t.type); return { value: "g:" + t.type, name: g.name, sub: `Gem · ${GEM_TARGETS[target]}: ${Engine.renderText(g.eff[target] || "").plain}`, icon: g.ic, rarity: t.tiers.length > 1 ? "gem" : "mythic", tip: `gem:${t.type}|${target}` }; });
-      const runes = n === 2 ? ((Engine.codex.runes || {}).runes || []).filter((r) => !r.legacy).map((r) => ({ value: "r:" + r.id, name: r.name, sub: `Rune of ${r.kind} · ${r.kind === "Ritual" ? "+" : "needs "}${r.offering} Offering · ${Engine.renderText(r.t || "").plain}`, icon: r.ic, rarity: "rune", tip: "rune:" + r.id })) : [];
+      const runes = n === 2 ? ((Engine.codex.runes || {}).runes || []).filter((r) => !r.legacy).map((r) => ({ value: "r:" + r.id, name: r.name, sub: `Rune of ${r.kind} · ${r.kind === "Ritual" ? "+" : "needs "}${r.offering} Offering · ${Engine.renderText(r.t || "").plain}`, icon: r.ic, rarity: "rune", tip: `rune:${r.id}|${slot}@${idx}` })) : [];
       return [{ value: "x", name: "Empty socket", sub: "Remove what's in this socket", icon: "", rarity: "common" }, ...gems, ...runes];
     }
     const cls = sandboxClass();
@@ -1804,7 +1825,7 @@
         if (!si.n) return "";
         return `<span class="pd__socks">${socketsOf(d.spec, L).map((v, i) => {
           const ln = v && socketLine(v, si.target);
-          const tip = v ? (v.startsWith("g:") ? `gem:${v.slice(2)}|${si.target}` : "rune:" + v.slice(2)) : "";
+          const tip = v ? (v.startsWith("g:") ? `gem:${v.slice(2)}|${si.target}` : `rune:${v.slice(2)}|${d.spec}@${i}`) : "";
           return `<button type="button" class="pd__sock${v ? " is-full" : ""}" data-pick="s|${esc(d.spec)}|${i}" data-label="${esc(d.label)} socket ${i + 1}"${tip ? ` data-key="${esc(tip)}"` : ""} aria-label="${esc(d.label)} socket ${i + 1}: ${ln ? esc(ln.name) : "empty"}">${PD.frames.socket ? itemIcon(PD.frames.socket, "pd__sockframe") : ""}${ln && ln.ic ? itemIcon(ln.ic, "pd__sockic") : ""}</button>`;
         }).join("")}</span>`;
       };
