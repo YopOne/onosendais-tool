@@ -4,9 +4,9 @@ _Last updated: 18 Nov 2026. Everything below is pushed and live._
 
 ## Overview
 
-A vanilla HTML/CSS/JS single-page app: a searchable Diablo 4 database of uniques, legendary aspects, runes, runewords and crafting recipes, built from datamined game files. It needs no frameworks or build tools and runs on GitHub Pages.
+A vanilla HTML/CSS/JS single-page app: a searchable Diablo 4 database of uniques, legendary aspects, runes, runewords and crafting recipes, plus a Theorycraft Sandbox (gear, item editor, sockets, Talisman with seals, damage model) and a Skills & Paragon view (skill tree, Paragon boards, glyphs), built from datamined game files. It needs no frameworks or build tools and runs on GitHub Pages.
 
-**Data version:** Season 15, game build **3.2.4.74043** (d4data commit of 29 Oct 2026). There is no Season 16 data yet.
+**Data version:** Lord of Hatred, Season 15, game build **3.2.4.74043** (d4data commit of 29 Oct 2026); max level 70. There is no Season 16 data yet.
 
 ## How it works
 
@@ -116,7 +116,7 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 - **Assumptions:** some recipe outputs are a loot table without a name in the data; those are named from the recipe file and marked "output from recipe name". Which runes are "current" comes from Maxroll's list. No recipe crafts the Season 15 uniques; they only drop in the capstone dungeons.
 
 **Skills & Paragon** (`#/skills`: skill tree, Paragon boards, glyphs; 18 Nov)
-- **Data:** `tools/skills_paragon.py` (called by `build_index.py`) writes `data/index/skills.json` (~920 KB, lazy-loaded by the view): 8 class trees from `SkillKit/<Class>.skl.json` (Paladin = `Paladin_NEW`): node position, links, level gate (`dwNodeRequiredPlayerLevel`), pick-one group (`nExclusiveGroupId`), kind (cluster root / hub / skill / upgrade); `GameBalance/SkillTreeRewards` gives each node its skill (`eType` 0, rank cap `dwMaxTalentRanks` 15) or upgrade (`eType` 1: `szPowerMod` hash → `Power arMods[].szName` → `dwModId` → StringList `Mod<id>_Name/_Description`, rank cap 3 or 5); skill and upgrade icons (`hIconNormal`, `hIconNormalOverride`); the script formulas of every skill power; `PowerFormulaTables` (Table 34 = SkillRankBonus).
+- **Data:** `tools/skills_paragon.py` (called by `build_index.py`) writes `data/index/skills.json` (~1.6 MB, lazy-loaded by the view): 8 class trees from `SkillKit/<Class>.skl.json` (Paladin = `Paladin_NEW`): node position, links, level gate (`dwNodeRequiredPlayerLevel`), pick-one group (`nExclusiveGroupId`), kind (cluster root / hub / skill / upgrade); `GameBalance/SkillTreeRewards` gives each node its skill (`eType` 0, rank cap `dwMaxTalentRanks` 15) or upgrade (`eType` 1: `szPowerMod` hash → `Power arMods[].szName` → `dwModId` → StringList `Mod<id>_Name/_Description`, rank cap 3 or 5); skill and upgrade icons (`hIconNormal`, `hIconNormalOverride`); the script formulas of every skill power; `PowerFormulaTables` (Table 34 = SkillRankBonus).
 - **S15 tree shape:** 6 clusters gated by level (Barbarian 0 / 3 / 4 / 8 / 13 / 19), ~24 skills, each with 3 branches through hub nodes (own level gates) ending in pick-one upgrade groups; the 3 Ultimates are a pick-one group. The `*_Talent_*` passive rewards exist in the data but no tree node uses them (not shown).
 - **View:** SVG tree drawn from the data positions, pan (drag) / zoom (wheel, pinch, + / −, FIT); click adds a point, right-click / long-press / shift-click removes; reachability from the cluster roots, level gates, pick-one groups and rank caps enforced; removing a skill drops its now-unreachable upgrades (toast). Level slider (1–70: Lord of Hatred max level, user 18 Nov) prunes points above the level. Side list of skills, ranks and upgrades. Every upgrade node has a hover area and a tooltip: its effect, whether its branch is an **Upgrade (pick 1 of 2)** or a **Variant (pick 1 of 3, changes how the skill works)**, and the alternatives in that group with their text and level ("OR INSTEAD"). Tooltips render the game text with `{SF_n}` script formulas and rank scaling (`sLevel` → points + gear ranks); damage payloads, costs and cooldowns show `#` (live stats).
 - **Game look (18 Nov):** the tree uses the game's art, cut by `skills_paragon.py` into `data/icons/` (`skills.json.ui`): skill diamonds from `2DUI_SkillTree_ABCDFrames` (taken = red, available = silver, locked = grey; row 2 for the Ultimate cluster), cluster roots from `2DUI_SkillTreeV2` (red = open, dark = locked), upgrade squares (red / cream / dark) and hub diamonds (red when on a taken path, cream when open, dark). Each class's `2DUI_SkillTreeBackgroundMiddle_<Class>` panel (5120 px sheet, middle 54% cut to 1800 px tall, ~50 KB) is drawn behind the tree from `data/skilltree/<class>.webp`. Purchased links are red like the game's connectors. **Spacing:** `skLayout()` spreads the data positions (clusters ×1.25 / ×1.7 from the centre, skills ×1.85 from their root, branches ×1.8 from their skill); a skill's label goes above it when another skill sits right below. The first view starts at the top at a readable zoom (FIT shows all). The level slider only updates its number while dragging and redraws on release (it used to rebuild mid-drag).
@@ -169,6 +169,9 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 | `tools/build_index.py` | Builds `data/index/codex.json` |
 | `tools/runes_recipes.py` | Runes, runewords and recipes for the codex |
 | `tools/icons.py` | Links items, runes (and aspects) to inventory art; copies used icons to `data/icons/` |
+| `tools/skills_paragon.py` | Skill trees, Paragon boards, glyphs and skill tree art: writes `data/index/skills.json` and `data/skilltree/<class>.webp` (called by `build_index.py`) |
+| `data/index/skills.json` | Skills & Paragon data the `#/skills` view loads on first visit |
+| `data/skilltree/` | Each class's skill tree background panel (cut from `2DUI/`) |
 | `data/icons/` | The icons the site shows (`<image handle>.webp`) |
 | `webp_icons/` | Raw icon export, all atlases (not in git) |
 | `tools/webshot.swift` | Headless WebKit screenshot and JS-error check (macOS) |
