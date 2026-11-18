@@ -566,6 +566,19 @@ def main():
                 continue
             affs = [x["snoAffix"]["name"] for x in td.get("arTemperedAffixes") or [] if x.get("snoAffix")]
             affs = [a for a in affs if add_affix(a)]
+            for a in affs:
+                # 754 tempered affixes only carry a stand-in "Plus_All_Stats 100" line in the data (their real effect,
+                # e.g. "Bash hits twice", isn't in the files). Name them from the id and say the value is missing.
+                rec = affixes[a]
+                ln = rec.get("l") or []
+                if len(ln) == 1 and ln[0].get("a") == "Plus_All_Stats" and ln[0].get("f") == "100" and not rec.get("ph"):
+                    core = re.sub(r"_?Tier\d", "", re.sub(r"^Tempered_", "", a))
+                    mm = re.match(r"(.+?)_Skill_[A-Za-z]+_(.+)$", core)
+                    pr = re.match(r"PassiveRankBonus_.*_([A-Za-z]+)$", core)
+                    words = lambda x: re.sub(r"(?<=[a-z])(?=[A-Z])", " ", x).replace("_", " ").strip()
+                    label = (f"{words(mm.group(2))}: {words(mm.group(1))}" if mm else
+                             f"+Ranks to {words(pr.group(1))}" if pr else words(core))
+                    affixes[a] = {"t": f"{label} {{c_label}}(value not in the game data){{/c}}", "ph": 1, **({"c": rec["c"]} if rec.get("c") else {})}
             if not affs:
                 continue
             m = re.search(r"_Tier(\d)$", rid)
