@@ -1132,3 +1132,7 @@ html[data-sb-ip="900"] .pd__slot--unique { --spark: var(--spark-anc); --spark-hi
 .sk-tt-free { margin: 0 0 4px; color: #d6a8ff; font-size: 0.84rem; }
 .sk-tt-gear li { font-size: 0.84rem; }
 .sk-tt-gear b { color: var(--c-important); }
+.sk-syn { margin: 6px 0 0; padding: 6px 8px; border: 1px solid rgba(214, 168, 255, 0.35); border-radius: 4px; background: rgba(160, 90, 255, 0.08); font-size: 0.84rem; line-height: 1.6; }
+.sk-syn .mono { font-size: 0.66rem; letter-spacing: 0.12em; color: #d6a8ff; }
+.sk-syn-total { color: #f0dcff; font-size: 1rem; }
+.sk-li__syn { color: #d6a8ff !important; border: 1px solid rgba(214, 168, 255, 0.4); border-radius: 3px; padding: 0 4px; }

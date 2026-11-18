@@ -2877,7 +2877,27 @@
     // "X is now an Archfiend Skill" converts X; it isn't a bonus to every Archfiend Skill, so it doesn't count as a category hit.
     const hits = gp.filter((g) => { const t = g.plain.toLowerCase(), tc = t.replace(/is now an? [a-z ]+? skill/g, ""); return has(t, nm) || cats.some((c) => has(tc, c + " skill")) || (modName && has(t, modName.toLowerCase())); });
     const free = !!modName && gp.some((g) => has(g.plain.toLowerCase(), nm) && new RegExp(modName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + " (Variant|Upgrade)s? for free", "i").test(g.plain));
-    return { hits, free, cats };
+    // Synergy: damage numbers in the sentences of matching powers that apply to this skill (by name or category).
+    // xN% ... damage -> multiplier (they multiply together); +N% ... damage -> additive.
+    const mult = [], add = [];
+    for (const g of hits) for (const sent of g.plain.split(/(?<=[.!?])\s+/)) {
+      const t = sent.toLowerCase(), tc = t.replace(/is now an? [a-z ]+? skill/g, "");
+      if (!(has(t, nm) || cats.some((c) => has(tc, c + " skill")))) continue;
+      for (const m of sent.matchAll(/([x+])([0-9]+(?:\.[0-9]+)?)%\s+(?:increased\s+|bonus\s+|more\s+)?(?:[A-Za-z]+\s+){0,2}damage/gi)) {
+        (m[1].toLowerCase() === "x" ? mult : add).push({ v: +m[2] / 100, src: g.name });
+      }
+    }
+    return { hits, free, cats, mult, add };
+  }
+  const fmtPct = (v) => (Math.round(v * 1000) / 10).toString().replace(/\.0$/, "");
+  /** "x50% (Elegy) × x110% (Infernal Homunculus) = ×3.15 damage" + additive total, or "". */
+  function skSynergyHtml(gf, skillName) {
+    if (!gf || (!gf.mult.length && !gf.add.length)) return "";
+    const total = gf.mult.reduce((a, m) => a * (1 + m.v), 1), addSum = gf.add.reduce((a, m) => a + m.v, 0);
+    const parts = [];
+    if (gf.mult.length) parts.push(`${gf.mult.map((m) => `<b class="gt-mult">x${fmtPct(m.v)}%</b> <span class="hint">(${esc(m.src)})</span>`).join(" × ")}${gf.mult.length > 1 ? ` = <b class="sk-syn-total">×${(Math.round(total * 100) / 100).toFixed(2)}</b> damage <span class="hint">(x${fmtPct(total - 1)}%)</span>` : ""}`);
+    if (gf.add.length) parts.push(`${gf.add.map((m) => `<b>+${fmtPct(m.v)}%</b> <span class="hint">(${esc(m.src)})</span>`).join(" + ")}${gf.add.length > 1 ? ` = <b>+${fmtPct(addSum)}%</b>` : ""} additive`);
+    return `<p class="tt__power sk-syn"><span class="mono">GEAR SYNERGY ON ${esc(skillName.toUpperCase())}</span><br>${parts.join("<br>")}</p>`;
   }
   function skTooltip(cls, i) {
     const tree = SK && SK.trees[cls], n = tree && tree.nodes[+i];
@@ -2890,7 +2910,8 @@
     const isMod = n.k === "mod", m = isMod ? st.m[n.m] || {} : null;
     const body = Engine.render(isMod ? m.d : st.d, ctx);
     const gf = skGearFor(n.p, isMod ? m.n : null);
-    const gearHtml = gf.free || gf.hits.length ? `<div class="tt__sep"></div><p class="hint mono sk-tt-gearh" style="margin:0 0 4px">FROM YOUR GEAR${!isMod && gf.cats.length ? ` · ${esc(gf.cats.join(" · "))} skill` : ""}:</p>${gf.free ? `<p class="tt__power sk-tt-free">Granted for free by your gear.</p>` : ""}<ul class="tt__lines sk-tt-gear">${gf.hits.map((g) => `<li><b>${esc(g.name)}</b>: ${g.html}</li>`).join("")}</ul>` : "";
+    const syn = skSynergyHtml(gf, st.n);
+    const gearHtml = gf.free || gf.hits.length ? `<div class="tt__sep"></div><p class="hint mono sk-tt-gearh" style="margin:0 0 4px">FROM YOUR GEAR${!isMod && gf.cats.length ? ` · ${esc(gf.cats.join(" · "))} skill` : ""}:</p>${gf.free ? `<p class="tt__power sk-tt-free">Granted for free by your gear.</p>` : ""}<ul class="tt__lines sk-tt-gear">${gf.hits.map((g) => `<li><b>${esc(g.name)}</b>: ${g.html}</li>`).join("")}</ul>${syn}` : "";
     // Each skill has 3 branches; each ends in a pick-one group: 2 Upgrades (pick 1 of 2) or 3 Variants (pick 1 of 3).
     let group = "";
     if (isMod && n.ex != null) {
@@ -3033,7 +3054,8 @@
     for (const x of taken) { const k = x.n.p; if (!bySkill.has(k)) bySkill.set(k, []); bySkill.get(k).push(x); }
     const list = [...bySkill].map(([p, xs]) => {
       const st = SK.skills[p] || {}, sk = xs.find((x) => x.n.k === "skill"), g = gear[(st.n || "").toLowerCase()] || 0;
-      return `<li><span class="sk-li__name">${st.ic ? itemIcon(st.ic, "sk-li__ic") : ""}${esc(st.n || p)}</span> <span class="mono">${sk ? `RANK ${sk.p}${g ? " + " + g : ""}` : "—"}</span>
+      const gfL = skGearFor(p, null), totL = gfL.mult.reduce((a, m) => a * (1 + m.v), 1);
+      return `<li><span class="sk-li__name">${st.ic ? itemIcon(st.ic, "sk-li__ic") : ""}${esc(st.n || p)}</span> <span class="mono">${sk ? `RANK ${sk.p}${g ? " + " + g : ""}` : "—"}</span>${gfL.mult.length ? ` <span class="sk-li__syn mono" title="${esc(gfL.mult.map((m) => `x${fmtPct(m.v)}% ${m.src}`).join(" × "))}">GEAR ×${(Math.round(totL * 100) / 100).toFixed(2)}</span>` : ""}
         ${xs.filter((x) => x.n.k === "mod").map((x) => `<span class="sk-li__mod" data-key="skill:${esc(cls)}:${x.i}">${esc(skNodeName(x.n))} <span class="mono">${x.p}/${x.n.max}</span></span>`).join("")}</li>`;
     }).join("");
     root.innerHTML = `
