@@ -1391,6 +1391,27 @@
     return t.tiers.find((x) => x.id.endsWith("_0" + state.sandbox.gt)) || t.tiers[t.tiers.length - 1];
   }
   const runeById = (id) => ((Engine.codex.runes || {}).runes || []).find((r) => r.id === id);
+  /** Rune rules for socket `idx` of `slot` (Vessel of Hatred rules): runes and gems can't share an item;
+   * a runeword is one Ritual + one Invocation; each rune can be used once in the build; at most 2 runewords.
+   * Returns { why } when no rune may go here, else { kind (required kind or ""), used (rune ids already
+   * socketed elsewhere), otherRune }. */
+  function runeRules(slot, idx, L) {
+    const own = socketsOf(slot, L), other = own.filter((v, i) => i !== idx && v);
+    const otherRune = other.find((v) => v.startsWith("r:"));
+    if (other.some((v) => v.startsWith("g:"))) return { why: "Not with a gem in the other socket: an item holds gems or a runeword, not both.", used: new Set() };
+    const used = new Set(), withRunes = new Set();
+    for (const [sp, arr] of Object.entries(state.sandbox.sock)) {
+      if (!socketInfo(sp, L).n) continue;
+      socketsOf(sp, L).forEach((v, i) => {
+        if (!v.startsWith("r:") || (sp === slot && i === idx)) return;
+        used.add(v.slice(2));
+        if (sp !== slot) withRunes.add(sp);
+      });
+    }
+    if (!otherRune && withRunes.size >= 2) return { why: `2 runewords are already equipped (${[...withRunes].map(slotNameOf).join(", ")}): the most a character can have.`, used };
+    const mate = otherRune && runeById(otherRune.slice(2));
+    return { kind: mate ? (mate.kind === "Ritual" ? "Invocation" : "Ritual") : "", used, otherRune };
+  }
   /** Sockets on a build slot: { n, target } (n 0 when the slot is empty or can't hold sockets). */
   function socketInfo(spec, L) {
     const [kind, a, b] = spec.split(":");
@@ -1512,8 +1533,14 @@
     if (spec.startsWith("s|")) {
       const [, slot, idx] = spec.split("|"), L = sbLayout(), { n, target } = socketInfo(slot, L);
       const gems = gemTypes().map((t) => { const g = gemOf(t.type); return { value: "g:" + t.type, name: g.name, sub: `Gem · ${GEM_TARGETS[target]}: ${Engine.renderText(g.eff[target] || "").plain}`, icon: g.ic, rarity: t.tiers.length > 1 ? "gem" : "mythic", tip: `gem:${t.type}|${target}` }; });
-      const runes = n === 2 ? ((Engine.codex.runes || {}).runes || []).filter((r) => !r.legacy).map((r) => ({ value: "r:" + r.id, name: r.name, sub: `Rune of ${r.kind} · ${r.kind === "Ritual" ? "+" : "needs "}${r.offering} Offering · ${Engine.renderText(r.t || "").plain}`, icon: r.ic, rarity: "rune", tip: `rune:${r.id}|${slot}@${idx}` })) : [];
-      return [{ value: "x", name: "Empty socket", sub: "Remove what's in this socket", icon: "", rarity: "common" }, ...gems, ...runes];
+      const rule = runeRules(slot, +idx, L);
+      const runes = n === 2 && !rule.why ? ((Engine.codex.runes || {}).runes || [])
+        .filter((r) => !r.legacy && !rule.used.has(r.id) && (!rule.kind || r.kind === rule.kind))
+        .map((r) => ({ value: "r:" + r.id, name: r.name, sub: `Rune of ${r.kind} · ${r.kind === "Ritual" ? "+" : "needs "}${r.offering} Offering · ${Engine.renderText(r.t || "").plain}`, icon: r.ic, rarity: "rune", tip: `rune:${r.id}|${slot}@${idx}` })) : [];
+      const info = (sub) => ({ value: "info", name: "Runes", sub, icon: "", rarity: "common" });
+      const notes = n !== 2 ? [] : rule.why ? [info(rule.why)]
+        : [info(`${rule.kind ? `Only Runes of ${rule.kind}: the other socket holds a Rune of ${rule.kind === "Ritual" ? "Invocation" : "Ritual"}. ` : ""}${rule.used.size ? `Runes already in the build aren't listed (${[...rule.used].map((id) => (runeById(id) || {}).name).join(", ")}): each rune can be used once.` : "Each rune can be used once; at most 2 runewords."}`)];
+      return [{ value: "x", name: "Empty socket", sub: "Remove what's in this socket", icon: "", rarity: "common" }, ...(rule.otherRune ? [] : gems), ...notes, ...runes];
     }
     const cls = sandboxClass();
     const [kind, a] = spec.split(":");
@@ -1574,7 +1601,16 @@
   function applyPick(spec, value) {
     if (spec.startsWith("s|")) {
       const [, slot, i] = spec.split("|"), L = sbLayout();
+      if (value === "info") return;
       const cur = socketsOf(slot, L);
+      if (value.startsWith("r:")) {
+        const rule = runeRules(slot, +i, L), r = runeById(value.slice(2));
+        const why = rule.why || (rule.used.has(r.id) && `${r.name} is already socketed: each rune can be used once.`)
+          || (rule.kind && r.kind !== rule.kind && `The other socket holds a Rune of ${r.kind}: pair it with a Rune of ${rule.kind}.`);
+        if (why) { toast(why); return; }
+      } else if (value.startsWith("g:") && cur.some((v, j) => j !== +i && v.startsWith("r:"))) {
+        toast("Not with a rune in the other socket: an item holds gems or a runeword, not both."); return;
+      }
       cur[+i] = value === "x" ? "" : value;
       state.sandbox.sock[slot] = cur;
       if (!cur.some(Boolean)) delete state.sandbox.sock[slot];
@@ -1660,6 +1696,7 @@
       search.addEventListener("input", draw);
       el.addEventListener("click", (e) => {
         const v = e.target.closest("[data-pval]");
+        if (v && v.dataset.pval === "info") return;
         if (v) { closePicker(); applyPick(pickerSpec, v.dataset.pval); return; }
         if (e.target === el || e.target.closest("[data-pclose]")) closePicker();
       });
@@ -1839,6 +1876,19 @@
           ${pdSlots.map(cellHTML).join("")}</div>
         <ul class="pd__list">${pdSlots.map((d) => `<li class="${d.blocked ? "is-blocked" : d.name ? "pd__li--" + d.rar : "is-empty"}"><span class="mono">${esc(d.label)}</span> ${d.blocked ? "held by the 2H weapon" : d.name ? esc(d.name) : "empty"}</li>`).join("")}</ul></div>`;
     })() : "";
+    // Build-wide rune problems (old builds, links): a rune used twice, more than 2 runewords.
+    function runeProblems() {
+      const seen = new Map(), slots = new Set();
+      for (const d of pdSlots) {
+        if (!socketInfo(d.spec, L).n) continue;
+        socketsOf(d.spec, L).forEach((v) => { if (v.startsWith("r:")) { seen.set(v, (seen.get(v) || 0) + 1); slots.add(d.label); } });
+      }
+      const dup = [...seen].filter(([, q]) => q > 1).map(([v]) => (runeById(v.slice(2)) || {}).name);
+      const out = [];
+      if (dup.length) out.push(`${dup.join(", ")} used more than once: each rune can be used once.`);
+      if (slots.size > 2) out.push(`${slots.size} items hold runes (${[...slots].join(", ")}): a character can have at most 2 runewords.`);
+      return out.map((t) => `<p class="sb-note mono">RUNES // ${esc(t)}</p>`).join("");
+    }
     // Sockets panel: gem quality, each socketed slot's gems / runeword, and gem totals.
     function socketsHTML() {
       const ruby = (gemTypes().find((t) => t.type === "Ruby") || { tiers: [] }).tiers;
@@ -1858,7 +1908,8 @@
         const runes = lines.filter((x) => x && x.rune).map((x) => x.rune);
         const rit = runes.filter((r) => r.kind === "Ritual"), inv = runes.filter((r) => r.kind === "Invocation");
         let rw = "";
-        if (rit.length === 1 && inv.length === 1) {
+        if (runes.length && lines.some((x) => x && !x.rune)) rw = `<li class="sk__warn mono">Gems and runes can't share an item: remove one.</li>`;
+        else if (rit.length === 1 && inv.length === 1) {
           const a = rit[0], b = inv[0];
           rw = `<li class="sk__rw"><span class="sk__name">Runeword: ${esc(a.phrase || a.name)} ${esc(b.phrase || b.name)}</span>
             <span class="gt-rune-ritual">When:</span> ${Engine.renderText(a.t).html} <span class="mono hint">(+${a.offering})</span>
@@ -1898,7 +1949,7 @@
           <label class="sk__gt"><span class="mono">GEM QUALITY</span><select class="input mono" data-gt aria-label="Gem quality">${tierOpts}</select></label></div>
         ${rows ? `<ul class="sk__slots">${rows}</ul>` : `<p class="hint">Equip an item to socket it.</p>`}
         ${tot ? `<p class="sb-build__sub mono">GEM TOTALS</p><ul class="sk__tot">${tot}</ul>` : ""}
-        <p class="hint">Click a socket under an item to add a gem or rune. Helm, Chest, Pants and 2H weapons have 2 sockets; 1H weapons, off-hands, the Amulet and Rings 1; Gloves and Boots none. A gem's bonus depends on the item: weapon (an x damage multiplier: these multiply with each other), armor, including shields (a main stat, barrier, healing) or jewelry (resistance). Runes need a 2-socket item: one Rune of Ritual plus one Rune of Invocation make a runeword (see Runes &amp; Recipes).</p></div>`;
+        ${runeProblems()}<p class="hint">Click a socket under an item to add a gem or rune. Helm, Chest, Pants and 2H weapons have 2 sockets; 1H weapons, off-hands, the Amulet and Rings 1; Gloves and Boots none. A gem's bonus depends on the item: weapon (an x damage multiplier: these multiply with each other), armor, including shields (a main stat, barrier, healing) or jewelry (resistance). Runes need a 2-socket item: one Rune of Ritual plus one Rune of Invocation make a runeword (see Runes &amp; Recipes). An item holds gems or a runeword, not both; each rune can be used once; at most 2 runewords.</p></div>`;
     }
     const build = `<section class="sb-build">
       <div class="sb-build__head"><h3 class="sb-loadout__title mono">BUILD // ${esc(cls || "any class")}</h3>
