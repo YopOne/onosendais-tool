@@ -36,7 +36,7 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 - **After a data rebuild:** commit the new `data/index/codex.json` too, or the live site keeps the old data.
 - **Browser testing:** `tools/webshot.swift` is a headless WebKit tool that loads a page, runs JS, reports JS errors and saves a screenshot (usage at the top of the file). Python's `http.server` lets WebKit cache `app.js` between runs, so when re-testing edits serve with a `Cache-Control: no-store` header. `requestAnimationFrame` and CSS transitions don't run in its hidden window.
 
-## Game rules used (confirmed by the user, 17 Nov)
+## Game rules used (confirmed by the user, 17–18 Nov)
 
 | Rule | Where it shows |
 |------|----------------|
@@ -44,6 +44,7 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 | A 900 unique is made in the Horadric Cube from a **900 white item with no affixes** (+ 1 Enhanced, 10 Raw Primordial Dust). | Recipes tab, "Horadric Cube: Unique → Mythic", step 1 |
 | Only a **900 unique** can become a Mythic: unique + **5 Resplendent Sparks** in the Cube. It keeps every affix, **promoted to its maximum value** (the unique power too), then gets +30% Unique Potency and the Mythic bonus lines. | Recipes tab step 2; crafted Mythic view in Database and Sandbox |
 | A **legendary aspect** gets **150%** on an amulet and **200%** on a two-handed weapon. Matches `flLegendaryAffixAmuletBonus` 0.5 and `flLegendaryAffixTwoHandBonus` 1 in `Global/globals.glo.json`. | Sandbox AMULET ×1.5 / 2H ×2 buttons per aspect; IMPRINT line in aspect tooltips |
+| A **unique power on an amulet** also gets the amulet ×1.5, and a crafted Mythic multiplies that by **×1.3** Unique Potency. Confirmed in game (18 Nov): crafted Mythic **Moloch's Beating Flame**, max 20% → **39%** (20 × 1.5 × 1.3); crafted Mythic **Elegy** (1H sword), max 50% → **65%** (50 × 1.3). | Every view: normal Moloch's reads [19.5–30]% (shown rounded as 20–30); AMULET line in amulet tooltips |
 | Only legendary aspects can be imprinted: salvage a legendary at the Blacksmith to save its aspect to the **Codex of Power**, then imprint it on any **non-unique** item. **Unique powers can't be imprinted.** | Database and Aspect Codex subtitles; aspect tooltips |
 
 ## Built so far ✅
@@ -68,7 +69,7 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 **Formula and text engine (`app.js`)**
 - Evaluates `Affix_Value_N` rolls, static values, links to other affixes, `PowerTag` / `SF_N` script formulas and legendary rank scaling.
 - Evaluates GameBalance stat formulas, including `IPower()` (item power), `GetTotalAffixBonus()` (= 1, a plain roll) and the Sacred / Ancestral scalars.
-- **Affix bonuses:** legendary aspects get the slot bonus; unique powers get Mythic Unique Potency (×1.3). Values flagged `bIgnoreAffixBonuses` get neither, and formulas that already apply potency aren't boosted twice.
+- **Affix bonuses:** legendary aspects get the slot bonus; unique powers get the amulet ×1.5 when on an amulet, times Mythic Unique Potency (×1.3). Values flagged `bIgnoreAffixBonuses` get neither, and formulas that already apply potency aren't boosted twice.
 - Renders colour tags, conditionals, plural forms and `[expr|fmt|]` number formatting (e.g. `x[30 - 50]%`). Stat templates also accept the game's `{vALUE}` spelling and a bracketed `{VALUE1}`.
 - 1,366 of 1,368 effect lines render cleanly. The other 2 have typos in the game data itself.
 
@@ -114,7 +115,7 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 
 | # | Issue | Status |
 |---|-------|--------|
-| 2 | **Mythic rules partly assumed.** Confirmed: item power 900, all affixes (incl. the unique power) promoted to max, the 5 Resplendent Sparks recipe. Still open: (b) whether a Mythic gets all 3 bonus lines or 1 of them (the 3 affixes have equal weight 100, but Unique Potency is in a different category from the other two); (c) ×1.3 multiplying rather than adding is inferred from 2 explicit formulas. | Compare one crafted Mythic in game |
+| 2 | **Mythic rules partly assumed.** Confirmed: item power 900, all affixes (incl. the unique power) promoted to max, the 5 Resplendent Sparks recipe. Still open: (b) whether a Mythic gets all 3 bonus lines or 1 of them (the 3 affixes have equal weight 100, but Unique Potency is in a different category from the other two); (c) whether a unique power on a **2H weapon** gets the ×2 that aspects get (no in-game example yet; currently not applied). ×1.3 multiplying is now confirmed (Elegy, Moloch's Beating Flame). | Compare a crafted 2H Mythic in game |
 | 3 | **16 stat lines show `#`:** health-scaled stats (Thorns, flat Maximum Life, Life On Hit, Life per 5 Seconds) and `S04_OverpowerDamage`, which has no value in the data. Down from 474 before GameBalance parsing. | Expected |
 | 4 | **About 50 effect values show `#`:** they depend on live character stats (`Owner.*`, e.g. weapon damage). | Expected: can't be computed offline |
 
