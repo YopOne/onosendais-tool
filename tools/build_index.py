@@ -547,6 +547,58 @@ def main():
             if add_affix(aid):
                 talisman["pool"].append(aid)
 
+    # ---------- Tempering manuals (Recipe/Tempering_*: Blacksmith, adds a 5th affix) ----------
+    # temperingData: gbidItemLabelGroup (Weapons/Offensive/...) -> allowed item labels via
+    # GameBalance/TemperedItemLabelGroups; arTemperedAffixes = the affixes the manual can roll.
+    temper = {"groups": {}, "manuals": []}
+    recipe_dir = os.path.join(meta_dir, "Recipe")
+    tg_path = os.path.join(meta_dir, "GameBalance", "TemperedItemLabelGroups.gam.json")
+    if os.path.exists(tg_path):
+        for e in load(tg_path)["ptData"][0]["tEntries"]:
+            temper["groups"][e["tHeader"]["szName"]] = e.get("arAllowedItemLabels") or []
+    cls_prefix = {"Barb": "Barbarian", "Druid": "Druid", "Necro": "Necromancer", "Paladin": "Paladin", "Rogue": "Rogue",
+                  "Sorc": "Sorcerer", "Spiritborn": "Spiritborn", "Warlock": "Warlock"}
+    if have_affix:
+        for path in sorted(glob.glob(os.path.join(recipe_dir, "Tempering_*.rcp.json"))):
+            rid = os.path.basename(path)[: -len(".rcp.json")]
+            td = load(path).get("temperingData")
+            if not td:
+                continue
+            affs = [x["snoAffix"]["name"] for x in td.get("arTemperedAffixes") or [] if x.get("snoAffix")]
+            affs = [a for a in affs if add_affix(a)]
+            if not affs:
+                continue
+            m = re.search(r"_Tier(\d)$", rid)
+            body = rid[len("Tempering_"):]
+            cls = class_list(td.get("usableByClass")) or ([cls_prefix[p] for p in cls_prefix if body.startswith(p + "_")][:1])
+            temper["manuals"].append({
+                "id": rid, "name": strings(stl_dir, "Recipe_" + rid).get("Name") or body.replace("_", " "),
+                "g": (td.get("gbidItemLabelGroup") or {}).get("name", ""), "tier": int(m.group(1)) if m else 1,
+                "c": cls, "a": affs,
+            })
+
+    # ---------- Transfiguration (Horadric Cube: extra stats, then the item is locked) ----------
+    transfig = []
+    if have_affix:
+        for path in sorted(glob.glob(os.path.join(affix_dir, "X2_Transfiguration_*.aff.json"))):
+            aid = os.path.basename(path)[: -len(".aff.json")]
+            raw = load(path)
+            if add_affix(aid):
+                transfig.append({"id": aid, "l": raw.get("arAllowedItemLabels") or [], "c": class_list(raw.get("fAllowedForPlayerClass"))})
+    # ---------- Random gear affix pool (S04_*: rolled on legendaries and on uniques beyond their fixed ones) ----------
+    affix_pool = []
+    if have_affix:
+        for path in sorted(glob.glob(os.path.join(affix_dir, "S04_*.aff.json"))):
+            aid = os.path.basename(path)[: -len(".aff.json")]
+            raw = load(path)
+            labels = raw.get("arAllowedItemLabels") or []
+            if raw.get("eAffixType") != 2 or not labels:
+                continue
+            if add_affix(aid):
+                affix_pool.append({"id": aid, "l": labels, "c": class_list(raw.get("fAllowedForPlayerClass"))})
+    print(f"Affix pool: {len(affix_pool)} random gear affixes")
+    print(f"Tempering: {len(temper['manuals'])} manuals, {len({a for m in temper['manuals'] for a in m['a']})} affixes | Transfiguration: {len(transfig)} affixes")
+
     # ---------- Power script formulas (PowerTag refs) ----------
     powers = {}
     pending = set(powertags)
@@ -565,6 +617,7 @@ def main():
     used = {a for r in items for a in r.get("imp", []) + r.get("stats", []) + ([r["power"]] if r.get("power") else [])}
     used |= {a["id"] for a in aspects}
     used |= {t["a"] for x in talisman["sets"] for t in x["tiers"]} | set(talisman["pool"])
+    used |= {a for m in temper["manuals"] for a in m["a"]} | {x["id"] for x in transfig} | {x["id"] for x in affix_pool}
     out_affixes = {k: v for k, v in affixes.items() if v and k in used}
 
     # ---------- Mythic bonus affixes (S14_Mythic_*: Unique Potency, CDR, +All Skills) ----------
@@ -611,6 +664,18 @@ def main():
             m = re.search(r'"%s":\s*([-0-9.eE]+)' % key, txt)
             if m:
                 globals_out[key] = float(m.group(1))
+        # Greater Affix bonus (tGreaterAffixSpecifier), masterworking cap and capstone (tMasterworkData).
+        for out_key, pat in (("gaBonus", r'"flAffixPowerBonus":\s*([-0-9.eE]+)'), ("gaMinIp", r'"dwMinimumItemPower":\s*([0-9]+)'),
+                             ("mwCap", r'"nRefinementCap":\s*([0-9]+)'), ("mwCapstone", r'"flCapstoneBonus":\s*([-0-9.eE]+)')):
+            m = re.search(pat, txt)
+            if m:
+                globals_out[out_key] = float(m.group(1))
+    # Masterworking gold costs (Recipe_Masterworking_*: per level, capstone, capstone reroll).
+    for out_key, rname in (("mwGoldLevel", "Recipe_Masterworking_Refinement"), ("mwGoldCapstone", "Recipe_Masterworking_Finish"),
+                           ("mwGoldReroll", "Recipe_Masterworking_Reroll")):
+        p = os.path.join(meta_dir, "Recipe", rname + ".rcp.json")
+        if os.path.exists(p):
+            globals_out[out_key] = load(p).get("nCost", 0)
 
     drops = attach_drops(items, os.path.join(ROOT, "data", "sources", "boss_loot.json"))
     runes = extract_runes(item_dir, stl_dir, os.path.join(args.d4data, "json", "base", "meta", "Recipe"),
@@ -671,6 +736,9 @@ def main():
         "paperdoll": paperdoll,
         "gems": gems,
         "itemTypes": item_types,
+        "temper": temper,
+        "transfig": transfig,
+        "affixPool": affix_pool,
     }
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)

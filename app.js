@@ -234,8 +234,9 @@
       RandomInt: (c, a) => { const v = roll(c, a[0], a[1]); return v === UNKNOWN ? v : Math.round(v); },
       SharedRandomFloat: (c) => rollT(c.world),
       IPower: (c) => c.world.ip || DEFAULT_IP,
-      // Greater-affix / masterwork multipliers on a roll: a plain drop has none.
-      GetTotalAffixBonus: () => 1,
+      // Greater Affix / masterwork / capstone multiplier on one affix (Sandbox item mods); a plain drop has 1.
+      GetTotalAffixBonus: (c) => c.world.affixMult || 1,
+      AffixMult: (c) => c.world.affixMult || 1,
       SacredAffixScalarOffense: () => glob("flSacredAffixScalarOffense"),
       AncestralAffixScalarOffense: () => glob("flAncestralAffixScalarOffense"),
       SacredAffixScalarDefense: () => glob("flSacredAffixScalarDefense"),
@@ -472,7 +473,8 @@
     /** Expand an AttributeDescriptions stat line into a template we can render. */
     function statLineTemplate(line, ip) {
       const f = line.s ? null : line.f || gbFormula(line.g, ip); // s: scaled by player health in game
-      const val = f ? `(${f})` : "__unknown__";
+      // Stat formulas that don't call GetTotalAffixBonus() get the item-mod multiplier applied outside.
+      const val = f ? (/GetTotalAffixBonus/i.test(f) ? `(${f})` : `((${f}) * AffixMult())`) : "__unknown__";
       const label = line.p || "Skill";
       // Inside [..] any {VALUE}/{VALUE1}/{VALUE2} is the number (the data also spells it {vALUE});
       // outside, {VALUE1} is the skill/tag label.
@@ -607,7 +609,7 @@
     mode: null,
     activeCard: null,
     pins: [],
-    sandbox: { t: 1, rank: 16, ip: 850, mythic: [], slot: {}, charms: [], sets: [], leg: {}, sock: {}, gt: 9 }, // slot: aspect key -> "amulet" | "2h"
+    sandbox: { t: 1, rank: 16, ip: 850, mythic: [], slot: {}, charms: [], sets: [], leg: {}, sock: {}, mods: {}, gt: 9 }, // slot: aspect key -> "amulet" | "2h"
     view: { mythic: false, ip: IP.standard }, // Database view: Standard 850 / Ancestral 900 / crafted Mythic
     curation: null,
   };
@@ -632,7 +634,30 @@
   /** "amulet" | "2h" | null: which aspect slot bonus an item's slot gets. */
   const bonusSlot = (it) => ({ Amulet: "amulet", "2H Weapon": "2h" })[it.slot || SLOT_MAP[it.typeId]] || null;
 
-  function renderItem(it, base, crafted) {
+  /* ---------- Item mods (Sandbox): Greater Affixes, tempering, masterworking, Transfiguration ----------
+   * state.sandbox.mods = { "<record key>": { ga: [bool per base affix], temper: { m: manual id, a: affix id } | null,
+   *   mw: 0..25, cap: base affix index | -1, tf: [Transfiguration affix ids, max 5], lock: bool } }
+   * One affix's value × (1 + GA 0.25) × (1 + masterwork level × 1–3%) × (1 + capstone 0.5); bonuses multiply
+   * (assumed; user's choice 18 Nov). Masterwork levels roll 1–3% each: the Sandbox's roll quality picks the point. */
+  const glb = () => (Engine.codex && Engine.codex.globals) || {};
+  const MW_CAP = () => glb().mwCap || 25;
+  const TF_MAX = 5;
+  const mwPerLevel = (t) => 0.01 + 0.02 * (t == null ? 1 : t);
+  const modsOf = (key) => (state.sandbox.mods || {})[key] || null;
+  const hasMods = (m) => Boolean(m && ((m.ga || []).some(Boolean) || m.temper || m.mw || (m.tf || []).length || m.lock || (m.rand || []).some(Boolean)));
+  /** An item has 4 base affixes: its fixed ones from the data, the rest rolled from the S04 pool (picked in the editor). */
+  const BASE_AFFIXES = 4;
+  const baseAffixes = (it, m) => [...(it.stats || []), ...((m && m.rand) || []).slice(0, Math.max(0, BASE_AFFIXES - (it.stats || []).length))]; // "" = rolled slot not chosen (keeps indexes)
+  function affixMultFor(m, i, t) {
+    if (!m) return 1;
+    let x = 1;
+    if (m.ga && m.ga[i]) x *= 1 + (glb().gaBonus ?? 0.25);
+    if (m.mw) x *= 1 + m.mw * mwPerLevel(t);
+    if (m.cap === i && m.mw >= MW_CAP()) x *= 1 + (glb().mwCapstone ?? 0.5);
+    return x;
+  }
+
+  function renderItem(it, base, crafted, mods) {
     const orig = it.rarity === "Mythic";
     const c = Boolean(crafted && !orig);
     // Mythics are always item power 900. A crafted Mythic is made in the Cube from the same unique at 900
@@ -647,8 +672,16 @@
       crafted: c,
       power: it.power ? Engine.renderAffix(it.power, pw)[0] : null,
       imp: (it.imp || []).flatMap((a) => Engine.renderAffix(a, sw)),
-      stats: (it.stats || []).flatMap((a) => Engine.renderAffix(a, sw)),
+      stats: (mods ? baseAffixes(it, mods) : it.stats || []).flatMap((a, i) => {
+        if (!a) return [];
+        if (!mods) return Engine.renderAffix(a, sw);
+        const ga = Boolean(mods.ga && mods.ga[i]), cap = mods.cap === i && mods.mw >= MW_CAP();
+        return Engine.renderAffix(a, { ...sw, affixMult: affixMultFor(mods, i, base.t) }).map((l) => ({ ...l, ga, cap }));
+      }),
       mythicLines: c ? Engine.renderMythicBonuses() : [],
+      temper: mods && mods.temper ? Engine.renderAffix(mods.temper.a, sw) : [],
+      transfig: mods ? (mods.tf || []).flatMap((a) => Engine.renderAffix(a, sw)) : [],
+      mods: mods && hasMods(mods) ? mods : null,
     };
   }
 
@@ -824,7 +857,9 @@
       : `${r.classes.length === 1 ? r.classes[0] + " " : ""}${rendered.crafted ? "Mythic Unique" : r.rarity} ${r.type}`;
     const parts = [];
     if (rendered.imp.length) parts.push(`<ul class="tt__lines tt__lines--imp">${rendered.imp.map((l) => `<li>${l.html}</li>`).join("")}</ul>`);
-    if (rendered.stats.length) parts.push(`<ul class="tt__lines">${rendered.stats.map((l) => `<li>${l.html}</li>`).join("")}</ul>`);
+    if (rendered.stats.length) parts.push(`<ul class="tt__lines">${rendered.stats.map((l) => `<li${l.ga || l.cap ? ` class="${l.ga ? "tt__ga" : ""}${l.cap ? " tt__cap" : ""}"` : ""}>${l.html}${l.ga ? ' <span class="tt__badge tt__badge--ga" title="Greater Affix: +25%">GA</span>' : ""}${l.cap ? ' <span class="tt__badge tt__badge--cap" title="Masterwork capstone: +50%">CAPSTONE</span>' : ""}</li>`).join("")}</ul>`);
+    if ((rendered.temper || []).length) parts.push(`<ul class="tt__lines tt__lines--temper">${rendered.temper.map((l) => `<li>${l.html}</li>`).join("")}</ul>`);
+    if ((rendered.transfig || []).length) parts.push(`<ul class="tt__lines tt__lines--transfig">${rendered.transfig.map((l) => `<li>${l.html}</li>`).join("")}</ul>`);
     if (rendered.mythicLines && rendered.mythicLines.length) parts.push(`<ul class="tt__lines tt__lines--mythic">${rendered.mythicLines.map((l) => `<li>${l.html}</li>`).join("")}</ul>`);
     if (rendered.power) parts.push(`<div class="tt__power-wrap"><p class="tt__power">${rendered.power.html}</p></div>`);
     if (r.flavor) parts.push(`<p class="tt__flavor">${esc(r.flavor)}</p>`);
@@ -838,6 +873,10 @@
         ? ["SLOT BONUS", `Mythic ${bonusSlot(r.raw) === "2h" ? "2H weapon: unique power ×2" : "amulet: unique power ×1.5"}, included above`] : null,
       r.kind === "aspect" && (r.aslots || []).length ? ["SLOTS", r.aslots.join(", ") + (r.aslots.includes("Weapon") ? " (2H weapon ×2)" : "") + (r.aslots.includes("Amulet") ? " · amulet ×1.5" : "")] : null,
       r.kind === "aspect" ? ["IMPRINT", "On a rare item in an allowed slot via the Codex of Power (salvage a legendary at the Blacksmith to save it), or over the aspect of a legendary in that slot"] : null,
+      rendered.mods && rendered.mods.temper ? ["TEMPERED", (temperManual(rendered.mods.temper.m) || {}).name ? `${temperManual(rendered.mods.temper.m).name} (Tier ${temperManual(rendered.mods.temper.m).tier}, Blacksmith)` : "Blacksmith"] : null,
+      rendered.mods && rendered.mods.mw ? ["MASTERWORK", `${rendered.mods.mw} / ${MW_CAP()}: base affixes ×${(1 + rendered.mods.mw * mwPerLevel(state.sandbox.t)).toFixed(2)} (1–3% per level, range ×${(1 + rendered.mods.mw * 0.01).toFixed(2)}–×${(1 + rendered.mods.mw * 0.03).toFixed(2)})`] : null,
+      rendered.mods && (rendered.mods.tf || []).length ? ["TRANSFIGURED", `${rendered.mods.tf.length} stat${rendered.mods.tf.length > 1 ? "s" : ""} from the Horadric Cube`] : null,
+      rendered.mods && rendered.mods.lock ? ["LOCKED", "Transfigured: nothing on this item can be changed any more"] : null,
       rendered.crafted ? ["MYTHIC", "Crafted: base stats at max, unique power +Unique Potency. Only 1 crafted Mythic can be equipped at a time"] : null,
       r.kind === "item" && r.rarity === "Mythic" ? ["EQUIP", "Doesn't count toward the 1 crafted Mythic limit (dropped Iconic Mythics and random Mythics from the Blacksmith or Jeweler don't)"] : null,
       ["ID", r.id],
@@ -911,6 +950,7 @@
   }
 
   function showTooltip(card) {
+    if (modsKey && !card.closest("#mods")) return; // the item editor is open: no tooltips from the page behind it
     const tt = tooltipFor(card.dataset.key, Boolean(card.closest("#view-sandbox, #picker")));
     if (!tt) return;
     if (state.activeCard && state.activeCard !== card) state.activeCard.classList.remove("is-active");
@@ -1077,6 +1117,36 @@
   const PIN_KEY = "onosendai.pins";
   const SB_KEY = "onosendai.sandbox";
 
+  /** Item mods in a share link: key~GA bits~manual.affix~masterwork~capstone~tf1.tf2~L, comma-separated. */
+  const encodeMods = (all) => Object.entries(all).map(([k, m]) => [k, (m.ga || []).map((x) => (x ? 1 : 0)).join(""),
+    m.temper ? m.temper.m + "." + m.temper.a : "", m.mw || 0, m.cap ?? -1, (m.tf || []).join("."), m.lock ? "L" : "", (m.rand || []).join(".")].join("~")).join(",");
+  function parseMods(match) {
+    const out = {};
+    if (!match) return out;
+    for (const x of decodeURIComponent(match[1]).split(",")) {
+      const [k, ga, tp, mw, cap, tf, lk, rd] = x.split("~");
+      const [tm, ta] = (tp || "").split(".");
+      out[k] = { ga: [...(ga || "")].map((c) => c === "1"), temper: tm && ta ? { m: tm, a: ta } : null, mw: +mw || 0, cap: cap === "" || cap == null ? -1 : +cap, tf: tf ? tf.split(".") : [], lock: lk === "L", rand: rd ? rd.split(".") : [] };
+    }
+    return out;
+  }
+  /** Drop mods for unknown items / affixes (old links, a data rebuild). */
+  function cleanMods(all) {
+    const out = {};
+    if (!all || typeof all !== "object") return out;
+    const aff = Engine.codex.affixes || {};
+    for (const [k, m] of Object.entries(all)) {
+      if (!state.byId.has(k) || !m) continue;
+      const c = { ga: Array.isArray(m.ga) ? m.ga.map(Boolean) : [], temper: null, mw: Math.max(0, Math.min(MW_CAP(), +m.mw || 0)),
+        cap: Number.isInteger(m.cap) ? m.cap : -1, tf: (Array.isArray(m.tf) ? m.tf : []).filter((a) => aff[a]).slice(0, TF_MAX), lock: Boolean(m.lock),
+        rand: (Array.isArray(m.rand) ? m.rand : []).slice(0, BASE_AFFIXES).map((a) => (aff[a] ? a : "")) };
+      if (m.temper && temperManual(m.temper.m) && aff[m.temper.a]) c.temper = { m: m.temper.m, a: m.temper.a };
+      if (!c.tf.length) c.lock = false;
+      if (hasMods(c)) out[k] = c;
+    }
+    return out;
+  }
+
   function loadPins() {
     const fromHash = /[?&]pins=([^&]*)/.exec(location.hash);
     if (fromHash) {
@@ -1105,6 +1175,7 @@
       state.sandbox.sock = {};
       if (so) for (const x of decodeURIComponent(so[1]).split(",")) { const [sp, ...v] = x.split("~"); if (/^(g|w):/.test(sp)) state.sandbox.sock[sp] = v.map((y) => (/^(g|r):/.test(y) ? y : "")); }
       state.sandbox.gt = gt ? +gt[1] : 9;
+      state.sandbox.mods = cleanMods(parseMods(/[?&]mods=([^&]+)/.exec(location.hash)));
       saveSandbox();
       savePins();
       return;
@@ -1117,6 +1188,7 @@
     if (!Array.isArray(state.sandbox.sets)) state.sandbox.sets = [];
     if (!state.sandbox.leg || typeof state.sandbox.leg !== "object") state.sandbox.leg = {};
     if (!state.sandbox.sock || typeof state.sandbox.sock !== "object") state.sandbox.sock = {};
+    state.sandbox.mods = cleanMods(state.sandbox.mods);
     if (!(state.sandbox.gt >= 1 && state.sandbox.gt <= 9)) state.sandbox.gt = 9;
     state.sandbox.sets = state.sandbox.sets.filter((x) => x && talismanIdx().piece.has(x.p));
     state.sandbox.charms = state.sandbox.charms.filter((k) => state.pins.includes(k));
@@ -1719,9 +1791,157 @@
     hideTooltip();
   }
 
+  /* ---------- Item mods editor (⚒ on a unique / Mythic slot) ---------- */
+  let temperIdx = null;
+  const temperManual = (id) => {
+    if (!temperIdx) temperIdx = new Map(((Engine.codex.temper || {}).manuals || []).map((m) => [m.id, m]));
+    return temperIdx.get(id);
+  };
+  /** Item labels of a record's slot (same numbers as aspects / tempering / Transfiguration). */
+  function itemLabels(r) {
+    const it = r.raw || {};
+    const base = { Helm: [16, 14], Chest: [17, 14], Gloves: [28, 14], Pants: [30, 14], Boots: [29, 14], Amulet: [26, 18], Ring: [19, 18], "1H Weapon": [0], "2H Weapon": [0, 9] }[r.slot];
+    if (base) return base;
+    if (r.slot === "Off-Hand") return ((Engine.codex.itemTypes || {})[it.typeId] || {}).g === 1 ? [15, 14] : [0];
+    return [];
+  }
+  /** Temper manuals that fit this item's slot and the build's class, best tier first. */
+  function temperOptions(r) {
+    const groups = (Engine.codex.temper || {}).groups || {}, labels = itemLabels(r), cls = sandboxClass();
+    return ((Engine.codex.temper || {}).manuals || [])
+      .filter((m) => (groups[m.g] || []).some((l) => labels.includes(l)) && (!m.c.length || !cls || m.c.includes(cls)))
+      .sort((a, b) => a.g.localeCompare(b.g) || a.name.localeCompare(b.name) || b.tier - a.tier);
+  }
+  /** Transfiguration stats allowed on this item's slot and class (label 54 = any legendary-or-better item). */
+  function transfigOptions(r) {
+    const labels = itemLabels(r), cls = sandboxClass();
+    return (Engine.codex.transfig || []).filter((x) => (x.l.includes(54) || x.l.some((l) => labels.includes(l))) && (!x.c.length || !cls || x.c.includes(cls)));
+  }
+  /** Random gear affixes (S04 pool) that can roll on this item's slot (label 0 = any weapon) and class. */
+  function affixPoolFor(r) {
+    const labels = itemLabels(r), cls = sandboxClass();
+    return (Engine.codex.affixPool || []).filter((x) => x.l.some((l) => labels.includes(l)) && (!x.c.length || !cls || x.c.includes(cls)))
+      .sort((a, b) => plainOf(a.id, 1).localeCompare(plainOf(b.id, 1)));
+  }
+  const plainOf = (id, t) => (Engine.renderAffix(id, { t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP })[0] || {}).plain || id;
+  const affixName = (id) => ((Engine.codex.affixes || {})[id] || {}).n;
+
+  let modsKey = null;
+  function openMods(key) {
+    let el = document.getElementById("mods");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "mods"; el.className = "picker"; el.hidden = true;
+      el.innerHTML = `<div class="picker__panel mods" role="dialog" aria-modal="true" aria-labelledby="mods-title">
+        <div class="picker__head"><h3 id="mods-title" class="picker__title"></h3><button type="button" class="btn btn--ghost mono" data-mclose aria-label="Close">×</button></div>
+        <div class="mods__body"></div></div>`;
+      document.body.appendChild(el);
+      el.addEventListener("click", (e) => {
+        if (e.target === el || e.target.closest("[data-mclose]")) { closeMods(); return; }
+        const b = e.target.closest("[data-mact]");
+        if (b && !b.disabled) modsAction(b.dataset.mact, b.dataset.mval);
+      });
+      el.addEventListener("change", (e) => {
+        const c = e.target.closest("[data-mact]");
+        if (c) modsAction(c.dataset.mact, c.type === "checkbox" ? `${c.dataset.mval}|${c.checked}` : c.dataset.mact === "rand" ? `${c.dataset.mval}|${c.value}` : c.value);
+      });
+      el.addEventListener("input", (e) => {
+        const c = e.target.closest('[data-mact="mw"]');
+        if (c) modsAction("mw", c.value);
+      });
+      el.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMods(); });
+    }
+    modsKey = key;
+    hideTooltip();
+    drawMods();
+    el.hidden = false;
+    el.querySelector("[data-mclose]").focus();
+  }
+  function closeMods() {
+    const el = document.getElementById("mods");
+    if (el) el.hidden = true;
+    modsKey = null;
+  }
+  function modsAction(act, val) {
+    const r = state.byId.get(modsKey);
+    if (!r) return;
+    const all = state.sandbox.mods || (state.sandbox.mods = {});
+    const m = all[modsKey] || (all[modsKey] = { ga: [], temper: null, mw: 0, cap: -1, tf: [], lock: false, rand: [] });
+    if (!m.rand) m.rand = [];
+    if (m.lock && act !== "unlock") return;
+    const i = +val;
+    if (act === "ga") { const [idx, on] = val.split("|"); m.ga[+idx] = on === "true"; }
+    else if (act === "cap") m.cap = m.cap === i ? -1 : i;
+    else if (act === "mw") m.mw = Math.max(0, Math.min(MW_CAP(), Math.round(+val || 0))); // capstone stays chosen; it only counts at the cap
+    else if (act === "tman") { const man = temperManual(val); m.temper = man ? { m: man.id, a: man.a[0] } : null; }
+    else if (act === "taff") { if (m.temper) m.temper.a = val; }
+    else if (act === "rand") { const [idx, id] = val.split("|"); m.rand[+idx] = id || ""; if (!id) { const at = (r.raw.stats || []).length + +idx; m.ga[at] = false; if (m.cap === at) m.cap = -1; } }
+    else if (act === "tfadd") { if (val && m.tf.length < TF_MAX && !m.tf.includes(val)) m.tf.push(val); }
+    else if (act === "tfrm") m.tf.splice(i, 1);
+    else if (act === "lock") { if (m.tf.length) m.lock = true; }
+    else if (act === "unlock") m.lock = false;
+    else if (act === "reset") delete all[modsKey];
+    if (all[modsKey] && !hasMods(all[modsKey])) delete all[modsKey];
+    saveSandbox();
+    if (!els.viewSandbox.hidden) renderSandbox();
+    const focusAct = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.mact;
+    drawMods();
+    if (focusAct === "mw") { const s = document.querySelector('#mods [data-mact="mw"]'); if (s) s.focus(); }
+  }
+  function drawMods() {
+    const el = document.getElementById("mods"), r = state.byId.get(modsKey);
+    if (!el || !r) return;
+    const t = state.sandbox.t, m = modsOf(modsKey) || { ga: [], temper: null, mw: 0, cap: -1, tf: [], lock: false, rand: [] };
+    const lock = m.lock, dis = lock ? " disabled" : "", cap = MW_CAP(), g = glb();
+    const crafted = state.sandbox.mythic.includes(modsKey) && canCraftMythic(r);
+    const gold = (n) => (n || 0).toLocaleString("en-US");
+    const fixed = (r.raw.stats || []).length, pool = affixPoolFor(r);
+    const randSel = (j) => {
+      const cur = (m.rand || [])[j] || "", taken = new Set([...(r.raw.stats || []), ...(m.rand || [])]);
+      const odd = cur && !pool.some((x) => x.id === cur) ? `<option value="${esc(cur)}" selected>${esc(plainOf(cur, t).slice(0, 70))} (doesn't roll on this slot)</option>` : "";
+      return `<select class="input mono mods__rand" data-mact="rand" data-mval="${j}" aria-label="Rolled affix ${j + 1}"${dis}><option value="">Rolled affix: choose…</option>${odd}${pool.filter((x) => x.id === cur || !taken.has(x.id)).map((x) => `<option value="${esc(x.id)}"${x.id === cur ? " selected" : ""}>${esc(plainOf(x.id, t).slice(0, 80))}</option>`).join("")}</select>`;
+    };
+    const slotsN = Math.max(BASE_AFFIXES, fixed);
+    const stats = Array.from({ length: slotsN }, (_, i) => {
+      const j = i - fixed, a = i < fixed ? r.raw.stats[i] : (m.rand || [])[j];
+      if (!a) return `<li class="mods__stat mods__stat--empty"><span class="mods__tag mono">ROLLED</span>${randSel(j)}</li>`;
+      const lines = Engine.renderAffix(a, { t: r.rarity === "Mythic" || crafted ? 1 : t, rank: state.sandbox.rank, ip: r.rarity === "Mythic" || crafted ? 900 : state.sandbox.ip || Engine.DEFAULT_IP, affixMult: affixMultFor(m, i, t) });
+      return `<li class="mods__stat${m.ga[i] ? " is-ga" : ""}${m.cap === i && m.mw >= cap ? " is-cap" : ""}">
+        <span class="mods__tag mono">${i < fixed ? "FIXED" : "ROLLED"}</span>
+        ${i < fixed ? `<span class="mods__text">${lines.map((l) => l.html).join("<br>")}</span>` : randSel(j)}
+        <label class="mods__chk mono" title="Greater Affix: +${Math.round((g.gaBonus ?? 0.25) * 100)}%"><input type="checkbox" data-mact="ga" data-mval="${i}"${m.ga[i] ? " checked" : ""}${dis}> GA</label>
+        <button type="button" class="btn btn--ghost mono mods__cap" data-mact="cap" data-mval="${i}" aria-pressed="${m.cap === i}"${m.mw < cap || lock ? " disabled" : ""} title="${m.mw < cap ? `Reach masterwork ${cap} first` : `Capstone: +${Math.round((g.mwCapstone ?? 0.5) * 100)}% to this affix`}">CAPSTONE</button></li>`;
+    }).join("");
+    const mans = temperOptions(r), man = m.temper && temperManual(m.temper.m);
+    const byGroup = new Map();
+    for (const x of mans) { if (!byGroup.has(x.g)) byGroup.set(x.g, []); byGroup.get(x.g).push(x); }
+    const manSel = `<select class="input mono" data-mact="tman" aria-label="Temper manual"${dis}><option value="">None</option>${[...byGroup].map(([grp, xs]) => `<optgroup label="${esc(grp)}">${xs.map((x) => `<option value="${esc(x.id)}"${man && man.id === x.id ? " selected" : ""}>${esc(x.name)} · Tier ${x.tier}${x.c.length === 1 ? "" : " · all classes"}</option>`).join("")}</optgroup>`).join("")}</select>`;
+    const affSel = man ? `<select class="input mono" data-mact="taff" aria-label="Tempered affix"${dis}>${man.a.map((a) => `<option value="${esc(a)}"${m.temper.a === a ? " selected" : ""}>${esc(plainOf(a, t))}</option>`).join("")}</select>` : "";
+    const tfo = transfigOptions(r).filter((x) => !m.tf.includes(x.id));
+    const tfList = m.tf.map((a, i) => `<li><span class="mods__text">${(Engine.renderAffix(a, { t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP })[0] || { html: esc(a) }).html}</span><button type="button" class="btn btn--ghost mono" data-mact="tfrm" data-mval="${i}"${dis} aria-label="Remove">×</button></li>`).join("");
+    const tfSel = m.tf.length < TF_MAX ? `<select class="input mono" data-mact="tfadd" aria-label="Add a Transfiguration stat"${dis}><option value="">+ add a stat (${m.tf.length}/${TF_MAX})</option>${tfo.map((x) => `<option value="${esc(x.id)}">${esc(plainOf(x.id, t).slice(0, 90))}</option>`).join("")}</select>` : `<p class="hint mono">${TF_MAX} / ${TF_MAX}: the most ever seen.</p>`;
+    const per = mwPerLevel(t);
+    el.querySelector(".picker__title").textContent = `Modify: ${r.name}`;
+    el.querySelector(".mods__body").innerHTML = `
+      ${lock ? `<p class="sb-note mono mods__lock">LOCKED // Transfigured in the Horadric Cube: nothing on this item can be changed. <button type="button" class="btn btn--ghost mono" data-mact="unlock" title="Not possible in game: only to edit this sandbox build">UNLOCK (SANDBOX ONLY)</button></p>` : ""}
+      <section class="mods__sec"><h4 class="mods__h mono">BASE AFFIXES <span>${fixed} fixed + ${Math.max(0, BASE_AFFIXES - fixed)} rolled · GA +${Math.round((g.gaBonus ?? 0.25) * 100)}% each</span></h4>
+        <ul class="mods__list">${stats || '<li class="hint">No base affixes in the data.</li>'}</ul></section>
+      <section class="mods__sec"><h4 class="mods__h mono">MASTERWORK <span>${m.mw} / ${cap}</span></h4>
+        <input type="range" min="0" max="${cap}" step="1" value="${m.mw}" data-mact="mw" aria-label="Masterwork level"${dis}>
+        <p class="hint">Each level adds a random 1–3% to the base affixes (roll quality ${Math.round(t * 100)}% → ${(per * 100).toFixed(1)}% per level: ×${(1 + m.mw * per).toFixed(2)}). At ${cap} the <b>capstone</b> gives one affix +${Math.round((g.mwCapstone ?? 0.5) * 100)}%: strongest on a GA. Cost ${gold(g.mwGoldLevel)} gold per level, capstone ${gold(g.mwGoldCapstone)}, capstone reroll ${gold(g.mwGoldReroll)} (+ materials).</p></section>
+      <section class="mods__sec"><h4 class="mods__h mono">TEMPER <span>5th affix · Blacksmith</span></h4>
+        <div class="mods__row">${manSel}${affSel}</div>
+        ${mans.length ? "" : '<p class="hint">No temper manual fits this slot.</p>'}</section>
+      <section class="mods__sec"><h4 class="mods__h mono">TRANSFIGURATION <span>Horadric Cube · risky</span></h4>
+        <ul class="mods__list">${tfList}</ul>
+        <div class="mods__row">${tfSel}${m.tf.length && !lock ? `<button type="button" class="btn mono" data-mact="lock" title="After Transfiguration the item can't be changed">TRANSFIGURE (LOCK)</button>` : ""}</div>
+        <p class="hint">Adds a 6th stat, rarely more (up to ${TF_MAX} seen on a unique or Mythic). After it, the item is locked.</p></section>
+      <div class="mods__foot"><button type="button" class="btn btn--ghost mono" data-mact="reset"${dis}>RESET ITEM</button><button type="button" class="btn mono" data-mclose>DONE</button></div>`;
+  }
+
   function togglePin(key) {
     const i = state.pins.indexOf(key);
-    if (i >= 0) { state.pins.splice(i, 1); state.sandbox.charms = state.sandbox.charms.filter((k) => k !== key); saveSandbox(); }
+    if (i >= 0) { state.pins.splice(i, 1); state.sandbox.charms = state.sandbox.charms.filter((k) => k !== key); if (state.sandbox.mods) delete state.sandbox.mods[key]; saveSandbox(); }
     else if (equip(key, true)) { state.pins.push(key); saveSandbox(); }
     savePins();
     syncPinButtons();
@@ -1734,7 +1954,7 @@
       return { power: Engine.renderAffix(r.id, { ...world, slotBonus })[0] || null, imp: [], stats: [], mythicLines: [], crafted: false };
     }
     if (isCharm(r.key) && charmOf(r)) return renderItem(charmOf(r), world, false); // charm: unique power only
-    return renderItem(r.raw, world, state.sandbox.mythic.includes(r.key) && canCraftMythic(r));
+    return renderItem(r.raw, world, state.sandbox.mythic.includes(r.key) && canCraftMythic(r), modsOf(r.key));
   }
 
   const rawCache = new Map(); // key -> rendered raw-files HTML
@@ -1828,7 +2048,10 @@
       const r = state.byId.get(k);
       if (!r) return { label };
       const crafted = !isCharm(k) && state.sandbox.mythic.includes(k) && canCraftMythic(r);
-      return { label, key: isCharm(k) ? "charm:" + k : k, ic: r.icon, name: r.name, rar: rarityClass(shownRarity(r, { crafted })), clear: `data-unpin="${esc(k)}"` };
+      const md = modsOf(k);
+      const modBtn = !isCharm(k) && r.kind === "item"
+        ? `<button type="button" class="pd__mods mono${hasMods(md) ? " is-on" : ""}${md && md.lock ? " is-locked" : ""}" data-mods="${esc(k)}" aria-label="Modify ${esc(r.name)}: Greater Affixes, temper, masterwork, Transfiguration" title="${md && md.lock ? "Transfigured: locked" : "Greater Affixes, temper, masterwork, Transfiguration"}">${md && md.lock ? "🔒" : "⚒"}</button>` : "";
+      return { label, key: isCharm(k) ? "charm:" + k : k, ic: r.icon, name: r.name, rar: rarityClass(shownRarity(r, { crafted })), clear: `data-unpin="${esc(k)}"`, extra: modBtn };
     };
     const offIsShield = classOffhands(cls).some((t) => /Shield/.test(t));
     const emptyFor = (slot) => ({ ranged: "Bow", off: WEAPON_RULES[cls] ? "Weapon" : offIsShield ? "Shield" : "Weapon" })[slot] || "Weapon";
@@ -2066,7 +2289,7 @@
     function damageHTML() {
       const W = { t: state.sandbox.t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP };
       const src = [];
-      const add = (id, name, r) => { if (r) src.push({ id, name, lines: [r.power, ...(r.imp || []), ...(r.stats || []), ...(r.mythicLines || [])].filter(Boolean).map((l) => l.plain || "") }); };
+      const add = (id, name, r) => { if (r) src.push({ id, name, lines: [r.power, ...(r.imp || []), ...(r.stats || []), ...(r.mythicLines || []), ...(r.temper || []), ...(r.transfig || [])].filter(Boolean).map((l) => l.plain || "") }); };
       const eq = new Set([...Object.values(L.weapons), ...Object.values(L.gear).flat()].filter(Boolean));
       for (const k of eq) { const r = state.byId.get(k); add(k, r.name, renderedAt(r, W)); }
       for (const [sp, e] of Object.entries(state.sandbox.leg)) {
@@ -2178,7 +2401,9 @@
       const slotBtns = r.kind === "aspect"
         ? Object.entries(ASPECT_SLOTS).map(([s, [label]]) => `<button type="button" class="btn btn--ghost mono" data-aslot="${s}" data-akey="${esc(key)}" aria-pressed="${state.sandbox.slot[key] === s}" title="Imprinted on a non-unique ${s === "amulet" ? "amulet (150%)" : "two-handed weapon (200%)"}">${label}</button>`).join("")
         : "";
-      rendered.tools = `<div class="sb-entry__tools">${slotBtns}${charmBtn}${mythicBtn}<button type="button" class="btn btn--ghost mono" data-unpin="${esc(key)}">REMOVE</button></div>`;
+      const modsBtn = !asCharm && r.kind === "item"
+        ? `<button type="button" class="btn btn--ghost mono" data-mods="${esc(key)}" aria-pressed="${hasMods(modsOf(key))}" title="Greater Affixes, temper, masterwork, Transfiguration">${(modsOf(key) || {}).lock ? "LOCKED" : "MODIFY"}</button>` : "";
+      rendered.tools = `<div class="sb-entry__tools">${slotBtns}${charmBtn}${mythicBtn}${modsBtn}<button type="button" class="btn btn--ghost mono" data-unpin="${esc(key)}">REMOVE</button></div>`;
       const rankNote = r.maxRank ? `<p class="hint mono" style="padding:0 16px 8px">RANK ${Math.min(rank, r.maxRank)} / ${r.maxRank}</p>` : "";
       return `
         <article class="sb-entry sb-entry--${rarityClass(shownRarity(r, rendered))}">
@@ -2519,6 +2744,8 @@
         renderSandbox();
         return;
       }
+      const mb = e.target.closest("[data-mods]");
+      if (mb) { openMods(mb.dataset.mods); return; }
       const pk = e.target.closest("[data-pick]");
       if (pk && !pk.closest("#picker")) {
         const label = pk.dataset.label || (pk.querySelector(".sb-cell__label") || pk).textContent.trim();
@@ -2639,12 +2866,12 @@
     // roll / rank / item power settings stay). UNDO in the toast puts the old build back.
     els.sbClass.addEventListener("change", () => {
       const sb = state.sandbox;
-      const had = state.pins.length || sb.charms.length || sb.sets.length || sb.torch || Object.keys(sb.leg).length || Object.keys(sb.sock || {}).length;
+      const had = state.pins.length || sb.charms.length || sb.sets.length || sb.torch || Object.keys(sb.leg).length || Object.keys(sb.sock || {}).length || Object.keys(sb.mods || {}).length;
       const before = { pins: state.pins.slice(), sb: JSON.parse(JSON.stringify(sb)) };
       sb.cls = els.sbClass.value;
       if (had) {
         state.pins = [];
-        Object.assign(sb, { charms: [], sets: [], torch: false, leg: {}, mythic: [], slot: {}, sock: {} });
+        Object.assign(sb, { charms: [], sets: [], torch: false, leg: {}, mythic: [], slot: {}, sock: {}, mods: {} });
         savePins();
         toast(`Class set to ${sb.cls || "Auto"}: gear and charms cleared.`, ["UNDO", () => {
           state.pins = before.pins; state.sandbox = before.sb;
@@ -2654,9 +2881,9 @@
       saveSandbox();
       renderSandbox();
     });
-    els.sbClear.addEventListener("click", () => { state.pins = []; state.sandbox.charms = []; state.sandbox.sets = []; state.sandbox.torch = false; state.sandbox.leg = {}; state.sandbox.sock = {}; saveSandbox(); savePins(); renderSandbox(); state.mode = null; });
+    els.sbClear.addEventListener("click", () => { state.pins = []; state.sandbox.charms = []; state.sandbox.sets = []; state.sandbox.torch = false; state.sandbox.leg = {}; state.sandbox.sock = {}; state.sandbox.mods = {}; saveSandbox(); savePins(); renderSandbox(); state.mode = null; });
     els.sbShare.addEventListener("click", async () => {
-      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}${Object.keys(state.sandbox.sock).length ? "&sock=" + encodeURIComponent(Object.entries(state.sandbox.sock).map(([sp, v]) => [sp, ...v].join("~")).join(",")) + "&gt=" + state.sandbox.gt : ""}`;
+      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}${Object.keys(state.sandbox.sock).length ? "&sock=" + encodeURIComponent(Object.entries(state.sandbox.sock).map(([sp, v]) => [sp, ...v].join("~")).join(",")) + "&gt=" + state.sandbox.gt : ""}${Object.keys(state.sandbox.mods || {}).length ? "&mods=" + encodeURIComponent(encodeMods(state.sandbox.mods)) : ""}`;
       try { await navigator.clipboard.writeText(url); els.sbShare.textContent = "COPIED"; }
       catch { window.prompt("Copy this link:", url); }
       setTimeout(() => (els.sbShare.textContent = "COPY LINK"), 1400);

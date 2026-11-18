@@ -949,3 +949,51 @@ html[data-sb-ip="900"] .pd__slot--unique { --spark: var(--spark-anc); --spark-hi
 .tt__lines--rw li { margin-bottom: 3px; }
 .tt__warn { color: var(--accent); font-size: 0.72rem; margin: 4px 0 0; }
 .tt__phrase { font: italic 400 0.8em var(--font-body); color: var(--muted); }
+
+/* ---------- Item mods: Greater Affixes, temper, masterwork, Transfiguration ---------- */
+:root { --c-ga: #ffb35c; --c-temper: #8fb8ff; --c-transfig: #e38cff; }
+.tt__ga { color: var(--text); }
+.tt__badge { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 3px; font: 700 0.62rem var(--font-mono); letter-spacing: 0.08em; vertical-align: 1px; }
+.tt__badge--ga { color: #1a0f00; background: var(--c-ga); }
+.tt__badge--cap { color: #1a0f00; background: linear-gradient(90deg, var(--c-ga), #fff0c8); }
+.tt__lines--temper li::before { content: "⚒"; color: var(--c-temper); }
+.tt__lines--temper { color: var(--c-temper); }
+.tt__lines--transfig li::before { content: "✦"; color: var(--c-transfig); }
+.tt__lines--transfig { color: var(--c-transfig); }
+
+.pd__mods {
+  position: absolute; left: -6px; bottom: 14%; z-index: 3; width: 22px; height: 22px; padding: 0;
+  display: grid; place-items: center; font-size: 0.72rem; line-height: 1; cursor: pointer;
+  color: var(--muted); background: #111114; border: 1px solid var(--line); border-radius: 50%;
+  opacity: 0; transition: opacity .12s, color .12s, border-color .12s;
+}
+.pd__slot:hover .pd__mods, .pd__mods:focus-visible, .pd__mods.is-on { opacity: 1; }
+@media (hover: none) { .pd__mods { opacity: 1; } }
+.pd__mods:hover { color: var(--text); border-color: var(--accent); }
+.pd__mods.is-on { color: #1a0f00; background: var(--c-ga); border-color: var(--c-ga); }
+.pd__mods.is-locked { background: var(--c-transfig); border-color: var(--c-transfig); }
+
+.mods { width: min(640px, 100%); max-height: min(88vh, 900px); grid-template-rows: auto 1fr; }
+.mods__body { overflow-y: auto; display: grid; gap: 14px; padding-right: 4px; min-width: 0; }
+.mods__sec { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); min-width: 0; }
+.mods__h { margin: 0; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 0.74rem; letter-spacing: 0.16em; color: var(--accent); }
+.mods__h span { color: var(--faint); letter-spacing: 0.06em; }
+.mods__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.mods__list li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: rgba(255, 255, 255, 0.02); }
+.mods__text { flex: 1 1 220px; min-width: 0; font-size: 0.84rem; line-height: 1.4; overflow-wrap: anywhere; }
+.mods__stat.is-ga { border-color: color-mix(in srgb, var(--c-ga) 55%, transparent); background: color-mix(in srgb, var(--c-ga) 7%, transparent); }
+.mods__stat.is-cap { box-shadow: inset 0 0 0 1px var(--c-ga), 0 0 10px color-mix(in srgb, var(--c-ga) 35%, transparent); }
+.mods__chk { display: inline-flex; gap: 5px; align-items: center; font-size: 0.72rem; color: var(--c-ga); cursor: pointer; }
+.mods__cap { font-size: 0.66rem; padding: 3px 8px; }
+.mods__cap[aria-pressed="true"] { color: #1a0f00; background: var(--c-ga); border-color: var(--c-ga); }
+.mods__row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.mods__row .input { flex: 1 1 220px; min-width: 0; max-width: 100%; }
+.mods__sec input[type="range"] { width: 100%; }
+.mods__sec .hint { margin: 0; font-size: 0.76rem; }
+.mods__lock { border-color: color-mix(in srgb, var(--c-transfig) 55%, transparent); background: color-mix(in srgb, var(--c-transfig) 8%, transparent); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.mods__foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
+.mods [disabled] { opacity: 0.45; cursor: not-allowed; }
+#mods { z-index: 190; }
+.mods__tag { flex: none; font-size: 0.6rem; letter-spacing: 0.12em; color: var(--faint); padding: 1px 6px; border: 1px solid var(--line); border-radius: 3px; }
+.mods__rand { flex: 1 1 220px; min-width: 0; }
+.mods__stat--empty { border-style: dashed; }
