@@ -1700,11 +1700,37 @@
     const linesOf = (it) => { if (!it) return []; const r = renderItem(it, { t: state.sandbox.t, rank: 1, ip: 900 }, false); return [r.power, ...r.imp, ...r.stats].filter(Boolean); };
     const powerBlock = (title, it) => { const ls = linesOf(it); return ls.length ? `<div class="sb-sealpower"><span class="mono">${esc(title)}</span><ul>${ls.map((l) => `<li>${l.html}</li>`).join("")}</ul></div>` : ""; };
     const sealPowers = powerBlock(sealName, sealItem) + (state.sandbox.torch ? powerBlock("Hellfire Torch", codexItem(TORCH_ID)) : "");
+    // In-game Talisman panel (UI/InventoryGrid Template_Talisman, 720×720 units): six charm sockets
+    // in a hexagon around the seal. Offsets are the game's, from the panel centre.
+    const TUI = (Engine.codex.talisman || {}).ui || {};
+    const HEX = [[0, -165], [-148, 83], [148, 83], [-148, -83], [148, -83], [0, 165]];
+    const pct = (v) => (50 + (v / 720) * 100).toFixed(2) + "%";
+    const socketOf = (i) => {
+      const o = occupants[i];
+      if (i >= nSlots) return { locked: true };
+      if (o && o.torch) { const t = codexItem(TORCH_ID); return { key: "torch", ic: t && t.ic, name: "Hellfire Torch", sub: "Mythic charm", rar: "mythic", clear: "data-torchremove" }; }
+      if (o && o.x) return { key: "set:" + o.x.i, ic: o.x.piece.ic, name: o.x.piece.name, sub: o.x.piece.type + " · " + o.x.piece.set.name, rar: "set", clear: `data-setremove="${o.x.i}"` };
+      if (o && o.k) { const r = state.byId.get(o.k); if (r) return { key: "charm:" + o.k, ic: (charmOf(r) || {}).ic || r.icon, name: r.name, sub: "Unique charm", rar: rarityClass(shownRarity(r, {})), clear: `data-unpin="${esc(o.k)}"` }; }
+      return {};
+    };
+    const sockets = HEX.map(([x, y], i) => {
+      const k = socketOf(i), frame = k.locked ? TUI.locked : k.name ? TUI.active : TUI.socket;
+      const pos = `left:${pct(x)};top:${pct(y)}`;
+      if (k.locked) return `<div class="tal__sock is-locked" style="${pos}" title="Charm ${i + 1}: locked by the ${esc(sealName)}">${itemIcon(frame, "tal__frame")}</div>`;
+      return `<div class="tal__sock${k.name ? " is-full tal__sock--" + k.rar : ""}" style="${pos}"${k.key ? ` data-key="${esc(k.key)}"` : ""}>
+        <button type="button" class="tal__pick" data-pick="c:${i}" aria-label="${k.name ? `Charm ${i + 1}: ${esc(k.name)}. Change` : `Charm ${i + 1}: empty. Choose a charm`}">${itemIcon(frame, "tal__frame")}${k.ic ? itemIcon(k.ic, "tal__item") : k.name ? "" : '<span class="tal__plus" aria-hidden="true">+</span>'}</button>
+        ${k.name ? `<button type="button" class="sb-cell__clear tal__clear" ${k.clear} aria-label="Remove ${esc(k.name)}" title="Remove">×</button>` : ""}</div>`;
+    }).join("");
+    const sealKey = sealItem && state.byId.has(sealItem.id) ? sealItem.id : "";
+    const hexPanel = TUI.bg && TUI.socket ? `<div class="tal" style="background-image:url('data/icons/${TUI.bg}.webp')">
+        <div class="tal__seal" style="left:${pct(0)};top:${pct(4)}"${sealKey ? ` data-key="${esc(sealKey)}"` : ""} title="${esc(sealName)}">${itemIcon(TUI.seal, "tal__frame")}${sealIc ? itemIcon(sealIc, "tal__item") : ""}${TUI.sealActive ? itemIcon(TUI.sealActive, "tal__frame") : ""}</div>
+        ${sockets}</div>
+      <ol class="tal__list">${HEX.map((_, i) => { const k = socketOf(i); return `<li class="${k.locked ? "is-locked" : k.name ? "tal__li--" + k.rar : "is-empty"}"><span class="mono">${i + 1}</span> ${k.locked ? "locked" : k.name ? esc(k.name) + ` <span class="tal__sub">${esc(k.sub)}</span>` : "empty"}</li>`; }).join("")}</ol>` : "";
     const talisman = `<section class="sb-build">
       <div class="sb-build__head"><h3 class="sb-loadout__title mono">TALISMAN // ${talismanUsed()} / ${nSlots} CHARMS</h3>
-        <label class="sb-seal"><span class="mono">SEAL</span>${sealIc ? `<span class="ico-well sb-seal__ico">${itemIcon(sealIc)}</span>` : ""}<select class="input mono" data-seal aria-label="Talisman seal">${sealOpts}</select></label></div>
+        <label class="sb-seal"><span class="mono">SEAL</span>${sealIc && !hexPanel ? `<span class="ico-well sb-seal__ico">${itemIcon(sealIc)}</span>` : ""}<select class="input mono" data-seal aria-label="Talisman seal">${sealOpts}</select></label></div>
       ${sealPowers}
-      <div class="sb-cells">${charmCells}</div>
+      ${hexPanel ? `<div class="tal-wrap">${hexPanel}</div>` : `<div class="sb-cells">${charmCells}</div>`}
       <p class="hint mono sb-uniq">UNIQUE CHARMS ${uniqueCount()} / ${uniqueLimit()}${sealOf()[2].setReduce ? " // SET BONUSES NEED 1 FEWER CHARM (MIN 2)" : ""}</p>
       ${uniqueCount() > uniqueLimit() ? `<p class="sb-note mono">TOO MANY UNIQUE CHARMS // the ${esc(sealName)} allows ${uniqueLimit()}. Remove one, or use a Seal of the Golden Epiphany (3), the Severed Finger (2) or the Hellfire Torch (+1).</p>` : ""}
       ${talismanUsed() > nSlots ? `<p class="sb-note mono">TALISMAN FULL // ${talismanUsed() - nSlots} charm${talismanUsed() - nSlots > 1 ? "s" : ""} don't fit the ${esc(sealName)}.</p>` : ""}

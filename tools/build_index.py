@@ -189,6 +189,7 @@ def main():
     ap.add_argument("--d4data", default=os.path.join(ROOT, "d4data"))
     ap.add_argument("--out", default=os.path.join(ROOT, "data", "index", "codex.json"))
     ap.add_argument("--icons", default=os.path.join(ROOT, "webp_icons"), help="folder of exported .webp atlas frames")
+    ap.add_argument("--atlases", default=os.path.join(ROOT, "2DUI"), help="folder of whole atlas sheets (<atlas> [snoID].png)")
     args = ap.parse_args()
 
     item_dir = os.path.join(args.data, "Item")
@@ -209,7 +210,7 @@ def main():
     meta_dir = os.path.join(args.d4data, "json", "base", "meta")
     icons = None
     if os.path.isdir(args.icons) and os.path.isdir(os.path.join(meta_dir, "Texture")):
-        icons = Icons(meta_dir, args.icons, os.path.join(ROOT, "data", "icons"), CLASSES)
+        icons = Icons(meta_dir, args.icons, os.path.join(ROOT, "data", "icons"), CLASSES, args.atlases)
     else:
         print("! webp_icons/ or d4data Texture folder not found: data/icons/ left as is, items keep their last icons.")
     attr_desc = strings(stl_dir, "AttributeDescriptions")
@@ -465,6 +466,11 @@ def main():
         ic = icons and os.path.exists(sp) and icons.for_item(load(sp))
         if ic:
             talisman["seals"][sid] = ic
+    # Talisman panel art (UI/InventoryGrid Template_Talisman): background, charm socket frames
+    # (normal / active / locked) and the seal socket (empty / active ring).
+    ui = {"bg": 3261546786, "socket": 1588005082, "active": 693456443, "locked": 2243541645,
+          "seal": 3814032020, "sealActive": 3168201781}
+    talisman["ui"] = {k: v for k, v in ((k, icons and icons.for_handle(h)) for k, h in ui.items()) if v}
     talisman["sets"] = sorted((x for x in sets_by_id.values() if x["tiers"]), key=lambda x: (x["c"][:1] or ["~"], x["name"]))
     if have_affix:
         for path in sorted(glob.glob(os.path.join(affix_dir, "Talisman_Charm_*.aff.json"))):

@@ -71,7 +71,8 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 - Only the icons in use are copied to `data/icons/<handle hex>.webp` (626 files, ~3.6 MB); the codex stores the handle as `ic`.
 - **Charms and seals (18 Nov):** their art is linked by an unnamed item field, `unk_75d565b` (they have no `tInvImages` and share a generic actor). It's used only as the last fallback, because on other items it often points at a generic image. All 213 set charms and 147 unique charms have icons; seals use it too (all Mythic seals share one frame in the data). `codex.talisman.seals` holds the Magic/Rare/Legendary seal icons, shown beside the Sandbox's seal picker.
 - Coverage: **all 357 visible uniques and all 64 runes.** Shown on cards (an icon well beside the name), in tooltips and the Sandbox (tooltip header), on rune cards and in rune chips.
-- **Aspects have no icons yet:** their `hIconOverride` points to `2DUI_Aspect_*` atlases, which aren't in the export (it only has `2DInventory_*`). Add those atlases to `webp_icons/` and rebuild; they'll be picked up automatically.
+- **Whole atlas sheets (18 Nov):** `2DUI/` (~5,100 PNGs, 15 GB, not in git) holds whole sheets named `<atlas> [<snoID>].png`. `icons.py` cuts a used frame out with `cwebp -crop`, using the Texture `ptFrame` UV rectangle (split webp frames win when both exist; a cut is made only when `data/icons/<handle>.webp` is missing). Build option `--atlases` (default `2DUI/`). **All 554 aspects have icons** (`2DUI_Aspect_*`, 415 distinct).
+- **Talisman panel (18 Nov):** the Sandbox draws the in-game Talisman from `UI/InventoryGrid` `Template_Talisman` (720×720 units): background `2DUI_Talisman_NonAlpha` frame 1, seal socket at (0, 4), six charm sockets in a hexagon at (0,−165) (∓148,83) (±148,83)… exactly as the game's offsets; charm frame 160×196 with an 84×128 item window (normal / gold active / locked frames from `2DUI_Talisman`), seal frame 170×188 + active ring. Handles are in `codex.talisman.ui`. Sockets unlock in the game's index order (0 top, 1–2 lower pair, 3–4 upper pair, 5 bottom); the seal's slot count locks the rest. The glowing connector lines between sockets are VFX materials and aren't drawn. Unique charms show their charm art, not the unique item's.
 - The build now takes ~18 s (it scans the Texture metadata).
 
 **Formula and text engine (`app.js`)**
@@ -118,7 +119,7 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 ## Suggested next steps
 
 1. Next for the Talisman: seal affixes (`Talisman_SealAffix_*`).
-2. Aspect icons: the `2DUI/` folder (whole-atlas PNGs, not in git) has the 24 `2DUI_Aspect_*` sheets. Cut frames from them with the Texture `ptFrame` UVs (or export as split frames into `webp_icons/`) and rebuild.
+2. ~~Aspect icons~~ done 18 Nov (cut from `2DUI/` sheets).
 3. In game, compare one crafted Mythic tooltip with the Sandbox (#2: bonus lines, potency maths).
 4. Optional: say what an `Owner.*` or health-scaled value depends on (e.g. "scales with weapon damage") instead of a bare `#` (#4).
 5. Optional: show aspect slot values (amulet / 2H) directly in the Aspect Codex tooltip, not only in the Sandbox.

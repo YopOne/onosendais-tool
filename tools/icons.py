@@ -14,8 +14,9 @@ and each Texture/<atlas>.tex.json lists its frames' hImageHandle in frame order.
 Only the frames the codex uses are copied to data/icons/<handle hex>.webp, so the site
 doesn't ship the whole 100+ MB export.
 
-Aspect icons live in 2DUI_Aspect_* atlases (Aspect hIconOverride); they're used
-automatically once those atlases are in webp_icons/.
+Whole atlas sheets (2DUI/, "<atlas> [<atlas snoID>].png") are used too: a frame there is cut
+out by its Texture UV rectangle with cwebp. Split webp frames win when both exist. Aspect icons
+(Aspect hIconOverride -> 2DUI_Aspect_* sheets) and the Talisman UI art come from these.
 """
 
 import glob
@@ -23,8 +24,17 @@ import json
 import os
 import re
 import shutil
+import struct
+import subprocess
 
 WEBP_NAME = re.compile(r" \[(\d+)\] - (\d+) ")
+PNG_NAME = re.compile(r" \[(\d+)\]\.png$")
+
+
+def png_size(path):
+    with open(path, "rb") as fh:
+        head = fh.read(24)
+    return struct.unpack(">II", head[16:24])
 
 
 def name_hash(s):
@@ -49,7 +59,7 @@ def _find(o, key):
 
 
 class Icons:
-    def __init__(self, meta_dir, webp_dir, out_dir, classes):
+    def __init__(self, meta_dir, webp_dir, out_dir, classes, atlas_dir=None):
         self.meta_dir, self.out_dir, self.classes = meta_dir, out_dir, classes
         self.used = {}  # handle hex -> source webp path
         self._actor = {}
@@ -63,19 +73,37 @@ class Icons:
                 if frame:
                     self.by_name.setdefault(frame, os.path.join(webp_dir, f))
         atlases = {s for s, _ in files}
-        self.frames = {}  # image handle -> webp path
+        sheets = {}  # atlas snoID -> whole-sheet PNG
+        if atlas_dir and os.path.isdir(atlas_dir):
+            for f in os.listdir(atlas_dir):
+                m = PNG_NAME.search(f)
+                if m:
+                    sheets[int(m[1])] = os.path.join(atlas_dir, f)
+        self.frames = {}  # image handle -> webp path, or (sheet png, x, y, w, h)
+        crops = []
         for p in glob.glob(os.path.join(meta_dir, "Texture", "*.tex.json")):
             with open(p, encoding="utf-8") as fh:
                 head = fh.read(400)
                 m = re.search(r'"__snoID__":\s*(\d+)', head)
-                if not m or int(m[1]) not in atlases:
+                if not m or (int(m[1]) not in atlases and int(m[1]) not in sheets):
                     continue
                 fh.seek(0)
                 d = json.load(fh)
+            sid = d["__snoID__"]
             for i, fr in enumerate(d.get("ptFrame") or []):
-                src = files.get((d["__snoID__"], i))
+                src = files.get((sid, i))
                 if src:
                     self.frames.setdefault(fr["hImageHandle"], src)
+            if sid in sheets:
+                crops.append((sheets[sid], d.get("ptFrame") or []))
+        # Sheet crops only fill handles the split webp frames don't have.
+        for png, frames in crops:
+            w, h = png_size(png)
+            for fr in frames:
+                x0, y0 = round(fr["flU0"] * w), round(fr["flV0"] * h)
+                x1, y1 = round(fr["flU1"] * w), round(fr["flV1"] * h)
+                if x1 > x0 and y1 > y0:
+                    self.frames.setdefault(fr["hImageHandle"], (png, x0, y0, x1 - x0, y1 - y0))
 
     def _actor_image(self, name):
         if name not in self._actor:
@@ -139,6 +167,12 @@ class Icons:
         total = 0
         for key, src in self.used.items():
             dst = os.path.join(self.out_dir, key + ".webp")
+            if isinstance(src, tuple):  # cut from a whole sheet (only when missing: delete to redo)
+                if not os.path.exists(dst):
+                    png, x, y, w, h = src
+                    subprocess.run(["cwebp", "-quiet", "-q", "85", "-alpha_q", "100", "-crop", str(x), str(y), str(w), str(h), png, "-o", dst], check=True)
+                total += os.path.getsize(dst)
+                continue
             size = os.path.getsize(src)
             if not os.path.exists(dst) or os.path.getsize(dst) != size:
                 shutil.copyfile(src, dst)
