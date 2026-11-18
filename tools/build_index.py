@@ -645,10 +645,11 @@ def main():
         d = load(path)
         bs = d.get("arBodySlots") or []
         if 9 in bs or 10 in bs:
-            # Gem socket target: the type's stat weights say whether it counts as a weapon (focus, totem, book)
-            # or armor (shield). 0 weapon, 1 armor.
-            item_types[os.path.basename(path)[: -len(".itt.json")]] = {"c": class_list(d.get("fUsableByClass")) or CLASSES[:], "b": bs, "w": 0 in (d.get("arItemLabels") or []),
-                                                                     "g": 0 if (d.get("unk_b2500f1") or 0) > 0 else 1}
+            # Gem socket target from the type's item labels: 0 Weapon (swords ... focus, totem, book), 14 Armor
+            # (helm, chest ... and Shield), 18 Jewelry. g: 0 weapon, 1 armor, 2 jewelry.
+            labels = d.get("arItemLabels") or []
+            item_types[os.path.basename(path)[: -len(".itt.json")]] = {"c": class_list(d.get("fUsableByClass")) or CLASSES[:], "b": bs, "w": 0 in labels,
+                                                                     "g": 0 if 0 in labels else 1 if 14 in labels else 2 if 18 in labels else 0}
 
     codex = {
         "meta": {

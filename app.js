@@ -1833,12 +1833,35 @@
         return `<li class="sk__slot"><span class="mono sk__label">${esc(d.label)} <span class="sk__tg">${GEM_TARGETS[si.target]} · ${used}/${si.n}</span></span>
           ${gemLis || rw ? `<ul class="sk__lines">${gemLis}${rw}</ul>` : `<span class="sk__empty">empty: click a socket on the item</span>`}</li>`;
       }).filter(Boolean).join("");
-      const tot = [...totals].map(([t, q]) => `<li>${Engine.renderText(t).html}${q > 1 ? ` <span class="mono sk__x">×${q}</span>` : ""}</li>`).join("");
+      // Weapon gem bonuses are damage multipliers ("x"): they multiply, so 2 × x32% is x74.2%, not x64%.
+      // Other gem bonuses (stats, resistance, barrier, healing) add up.
+      const MULT = /^x([\d.]+)% (.+ Damage Multiplier)$/;
+      const fmtPct = (v) => (Math.round(v * 1000) / 10).toString();
+      const mults = new Map(), adds = [];
+      for (const [t, q] of totals) {
+        const m = MULT.exec(t);
+        if (m) mults.set(m[2], [...(mults.get(m[2]) || []), ...Array(q).fill(+m[1] / 100)]);
+        else {
+          const n = /^([+-]?)([\d,.]+)(%?) (.+)$/.exec(t);
+          adds.push(n && q > 1 ? `${n[1] || "+"}${(+n[2].replace(/,/g, "") * q).toLocaleString("en-US")}${n[3]} ${n[4]} <span class="mono sk__x">${q} gems</span>` : esc(t));
+        }
+      }
+      const multLis = [...mults].map(([what, vs]) => {
+        const prod = vs.reduce((p, v) => p * (1 + v), 1) - 1;
+        return `<li><span class="gt-mult">x${fmtPct(prod)}%</span> ${esc(what)}${vs.length > 1 ? ` <span class="mono sk__x">${vs.map((v) => (1 + v).toFixed(2)).join(" × ")}</span>` : ""}</li>`;
+      });
+      // Every elemental multiplier also stacks with the All Damage one.
+      const all = mults.get("All Damage Multiplier");
+      const combo = all ? [...mults].filter(([w]) => w !== "All Damage Multiplier").map(([what, vs]) => {
+        const prod = [...vs, ...all].reduce((p, v) => p * (1 + v), 1) - 1;
+        return `<li class="sk__combo"><span class="gt-mult">x${fmtPct(prod)}%</span> ${esc(what.replace(" Multiplier", ""))} in total (with All Damage)</li>`;
+      }) : [];
+      const tot = [...multLis, ...combo, ...adds.map((h) => `<li>${h.includes("<span") ? h : Engine.renderText(h).html}</li>`)].join("");
       return `<div class="sk"><div class="sk__head"><h4 class="sb-build__sub mono">SOCKETS</h4>
           <label class="sk__gt"><span class="mono">GEM QUALITY</span><select class="input mono" data-gt aria-label="Gem quality">${tierOpts}</select></label></div>
         ${rows ? `<ul class="sk__slots">${rows}</ul>` : `<p class="hint">Equip an item to socket it.</p>`}
         ${tot ? `<p class="sb-build__sub mono">GEM TOTALS</p><ul class="sk__tot">${tot}</ul>` : ""}
-        <p class="hint">Click a socket under an item to add a gem or rune. Helm, Chest, Pants and 2H weapons have 2 sockets; 1H weapons, off-hands, the Amulet and Rings 1; Gloves and Boots none. A gem's bonus depends on the item: weapon (damage multiplier), armor (a main stat, barrier, healing) or jewelry (resistance). Runes need a 2-socket item: one Rune of Ritual plus one Rune of Invocation make a runeword (see Runes &amp; Recipes).</p></div>`;
+        <p class="hint">Click a socket under an item to add a gem or rune. Helm, Chest, Pants and 2H weapons have 2 sockets; 1H weapons, off-hands, the Amulet and Rings 1; Gloves and Boots none. A gem's bonus depends on the item: weapon (an x damage multiplier: these multiply with each other), armor, including shields (a main stat, barrier, healing) or jewelry (resistance). Runes need a 2-socket item: one Rune of Ritual plus one Rune of Invocation make a runeword (see Runes &amp; Recipes).</p></div>`;
     }
     const build = `<section class="sb-build">
       <div class="sb-build__head"><h3 class="sb-loadout__title mono">BUILD // ${esc(cls || "any class")}</h3>

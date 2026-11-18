@@ -838,3 +838,5 @@ h1, h2, h3 { margin: 0; }
 .picker__item--rune { --rarity: #d9a35a; }
 .picker__item--common { --rarity: var(--faint); }
 @media (max-width: 760px) { .sk__slot { grid-template-columns: 1fr; } }
+.gt-mult { color: #ff9d5c; font-weight: 700; }
+.sk__combo { color: var(--muted); }
