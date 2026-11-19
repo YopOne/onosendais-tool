@@ -30,7 +30,7 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 ## Deployment 🚀
 
 - **Repo:** https://github.com/YopOne/onosendais-tool (public, branch `main`)
-- **Live site:** https://yopone.github.io/onosendais-tool/ (GitHub Pages from `main` /, rebuilds about a minute after each push)
+- **Live site:** https://onosendaistool.com (custom domain, set by the `CNAME` file; HTTPS enforced; `www.` forwards to it). GitHub Pages from `main` /, rebuilds about a minute after each push. The old https://yopone.github.io/onosendais-tool/ address redirects there.
 - **Publishing a change:** `git add -A && git commit -m "…" && git push`. `gh` is installed at `/opt/homebrew/bin/gh` and signed in as `YopOne`. Commits use the GitHub noreply email (set in this repo's git config). `gh api repos/YopOne/onosendais-tool/pages/builds/latest` shows the Pages build status.
 - **What's uploaded:** site files, `data/index/`, `data/sources/`, `tools/` and the docs (~1.2 MB). `.gitignore` excludes `d4data/` (31 GB), raw `data/Item`, `data/Power`, `data/StringList`, and the old scraper files.
 - **After a data rebuild:** commit the new `data/index/codex.json` too, or the live site keeps the old data.
