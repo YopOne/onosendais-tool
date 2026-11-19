@@ -451,11 +451,14 @@ def main():
                 tags = [(t or {}).get("name", "") for t in araw.get("arAffixSkillTags") or []]
                 arec["sl"] = slots
                 arec["cat"] = aspect_category(tags, slots)
-            ic = icons and icons.for_handle(aspect_icon.get(a))
-            if ic:
-                arec["ic"] = ic
             aspects_by_name[key] = (score, arec)
     aspects = sorted((r for _, r in aspects_by_name.values()), key=lambda r: r["name"])
+    # Icons only for the kept version of each aspect: registering a replaced duplicate's icon
+    # (e.g. legendary_generic_038 next to its _x2) would copy an unused file to data/icons/.
+    for arec in aspects:
+        ic = icons and icons.for_handle(aspect_icon.get(arec["id"]))
+        if ic:
+            arec["ic"] = ic
 
     # ---------- Talisman set charms ----------
     # Talisman_Charm_Set_<Class>_<set>_<piece>: one charm per type (Phoba, Fer, Mlor, Linta, Berú) per set.
