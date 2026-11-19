@@ -166,7 +166,7 @@ h1, h2, h3 { margin: 0; }
   box-shadow: 0 0 10px var(--accent-glow);
 }
 
-.search { position: relative; margin-left: auto; flex: 0 1 360px; display: flex; align-items: center; }
+.search { position: relative; margin-left: auto; flex: 0 1 360px; min-width: 240px; display: flex; align-items: center; }
 .search__prompt { position: absolute; left: 14px; font: 700 0.8rem var(--font-mono); color: var(--accent); pointer-events: none; }
 .search input {
   width: 100%;
@@ -182,11 +182,15 @@ h1, h2, h3 { margin: 0; }
 .search input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), 0 0 18px var(--accent-soft); }
 .search__kbd { position: absolute; right: 12px; font: 0.68rem var(--font-mono); color: var(--faint); border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; }
 
-@media (max-width: 900px) {
+/* Brand + five tabs + a usable search box need ~1500px; below that the tabs get their own row
+   (otherwise the search box is squeezed to its padding and can't be typed in). */
+@media (max-width: 1500px) {
   .hud__inner { flex-wrap: wrap; gap: 8px 12px; }
   .nav { order: 3; width: 100%; overflow-x: auto; scrollbar-width: none; }
   .nav::-webkit-scrollbar { display: none; }
-  .search { flex: 1 1 200px; }
+}
+@media (max-width: 900px) {
+  .search { flex: 1 1 200px; min-width: 0; }
   .search__kbd { display: none; }
 }
 
@@ -598,6 +602,11 @@ html[data-sb-ip="900"] .pd__slot--unique { --spark: var(--spark-anc); --spark-hi
   color: var(--text); font-size: 0.84rem;
 }
 .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+/* Dropdown lists: Windows browsers draw the open list with the select's (white) text on their
+   default white background, so give the list the dark theme explicitly. */
+select { color-scheme: dark; }
+select option, select optgroup { background-color: var(--panel); color: var(--text); }
+select option:disabled { color: var(--faint); }
 .sandbox__actions { display: flex; gap: 8px; }
 
 .sandbox__list { display: grid; gap: 12px; }
