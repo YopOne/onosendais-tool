@@ -21,7 +21,7 @@
   const RAW = { item: "data/Item/", stl: "data/StringList/", power: "data/Power/" };
 
   const CLASS_FILTERS = ["Barbarian", "Druid", "Necromancer", "Paladin", "Rogue", "Sorcerer", "Spiritborn", "Warlock"];
-  const RARITY_FILTERS = ["Unique", "Mythic", "Legendary"]; // Ancestral is a View (item power 900), not a rarity
+  const RARITY_FILTERS = ["Unique", "Mythic", "Legendary", "Seasonal"]; // Ancestral is a View (item power 900), not a rarity
   // Aspect categories (FILTER_Legendary_* tags) and the slots aspects can be imprinted on (arAllowedItemLabels).
   const ASPECT_CATS = ["Offensive", "Defensive", "Utility", "Resource", "Mobility"];
   const ASPECT_SLOTS_ORDER = ["Weapon", "Helm", "Chest", "Gloves", "Pants", "Boots", "Amulet", "Ring", "Shield"];
@@ -705,12 +705,26 @@
   /* ---------- Item mods (Sandbox): Greater Affixes, tempering, masterworking, Transfiguration ----------
    * state.sandbox.mods = { "<record key>": { ga: [bool per base affix], temper: { m: manual id, a: affix id } | null,
    *   mw: 0..25, cap: base affix index | -1, tf: [Transfiguration affix ids, max 5], lock: bool } }
-   * One affix's value × (1 + GA 0.25) × (1 + masterwork level × 1–3%) × (1 + capstone 0.5); bonuses multiply
-   * (assumed; user's choice 18 Nov). Masterwork levels roll 1–3% each: the Sandbox's roll quality picks the point. */
+   * One affix's value × (1 + GA 0.25) × (1 + item quality %) × (1 + capstone 0.5); bonuses multiply
+   * (assumed; user's choice 18 Nov). Item quality (user 19 Nov) = masterwork level (1 per level, 25 at the cap) + the
+   * Transfiguration "+N Item Quality" stat (X2_Transfiguration_AddQuality 1-15, _Lesser 1-10; both are the game's
+   * Item_Refinement_Bonus, summed in Item_Refinement_Total): a flat +1% per point on every affix. Masterwork 25 = ×1.25,
+   * Maxroll's values (Mythic Leoric's Crown + Gem Strength 30% at masterwork 25 = 37.5%); 25 + 15 = ×1.40. */
   const glb = () => (Engine.codex && Engine.codex.globals) || {};
   const MW_CAP = () => glb().mwCap || 25;
   const TF_MAX = 5;
-  const mwPerLevel = (t) => 0.01 + 0.02 * (t == null ? 1 : t);
+  /** Transfiguration stats that add item quality (their own number isn't scaled by quality). */
+  const isQualityAffix = (a) => /^X2_Transfiguration_AddQuality/.test(a || "");
+  /** An item's quality: masterwork level + its Transfiguration "+N Item Quality" (rendered in that world: roll, Mythic). */
+  function itemQuality(m, world) {
+    if (!m) return 0;
+    let q = m.mw || 0;
+    for (const a of m.tf || []) if (isQualityAffix(a)) for (const l of Engine.renderAffix(a, { ...world, affixMult: 1 })) {
+      const x = /([\d.]+)\s*Item Quality/i.exec(l.plain || "");
+      if (x) q += +x[1];
+    }
+    return q;
+  }
   const modsOf = (key) => (state.sandbox.mods || {})[key] || null;
   const hasMods = (m) => Boolean(m && ((m.ga || []).some(Boolean) || m.temper || m.mw || (m.tf || []).length || m.lock || m.tga || (m.rand || []).some(Boolean)));
   /** An item has 4 base affixes: its fixed ones from the data, the rest rolled from the S04 pool (picked in the editor). */
@@ -722,11 +736,12 @@
   const TEMPER_CAP = 99;
   /** Multiplier for one affix. Masterworking is universal (base affixes, temper, Transfiguration: the temper passes i = -1);
    * GA only on base affixes; the capstone on the chosen base or Transfiguration affix once masterwork is maxed. */
-  function affixMultFor(m, i, t) {
+  function affixMultFor(m, i, t, q) {
     if (!m) return 1;
     let x = 1;
     if (i === TEMPER_CAP ? m.tga : m.ga && m.ga[i]) x *= 1 + (glb().gaBonus ?? 0.25);
-    if (m.mw) x *= 1 + m.mw * mwPerLevel(t);
+    const quality = q ?? itemQuality(m, { t, rank: 1, ip: Engine.DEFAULT_IP });
+    if (quality) x *= 1 + quality / 100;
     if (m.cap === i && m.mw >= MW_CAP()) x *= 1 + (glb().mwCapstone ?? 0.5);
     return x;
   }
@@ -741,7 +756,7 @@
     // (in game: Moloch's Beating Flame 15-20% as a unique, 39% as a Mythic; Red Sermon 156% as a Mythic).
     const slotBonus = orig || c ? aspectSlotBonus(bonusSlot(it)) : 0;
     const pw = { ...base, mythic: orig, crafted: c, forceMax: c, potency: c ? Engine.mythicPotency() : 0, slotBonus, ip: orig || c ? IP.mythic : base.ip };
-    const sw = pw;
+    const sw = pw, q = mods ? itemQuality(mods, sw) : 0;
     return {
       crafted: c,
       power: it.power ? Engine.renderAffix(it.power, pw)[0] : null,
@@ -750,16 +765,17 @@
         if (!a) return [];
         if (!mods) return Engine.renderAffix(a, sw);
         const ga = Boolean(mods.ga && mods.ga[i]), cap = mods.cap === i && mods.mw >= MW_CAP();
-        return Engine.renderAffix(a, { ...sw, affixMult: affixMultFor(mods, i, base.t) }).map((l) => ({ ...l, ga, cap }));
+        return Engine.renderAffix(a, { ...sw, affixMult: affixMultFor(mods, i, base.t, q) }).map((l) => ({ ...l, ga, cap }));
       }),
       mythicLines: c ? Engine.renderMythicBonuses() : [],
-      temper: mods && mods.temper ? Engine.renderAffix(mods.temper.a, { ...sw, affixMult: affixMultFor(mods, TEMPER_CAP, base.t) })
+      temper: mods && mods.temper ? Engine.renderAffix(mods.temper.a, { ...sw, affixMult: affixMultFor(mods, TEMPER_CAP, base.t, q) })
         .map((l) => ({ ...l, ga: Boolean(mods.tga), cap: mods.cap === TEMPER_CAP && mods.mw >= MW_CAP() })) : [],
       transfig: mods ? (mods.tf || []).flatMap((a, k) => {
         const cap = mods.cap === TF_CAP + k && mods.mw >= MW_CAP();
-        return Engine.renderAffix(a, { ...sw, affixMult: affixMultFor(mods, TF_CAP + k, base.t) }).map((l) => ({ ...l, cap }));
+        return Engine.renderAffix(a, { ...sw, affixMult: isQualityAffix(a) ? 1 : affixMultFor(mods, TF_CAP + k, base.t, q) }).map((l) => ({ ...l, cap }));
       }) : [],
       mods: mods && hasMods(mods) ? mods : null,
+      quality: q,
     };
   }
 
@@ -812,6 +828,45 @@
     return keys.length ? { keys, tag: tags.join(" "), text: parts.join(". ") + "." } : null;
   }
 
+  /** A Soul Splinter's power at a tier: the AttributeDescriptions text with {VALUE2} = the tier's value (times f for a
+   * Leoric's Crown style gem boost); other numbers come from its PowerTag script formulas. */
+  function splinterPower(sp, tier, f = 1) {
+    const t = sp.tiers[tier], v = (t && t.pv != null ? t.pv : 0) * f;
+    const num = (x, dec) => (Math.round(x * 10 ** dec) / 10 ** dec).toLocaleString("en-US");
+    const txt = String(sp.power || "").replace(/\[\{VALUE2\}([^|\]]*)(?:\|([^|\]]*)\|)?\]/g, (_, expr, fmt = "") => {
+      // Boosted values are rounded down to whole numbers like the game (20% x 2.26875 = 45.4 -> 45%).
+      const dec = /1/.test(fmt) && f === 1 ? 1 : 0, s = f !== 1 ? Math.floor(v + 1e-9).toLocaleString("en-US") : num(v, dec);
+      return `${/x/.test(fmt) ? "x" : ""}${/\+/.test(fmt) ? "+" : ""}${s}${/%/.test(fmt) ? "%" : ""}`;
+    });
+    return Engine.render(txt, { world: { t: 1, rank: 1, ip: Engine.DEFAULT_IP }, depth: 0 });
+  }
+  const splinterById = (id) => ((Engine.codex && Engine.codex.splinters) || []).find((x) => x.id === id);
+  /** A tier's power value as the power text formats it ("100%", "x2.5%", "+20%", "8"). */
+  function splinterValue(sp, v) {
+    const m = /\[\{VALUE2\}[^|\]]*(?:\|([^|\]]*)\|)?\]/.exec(sp.power || ""), fmt = (m && m[1]) || "";
+    const s = (Math.round(v * 10) / 10).toLocaleString("en-US");
+    return `${/x/.test(fmt) ? "x" : ""}${/\+/.test(fmt) ? "+" : ""}${s}${/%/.test(fmt) ? "%" : ""}`;
+  }
+  /** Tooltip for a Soul Splinter: the chosen tier (default the top one) with its stat line and power, every tier's
+   * values, and — socketed in a Leoric's Crown style helm (spec) — the helm's gem boost applied. */
+  function splinterTooltip(sp, tier, spec, idx) {
+    if (!sp) return null;
+    const dup = spec && idx != null && idx !== "" && !activeSplinters(sbLayout()).has(`${spec}#${idx}`);
+    const gb = gemBoost(spec, sbLayout()), f = gb.f, hj = gb.crown;
+    const t = tier == null || !sp.tiers[tier] ? sp.tiers.length - 1 : tier, cur = sp.tiers[t];
+    const eff = f !== 1 ? scaleGemText(cur.eff, f) : cur.eff, pw = splinterPower(sp, t, f);
+    const rows = sp.tiers.map((x, i) => `<li class="${i === t ? "tt__set-on" : "tt__set-off"}"><b>${esc(x.name)}</b>: ${esc(x.eff)} · power ${esc(splinterValue(sp, x.pv || 0))}</li>`).join("");
+    const r = state.byId.get("p:" + sp.id);
+    return `<div class="tt__head">${cur.ic ? `<span class="ico-well ico-well--tt">${itemIcon(cur.ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(cur.name)}</p><p class="tt__type">Season 15 Soul Splinter · Jewelry socket</p></div></div>
+      <div class="tt__body"><ul class="tt__lines"><li>${Engine.renderText(eff).html}</li></ul><p class="tt__power${dup ? " pg-bonus-off" : ""}">${pw.html}</p>
+        ${dup ? `<p class="tt__warn mono">POWER DOESN'T STACK: another ${esc(sp.name)} in the build counts. Its stat line still counts.</p>` : ""}
+        ${hj ? `<p class="hint">${esc(hj.name)}: the helm counts as Jewelry.</p>` : ""}
+        ${f !== 1 ? `<p class="hint">Gem strength in this item: ${esc(gemBoostText(gb))}, on the resistance / stats and the power's main value.</p>` : ""}
+        <div class="tt__sep"></div><p class="hint mono" style="margin:0 0 4px">TIERS (5 of one tier → 1 of the next in the Horadric Cube):</p><ul class="tt__lines tt__lines--set">${rows}</ul>
+        ${sp.flavor ? `<p class="tt__flavor">${esc(sp.flavor)}</p>` : ""}</div>
+      <dl class="tt__foot"><dt>SOCKET</dt><dd>Jewelry only: amulet, rings, or a helm that counts as Jewelry (Leoric's Crown). Several of the same splinter can be socketed: each stat line counts, the power only once</dd><dt>SOURCE</dt><dd>${esc(r && r.drop ? r.drop.text : "Season 15")}</dd><dt>ID</dt><dd>${esc(cur.id)}</dd></dl>`;
+  }
+
   function buildRecords(codex) {
     const records = [];
     state.byId.clear();
@@ -857,6 +912,27 @@
         icon: asp.ic || "",
         power, imp: [], stats: [], mythicLines: [], crafted: false,
         raw: asp,
+      });
+    }
+
+    // Season 15 Soul Splinters: seasonal socketables for Jewelry sockets (one card per splinter, top tier shown).
+    for (const sp of codex.splinters || []) {
+      const top = sp.tiers.length - 1;
+      records.push({
+        key: "p:" + sp.id,
+        kind: "splinter",
+        id: sp.id,
+        name: sp.name,
+        rarity: "Seasonal",
+        slot: "Jewelry socket",
+        type: "Season 15 Soul Splinter",
+        classes: [],
+        flavor: sp.flavor || "",
+        icon: sp.tiers[top].ic || "",
+        power: splinterPower(sp, top), imp: [], stats: [{ html: Engine.renderText(sp.tiers[top].eff).html, plain: sp.tiers[top].eff }],
+        mythicLines: [], crafted: false,
+        drop: { keys: ["crafted"], tag: "S15 Splinter", text: "Season 15 Soul Splinter. Upgrade 5 of a tier into 1 of the next in the Horadric Cube (Recipes tab): " + sp.tiers.map((t) => t.name).join(" → ") },
+        raw: sp,
       });
     }
 
@@ -917,11 +993,11 @@
         </span>
         <span class="card__foot">
           <span class="tag tag--cls">${esc(r.classLabel)}</span>
-          ${r.kind === "item" ? `<span class="tag">${esc(r.type)}</span>` : r.maxRank ? `<span class="tag">Rank 1–${r.maxRank}</span>` : ""}
+          ${r.kind === "splinter" ? `<span class="tag" title="${esc(r.raw.tiers.map((t) => t.name).join(" · "))}">${r.raw.tiers.length} tiers</span>` : r.kind === "item" ? `<span class="tag">${esc(r.type)}</span>` : r.maxRank ? `<span class="tag">Rank 1–${r.maxRank}</span>` : ""}
           ${r.kind === "aspect" && r.aslots.length ? `<span class="tag" title="Can be imprinted on: ${esc(r.aslots.join(", "))}">${esc(aspectSlotsShort(r.aslots))}</span>` : ""}
           ${r.drop ? `<span class="tag tag--drop" title="${esc(r.drop.text)}">${esc(r.drop.tag)}</span>` : ""}
         </span>
-        <button type="button" class="pin${blocked ? " pin--blocked" : ""}" data-pin="${esc(r.key)}" aria-pressed="${pinned}" title="${esc(blocked || `${pinned ? "Remove from" : "Add to"} Theorycraft Sandbox`)}" aria-label="${pinned ? "Remove from sandbox" : blocked ? esc(blocked) : "Add to sandbox"}">${pinned ? "✓" : blocked ? "⊘" : "+"}</button>
+        ${r.kind === "splinter" ? "" : `<button type="button" class="pin${blocked ? " pin--blocked" : ""}" data-pin="${esc(r.key)}" aria-pressed="${pinned}" title="${esc(blocked || `${pinned ? "Remove from" : "Add to"} Theorycraft Sandbox`)}" aria-label="${pinned ? "Remove from sandbox" : blocked ? esc(blocked) : "Add to sandbox"}">${pinned ? "✓" : blocked ? "⊘" : "+"}</button>`}
       </article>`;
   }
 
@@ -952,7 +1028,7 @@
       r.kind === "aspect" && (r.aslots || []).length ? ["SLOTS", r.aslots.join(", ") + (r.aslots.includes("Weapon") ? " (2H weapon ×2)" : "") + (r.aslots.includes("Amulet") ? " · amulet ×1.5" : "")] : null,
       r.kind === "aspect" ? ["IMPRINT", "On a rare item in an allowed slot via the Codex of Power (salvage a legendary at the Blacksmith to save it), or over the aspect of a legendary in that slot"] : null,
       rendered.mods && rendered.mods.temper ? ["TEMPERED", (temperManual(rendered.mods.temper.m) || {}).name ? `${temperManual(rendered.mods.temper.m).name} (Tier ${temperManual(rendered.mods.temper.m).tier}, Blacksmith)` : "Blacksmith"] : null,
-      rendered.mods && rendered.mods.mw ? ["MASTERWORK", `${rendered.mods.mw} / ${MW_CAP()} (+${rendered.mods.mw} item quality): every affix incl. temper and Transfiguration ×${(1 + rendered.mods.mw * mwPerLevel(state.sandbox.t)).toFixed(2)} (1–3% per level, range ×${(1 + rendered.mods.mw * 0.01).toFixed(2)}–×${(1 + rendered.mods.mw * 0.03).toFixed(2)})`] : null,
+      rendered.mods && rendered.mods.mw ? ["MASTERWORK", `${rendered.mods.mw} / ${MW_CAP()}: item quality ${rendered.quality || rendered.mods.mw}${(rendered.quality || 0) > rendered.mods.mw ? ` (+${rendered.quality - rendered.mods.mw} from Transfiguration)` : ""}, every affix incl. temper and Transfiguration ×${(1 + (rendered.quality || rendered.mods.mw) / 100).toFixed(2)}`] : null,
       rendered.mods && (rendered.mods.tf || []).length ? ["TRANSFIGURED", `${rendered.mods.tf.length} stat${rendered.mods.tf.length > 1 ? "s" : ""} from the Horadric Cube`] : null,
       rendered.mods && rendered.mods.lock ? ["LOCKED", "Transfigured: nothing on this item can be changed any more"] : null,
       rendered.crafted ? ["MYTHIC", "Crafted: base stats at max, unique power +Unique Potency. Only 1 crafted Mythic can be equipped at a time"] : null,
@@ -993,7 +1069,7 @@
     const world = { t: state.sandbox.t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP };
     const [kind, ...rest] = key.split(":");
     const id = rest.join(":");
-    if (kind === "gem") { const [type, tg] = id.split("|"); const h = gemTooltip(type, tg === "" || tg == null ? null : +tg); return h && { html: h, rarity: "gem" }; }
+    if (kind === "gem") { const [type, tg, sp] = id.split("|"); const h = gemTooltip(type, tg === "" || tg == null ? null : +tg, sp); return h && { html: h, rarity: "gem" }; }
     if (kind === "rune") { const [rid, slot] = id.split("|"); const h = runeTooltip(rid, slot); return h && { html: h, rarity: "rune" }; }
     if (kind === "set") { const x = state.sandbox.sets[+id], p = x && talismanIdx().piece.get(x.p); return p && { html: setCharmTooltip(p, x.a), rarity: "set" }; }
     if (kind === "piece") { const p = talismanIdx().piece.get(id); return p && { html: setCharmTooltip(p, []), rarity: "set" }; }
@@ -1024,8 +1100,10 @@
       const r = { ...r0, type: "Charm", slot: "Talisman (charm: unique power only)" };
       return { html: tooltipInner(r, renderItem(ch, world, false)), rarity: rarityClass(r0.rarity) };
     }
+    if (kind === "splinter") { const [sid, tier, spec, idx] = id.split("|"); const h = splinterTooltip(splinterById(sid), +tier, spec, idx); return h && { html: h, rarity: "seasonal" }; }
     const r = state.byId.get(key);
     if (!r) return null;
+    if (r.kind === "splinter") { const h = splinterTooltip(r.raw, null); return h && { html: h, rarity: "seasonal" }; }
     if (!inSandbox) return { html: tooltipInner(r), rarity: rarityClass(shownRarity(r)) };
     const rendered = renderedAt(r, world);
     return { html: tooltipInner(r, rendered), rarity: rarityClass(shownRarity(r, rendered)) };
@@ -1237,7 +1315,9 @@
       state.pins = decodeURIComponent(fromHash[1]).split(",").filter((k) => k && state.byId.has(k));
       const cls = /[?&]cls=([^&]+)/.exec(location.hash);
       try { Object.assign(state.sandbox, JSON.parse(localStorage.getItem(SB_KEY)) || {}); } catch { /* ignore */ }
-      if (!Array.isArray(state.sandbox.mythic)) state.sandbox.mythic = [];
+      // Crafted Mythics come from the link (my=), not from this browser's last build.
+      const my = /[?&]my=([^&]+)/.exec(location.hash);
+      state.sandbox.mythic = my ? decodeURIComponent(my[1]).split(",").filter((k) => state.pins.includes(k)) : [];
       if (!state.sandbox.slot || typeof state.sandbox.slot !== "object") state.sandbox.slot = {};
       const ch = /[?&]charms=([^&]+)/.exec(location.hash), seal = /[?&]seal=([^&]+)/.exec(location.hash);
       state.sandbox.charms = ch ? decodeURIComponent(ch[1]).split(",").filter((k) => state.pins.includes(k)) : [];
@@ -1259,7 +1339,7 @@
       }
       const so = /[?&]sock=([^&]+)/.exec(location.hash), gt = /[?&]gt=(\d)/.exec(location.hash);
       state.sandbox.sock = {};
-      if (so) for (const x of decodeURIComponent(so[1]).split(",")) { const [sp, ...v] = x.split("~"); if (/^(g|w):/.test(sp)) state.sandbox.sock[sp] = v.map((y) => (/^(g|r):/.test(y) ? y : "")); }
+      if (so) for (const x of decodeURIComponent(so[1]).split(",")) { const [sp, ...v] = x.split("~"); if (/^(g|w):/.test(sp)) state.sandbox.sock[sp] = v.map((y) => (/^(g|r|p):/.test(y) ? y : "")); }
       state.sandbox.gt = gt ? +gt[1] : 9;
       state.sandbox.mods = cleanMods(parseMods(/[?&]mods=([^&]+)/.exec(location.hash)));
       const skm = /[?&]sk=([^&]+)/.exec(location.hash);
@@ -1578,7 +1658,7 @@
   function runeRules(slot, idx, L) {
     const own = socketsOf(slot, L), other = own.filter((v, i) => i !== idx && v);
     const otherRune = other.find((v) => v.startsWith("r:"));
-    if (other.some((v) => v.startsWith("g:"))) return { why: "Not with a gem in the other socket: an item holds gems or a runeword, not both.", used: new Set() };
+    if (other.some((v) => v.startsWith("g:") || v.startsWith("p:"))) return { why: "Not with a gem or splinter in the other socket: an item holds gems or a runeword, not both.", used: new Set() };
     const used = new Set(), withRunes = new Set();
     for (const [sp, arr] of Object.entries(state.sandbox.sock)) {
       if (!socketInfo(sp, L).n) continue;
@@ -1598,7 +1678,7 @@
     const leg = state.sandbox.leg[spec];
     if (kind === "g") {
       if (!L.gear[a] || (!L.gear[a][+b] && !leg)) return { n: 0 };
-      return { n: { Helm: 2, Chest: 2, Pants: 2, Amulet: 1, Ring: 1 }[a] || 0, target: a === "Amulet" || a === "Ring" ? 2 : 1 };
+      return { n: { Helm: 2, Chest: 2, Pants: 2, Amulet: 1, Ring: 1 }[a] || 0, target: a === "Amulet" || a === "Ring" || (a === "Helm" && helmJewelry(L)) ? 2 : 1 };
     }
     const k = L.weapons[a];
     const twoHand = Boolean(k) && Object.values(L.weapons).filter((x) => x === k).length > 1;
@@ -1621,16 +1701,95 @@
     while (cur.length < n) cur.push("");
     return cur;
   }
-  /** One socket's effect line(s) for a target. */
-  function socketLine(v, target) {
-    if (v.startsWith("g:")) { const g = gemOf(v.slice(2)); return g ? { name: g.name, ic: g.ic, text: g.eff[target] || "" } : null; }
+  /** A helm whose unique power makes it count as Jewelry and boosts its gems (Leoric's Crown: "This item counts as
+   * Jewelry and increases the effect of any gem socketed into the helm by x15-35%"): { name, boost } or null.
+   * The boost is read from the power as rendered at the Sandbox's roll quality / Mythic setting. */
+  function helmJewelry(L) {
+    const k = L && L.gear.Helm && L.gear.Helm[0], r = k && state.byId.get(k);
+    if (!r) return null;
+    const it = codexItem(r.id), tpl = it && it.power && (Engine.codex.affixes[it.power] || {}).t;
+    if (!tpl || !/counts as\W*(?:\{[^}]*\})?\s*Jewelry/i.test(tpl)) return null;
+    const rd = renderedAt(r, { t: state.sandbox.t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP });
+    const m = rd && rd.power && /effect of any gem[^.]*?by x?(\d+(?:\.\d+)?)%/i.exec(rd.power.plain);
+    return { name: r.name, boost: m ? +m[1] / 100 : 0 };
+  }
+  /** Socketed Soul Splinters whose power counts. Several of the same splinter can be socketed and each one's stat line
+   * counts, but its power doesn't stack (user, 19 Nov): per splinter type only the strongest copy's power counts
+   * (tier value x a helm's gem boost; assumed). Set of "<slot spec>#<socket index>". */
+  function activeSplinters(L) {
+    const best = new Map();
+    for (const sp of Object.keys(state.sandbox.sock || {})) {
+      const si = socketInfo(sp, L);
+      if (!si.n || si.target !== 2) continue;
+      socketsOf(sp, L).forEach((v, i) => {
+        if (!v.startsWith("p:")) return;
+        const [, sid, tier] = v.split(":"), def = splinterById(sid), x = def && def.tiers[+tier];
+        if (!x) return;
+        const val = (x.pv || 0) * gemBoost(sp, L).f;
+        const cur = best.get(sid);
+        if (!cur || val > cur.val) best.set(sid, { key: `${sp}#${i}`, val });
+      });
+    }
+    return new Set([...best.values()].map((b) => b.key));
+  }
+  /** What strengthens the gems in one build slot: Leoric's Crown's power (helm, "x65%": an x bonus) times the
+   * Transfiguration stat "X% Gem Strength in this Item" (X2_Transfiguration_IncreasedGemEffect 20-30%, 2H version
+   * 10-15%; masterwork applies). f = (1 + crown) x (1 + gem strength): matches Maxroll's Warlock Crown (Mythic 65%,
+   * Gem Strength 30% at masterwork 25 = 37.5%): Abyssal Splinter of Anguish 4,375 x 2.26875 = 9,925 Fire Resistance
+   * and 20% x 2.26875 = 45% Attack Speed (user 19 Nov). { f, parts: [{ name, v, x }], crown } */
+  function gemBoost(spec, L) {
+    const parts = [];
+    if (!spec || !L) return { f: 1, parts, crown: null };
+    const crown = spec.startsWith("g:Helm:") ? helmJewelry(L) : null;
+    if (crown && crown.boost) parts.push({ name: crown.name, v: crown.boost, x: true });
+    const rd = slotRendered(spec, L);
+    for (const l of (rd && rd.transfig) || []) {
+      const m = /([\d.]+)%\s+Gem Strength in this Item/i.exec((l && l.plain) || "");
+      if (m) parts.push({ name: "Transfiguration: Gem Strength", v: +m[1] / 100 });
+    }
+    // x bonuses multiply; +% gem strength lines add together first.
+    const add = parts.filter((x) => !x.x).reduce((a, x) => a + x.v, 0);
+    return { f: parts.filter((x) => x.x).reduce((a, x) => a * (1 + x.v), 1) * (1 + add), parts, crown };
+  }
+  /** The item in a build slot as the Sandbox renders it (roll, Mythic, item editor mods), or null. */
+  function slotRendered(spec, L) {
+    const [kind, a, b] = spec.split(":"), W = { t: state.sandbox.t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP };
+    const k = kind === "g" ? (L.gear[a] || [])[+b] : kind === "w" ? L.weapons[a] : null;
+    if (k) { const r = state.byId.get(k); return r ? renderedAt(r, W) : null; }
+    const leg = state.sandbox.leg[spec], r = leg && state.byId.get(leg.a);
+    return r ? renderLegAspect(r.key, spec) : null;
+  }
+  /** "x65% (Leoric's Crown) × +37.5% (Transfiguration: Gem Strength) = ×2.2688" */
+  const gemBoostText = (gb) => gb.parts.map((x) => `${x.x ? "x" : "+"}${Math.round(x.v * 1000) / 10}% (${x.name})`).join(" × ") + (gb.parts.length > 1 ? ` = ×${(Math.round(gb.f * 10000) / 10000)}` : "");
+  /** Every number in a gem effect line times f, rounded down like the game shows it (Abyssal Splinter of Anguish
+   * 4,375 x 2.26875 = 9,925.8 -> "+9,925 Fire Resistance", as Maxroll / the game show). */
+  const scaleGemText = (txt, f) => txt.replace(/\d[\d,]*(?:\.\d+)?/g, (s) => Math.floor(+s.replace(/,/g, "") * f + 1e-9).toLocaleString("en-US"));
+  /** One socket's effect line(s) for a target; spec + L apply a Leoric's Crown style helm boost to its gems. */
+  function socketLine(v, target, spec, L) {
+    if (v.startsWith("g:")) {
+      const g = gemOf(v.slice(2));
+      if (!g) return null;
+      const gb = gemBoost(spec, L), text = g.eff[target] || "";
+      return { name: g.name, ic: g.ic, text: gb.f !== 1 ? scaleGemText(text, gb.f) : text, boost: gb.f !== 1 ? gb : null };
+    }
+    if (v.startsWith("p:")) {
+      const [, sid, tier] = v.split(":"), sp = splinterById(sid), x = sp && sp.tiers[+tier];
+      if (!x) return null;
+      const gb = gemBoost(spec, L), f = gb.f;
+      // Only Jewelry sockets take a splinter (an armor / weapon socket from an old save shows nothing).
+      return { name: x.name, ic: x.ic, text: target === 2 ? (f !== 1 ? scaleGemText(x.eff, f) : x.eff) : "", power: target === 2 ? splinterPower(sp, +tier, f) : null, splinter: sp, boost: f !== 1 ? gb : null };
+    }
     if (v.startsWith("r:")) { const r = runeById(v.slice(2)); return r ? { name: `${r.name} (${r.kind})`, ic: r.ic, rune: r } : null; }
     return null;
   }
-  function gemTooltip(type, target) {
+  function gemTooltip(type, target, spec) {
     const t = gemTypes().find((x) => x.type === type), g = gemOf(type);
     if (!g) return null;
-    const lines = [0, 1, 2].map((i) => `<li class="${target === i ? "tt__set-on" : target == null ? "" : "tt__set-off"}"><span class="mono">${GEM_TARGETS[i].toUpperCase()}</span> ${Engine.renderText(g.eff[i] || "").html}</li>`).join("");
+    // In a Leoric's Crown style helm the helm counts as Jewelry and its gems are boosted.
+    const gb = gemBoost(spec, sbLayout()), f = gb.f, hj = gb.crown;
+    const lines = [0, 1, 2].map((i) => `<li class="${target === i ? "tt__set-on" : target == null ? "" : "tt__set-off"}"><span class="mono">${GEM_TARGETS[i].toUpperCase()}</span> ${Engine.renderText(target === i && f !== 1 ? scaleGemText(g.eff[i] || "", f) : g.eff[i] || "").html}</li>`).join("")
+      + (hj ? `<li class="tt__set-on hint">${esc(hj.name)}: the helm counts as Jewelry.</li>` : "")
+      + (f !== 1 ? `<li class="tt__set-on hint">Gem strength in this item: ${esc(gemBoostText(gb))}</li>` : "");
     return `<div class="tt__head">${g.ic ? `<span class="ico-well ico-well--tt">${itemIcon(g.ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(g.name)}</p><p class="tt__type">Gem${t.tiers.length > 1 ? "" : " · Mythic"}</p></div></div>
       <div class="tt__body"><ul class="tt__lines tt__lines--set">${lines}</ul></div>
       <dl class="tt__foot"><dt>SOCKET</dt><dd>The effect depends on the item: weapon, armor or jewelry${target != null ? ` (this one: ${GEM_TARGETS[target].toLowerCase()})` : ""}</dd><dt>ID</dt><dd>${esc(g.id)}</dd></dl>`;
@@ -1724,7 +1883,10 @@
       const info = (sub) => ({ value: "info", name: "Runes", sub, icon: "", rarity: "common" });
       const notes = n !== 2 ? [] : rule.why ? [info(rule.why)]
         : [info(`${rule.kind ? `Only Runes of ${rule.kind}: the other socket holds a Rune of ${rule.kind === "Ritual" ? "Invocation" : "Ritual"}. ` : ""}${rule.used.size ? `Runes already in the build aren't listed (${[...rule.used].map((id) => (runeById(id) || {}).name).join(", ")}): each rune can be used once.` : "Each rune can be used once; at most 2 runewords."}`)];
-      return [{ value: "x", name: "Empty socket", sub: "Remove what's in this socket", icon: "", rarity: "common" }, ...(rule.otherRune ? [] : gems), ...notes, ...runes];
+      // Season 15 Soul Splinters go in Jewelry sockets only (amulet, rings, a Leoric's Crown helm); every tier is listed.
+      const splinters = target === 2 && !rule.otherRune ? ((Engine.codex && Engine.codex.splinters) || []).flatMap((sp) => sp.tiers.map((x, i) => ({
+        value: `p:${sp.id}:${i}`, name: x.name, sub: `Soul Splinter · Jewelry: ${x.eff} · ${splinterPower(sp, i).plain}`, icon: x.ic, rarity: "seasonal", tip: `splinter:${sp.id}|${i}|${slot}` }))) : [];
+      return [{ value: "x", name: "Empty socket", sub: "Remove what's in this socket", icon: "", rarity: "common" }, ...(rule.otherRune ? [] : gems), ...splinters, ...notes, ...runes];
     }
     const cls = sandboxClass();
     const [kind, a] = spec.split(":");
@@ -1792,7 +1954,7 @@
         const why = rule.why || (rule.used.has(r.id) && `${r.name} is already socketed: each rune can be used once.`)
           || (rule.kind && r.kind !== rule.kind && `The other socket holds a Rune of ${r.kind}: pair it with a Rune of ${rule.kind}.`);
         if (why) { toast(why); return; }
-      } else if (value.startsWith("g:") && cur.some((v, j) => j !== +i && v.startsWith("r:"))) {
+      } else if ((value.startsWith("g:") || value.startsWith("p:")) && cur.some((v, j) => j !== +i && v.startsWith("r:"))) {
         toast("Not with a rune in the other socket: an item holds gems or a runeword, not both."); return;
       }
       cur[+i] = value === "x" ? "" : value;
@@ -1948,6 +2110,13 @@
     const slot = spec.startsWith("g:") ? spec.split(":")[1] : legBonusSlot(spec, e) === "2h" ? "2H Weapon" : spec === "w:off" && !["Barbarian", "Rogue"].includes(sandboxClass()) ? "Off-Hand" : "1H Weapon";
     return { key, kind: "item", rarity: "Legendary", name: `Legendary ${slotNameOf(spec)} (${a.name})`, slot, raw: { stats: [] } };
   }
+  /** Switch a unique between itself and its crafted Mythic version (Sandbox). */
+  function toggleMythic(k) {
+    const list = state.sandbox.mythic, i = list.indexOf(k);
+    if (i >= 0) list.splice(i, 1); else list.push(k);
+    try { localStorage.setItem(SB_KEY, JSON.stringify(state.sandbox)); } catch { /* ignore */ }
+    renderSandbox();
+  }
   let modsKey = null;
   function openMods(key) {
     let el = document.getElementById("mods");
@@ -1987,6 +2156,7 @@
   function modsAction(act, val) {
     const r = modsRec(modsKey);
     if (!r) return;
+    if (act === "mythic") { toggleMythic(modsKey); drawMods(); return; }
     const all = state.sandbox.mods || (state.sandbox.mods = {});
     const m = all[modsKey] || (all[modsKey] = { ga: [], temper: null, mw: 0, cap: -1, tf: [], lock: false, rand: [] });
     if (!m.rand) m.rand = [];
@@ -2017,6 +2187,7 @@
     const t = state.sandbox.t, m = modsOf(modsKey) || { ga: [], temper: null, mw: 0, cap: -1, tf: [], lock: false, rand: [] };
     const lock = m.lock, dis = lock ? " disabled" : "", cap = MW_CAP(), g = glb();
     const crafted = state.sandbox.mythic.includes(modsKey) && canCraftMythic(r);
+    const qE = itemQuality(m, { t: r.rarity === "Mythic" || crafted ? 1 : t, rank: state.sandbox.rank, ip: r.rarity === "Mythic" || crafted ? 900 : state.sandbox.ip || Engine.DEFAULT_IP, forceMax: r.rarity === "Mythic" || crafted });
     const gold = (n) => (n || 0).toLocaleString("en-US");
     const fixed = (r.raw.stats || []).length, pool = affixPoolFor(r);
     const randSel = (j) => {
@@ -2029,7 +2200,7 @@
     const stats = Array.from({ length: slotsN }, (_, i) => {
       const j = i - fixed, a = i < fixed ? r.raw.stats[i] : (m.rand || [])[j];
       if (!a) return `<li class="mods__stat mods__stat--empty"><span class="mods__tag mono">ROLLED</span>${randSel(j)}</li>`;
-      const lines = Engine.renderAffix(a, { t: r.rarity === "Mythic" || crafted ? 1 : t, rank: state.sandbox.rank, ip: r.rarity === "Mythic" || crafted ? 900 : state.sandbox.ip || Engine.DEFAULT_IP, affixMult: affixMultFor(m, i, t) });
+      const lines = Engine.renderAffix(a, { t: r.rarity === "Mythic" || crafted ? 1 : t, rank: state.sandbox.rank, ip: r.rarity === "Mythic" || crafted ? 900 : state.sandbox.ip || Engine.DEFAULT_IP, affixMult: affixMultFor(m, i, t, qE) });
       return `<li class="mods__stat${m.ga[i] ? " is-ga" : ""}${m.cap === i && m.mw >= cap ? " is-cap" : ""}">
         <span class="mods__tag mono">${i < fixed ? "FIXED" : "ROLLED"}</span>
         ${i < fixed ? `<span class="mods__text">${lines.map((l) => l.html).join("<br>")}</span>` : randSel(j)}
@@ -2042,21 +2213,24 @@
     const manSel = `<select class="input mono" data-mact="tman" aria-label="Temper manual"${dis}><option value="">None</option>${[...byGroup].map(([grp, xs]) => `<optgroup label="${esc(grp)}">${xs.map((x) => `<option value="${esc(x.id)}"${man && man.id === x.id ? " selected" : ""}>${esc(x.name)} · Tier ${x.tier}${x.c.length === 1 ? "" : " · all classes"}</option>`).join("")}</optgroup>`).join("")}</select>`;
     const affSel = man ? `<select class="input mono" data-mact="taff" aria-label="Tempered affix"${dis}>${man.a.map((a) => `<option value="${esc(a)}"${m.temper.a === a ? " selected" : ""}>${esc(plainOf(a, t))}</option>`).join("")}</select>` : "";
     const tfo = transfigOptions(r).filter((x) => !m.tf.includes(x.id));
-    const tfList = m.tf.map((a, i) => `<li class="mods__stat${m.cap === TF_CAP + i && m.mw >= cap ? " is-cap" : ""}"><span class="mods__tag mono">TRANSFIG</span><span class="mods__text">${Engine.renderAffix(a, { t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP, affixMult: affixMultFor(m, TF_CAP + i, t) }).map((l) => l.html).join("<br>") || esc(a)}</span>${capBtn(TF_CAP + i)}<button type="button" class="btn btn--ghost mono" data-mact="tfrm" data-mval="${i}"${dis} aria-label="Remove">×</button></li>`).join("");
+    const tfList = m.tf.map((a, i) => `<li class="mods__stat${m.cap === TF_CAP + i && m.mw >= cap ? " is-cap" : ""}"><span class="mods__tag mono">TRANSFIG</span><span class="mods__text">${Engine.renderAffix(a, { t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP, affixMult: isQualityAffix(a) ? 1 : affixMultFor(m, TF_CAP + i, t, qE) }).map((l) => l.html).join("<br>") || esc(a)}</span>${capBtn(TF_CAP + i)}<button type="button" class="btn btn--ghost mono" data-mact="tfrm" data-mval="${i}"${dis} aria-label="Remove">×</button></li>`).join("");
     const tfSel = m.tf.length < TF_MAX ? `<select class="input mono" data-mact="tfadd" aria-label="Add a Transfiguration stat"${dis}><option value="">+ add a stat (${m.tf.length}/${TF_MAX})</option>${tfo.map((x) => `<option value="${esc(x.id)}">${esc(plainOf(x.id, t).slice(0, 90))}</option>`).join("")}</select>` : `<p class="hint mono">${TF_MAX} / ${TF_MAX}: the most ever seen.</p>`;
-    const per = mwPerLevel(t);
+    const tfQ = qE - (m.mw || 0);
     el.querySelector(".picker__title").textContent = `Modify: ${r.name}`;
-    el.querySelector(".mods__body").innerHTML = `
+    const mythicRow = !modsKey.startsWith("leg:") && canCraftMythic(r)
+      ? `<div class="mods__myth"><button type="button" class="btn btn--mythic mono" data-mact="mythic" aria-pressed="${crafted}" title="Unique + 5 Resplendent Sparks in the Horadric Cube: every affix at max, unique power +Unique Potency">MYTHIC</button>
+          <span class="hint">${crafted ? "Crafted Mythic: affixes at max, item power 900, unique power ×1.3 Unique Potency." : "Show this unique as its crafted Mythic version."}</span></div>` : "";
+    el.querySelector(".mods__body").innerHTML = `${mythicRow}
       ${lock ? `<p class="sb-note mono mods__lock">LOCKED // Transfigured in the Horadric Cube: nothing on this item can be changed. <button type="button" class="btn btn--ghost mono" data-mact="unlock" title="Not possible in game: only to edit this sandbox build">UNLOCK (SANDBOX ONLY)</button></p>` : ""}
       <section class="mods__sec"><h4 class="mods__h mono">BASE AFFIXES <span>${fixed} fixed + ${Math.max(0, BASE_AFFIXES - fixed)} rolled · GA +${Math.round((g.gaBonus ?? 0.25) * 100)}% each</span></h4>
         <ul class="mods__list">${stats || '<li class="hint">No base affixes in the data.</li>'}</ul></section>
       <section class="mods__sec"><h4 class="mods__h mono">MASTERWORK <span>${m.mw} / ${cap}</span></h4>
         <input type="range" min="0" max="${cap}" step="1" value="${m.mw}" data-mact="mw" aria-label="Masterwork level"${dis}>
-        <p class="hint">Each level raises item quality by 1 and adds a random 1–3% to <b>every</b> affix: base, temper and Transfiguration (roll quality ${Math.round(t * 100)}% → ${(per * 100).toFixed(1)}% per level: ×${(1 + m.mw * per).toFixed(2)}). At ${cap} (+${cap} item quality) the <b>capstone</b> gives one affix +${Math.round((g.mwCapstone ?? 0.5) * 100)}%: base, temper or Transfiguration. It lands at random: reroll it (${gold(g.mwGoldReroll)} gold each) until it hits the one you want, while the item can still be modified. Strongest on a GA (a GA temper too). Cost ${gold(g.mwGoldLevel)} gold per level, capstone ${gold(g.mwGoldCapstone)}, capstone reroll ${gold(g.mwGoldReroll)} (+ materials).</p></section>
+        <p class="hint">Each level adds 1 <b>item quality</b>, and each point of item quality adds a flat 1% to <b>every</b> affix: base, temper and Transfiguration. Item quality now: <b>${qE}</b> (${m.mw} masterwork${tfQ ? ` + ${tfQ} Transfiguration` : ""}) = ×${(1 + qE / 100).toFixed(2)} (Maxroll: masterwork 25 = ×1.25). At ${cap} (+${cap} item quality) the <b>capstone</b> gives one affix +${Math.round((g.mwCapstone ?? 0.5) * 100)}%: base, temper or Transfiguration. It lands at random: reroll it (${gold(g.mwGoldReroll)} gold each) until it hits the one you want, while the item can still be modified. Strongest on a GA (a GA temper too). Cost ${gold(g.mwGoldLevel)} gold per level, capstone ${gold(g.mwGoldCapstone)}, capstone reroll ${gold(g.mwGoldReroll)} (+ materials).</p></section>
       <section class="mods__sec"><h4 class="mods__h mono">TEMPER <span>5th affix · Blacksmith · can be GA</span></h4>
         <div class="mods__row">${manSel}${affSel}</div>
         ${m.temper ? `<ul class="mods__list"><li class="mods__stat${m.tga ? " is-ga" : ""}${m.cap === TEMPER_CAP && m.mw >= cap ? " is-cap" : ""}"><span class="mods__tag mono">TEMPER</span>
-          <span class="mods__text">${Engine.renderAffix(m.temper.a, { t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP, affixMult: affixMultFor(m, TEMPER_CAP, t) }).map((l) => l.html).join("<br>")}</span>
+          <span class="mods__text">${Engine.renderAffix(m.temper.a, { t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP, affixMult: affixMultFor(m, TEMPER_CAP, t, qE) }).map((l) => l.html).join("<br>")}</span>
           <label class="mods__chk mono" title="The temper can roll as a Greater Affix: +${Math.round((g.gaBonus ?? 0.25) * 100)}%"><input type="checkbox" data-mact="tga" data-mval="t"${m.tga ? " checked" : ""}${dis}> GA</label>${capBtn(TEMPER_CAP)}</li></ul>
           <p class="hint">The temper's value is a roll (Roll quality): rerolling it takes several tries, and it can land as a GA by chance. A GA temper is a good capstone target.</p>` : ""}
         ${mans.length ? "" : '<p class="hint">No temper manual fits this slot.</p>'}</section>
@@ -2179,7 +2353,9 @@
       const md = modsOf(k);
       const modBtn = !isCharm(k) && r.kind === "item"
         ? `<button type="button" class="pd__mods mono${hasMods(md) ? " is-on" : ""}${md && md.lock ? " is-locked" : ""}" data-mods="${esc(k)}" aria-label="Modify ${esc(r.name)}: Greater Affixes, temper, masterwork, Transfiguration" title="${md && md.lock ? "Transfigured: locked" : "Greater Affixes, temper, masterwork, Transfiguration"}">${md && md.lock ? "🔒" : "⚒"}</button>` : "";
-      return { label, key: isCharm(k) ? "charm:" + k : k, ic: r.icon, name: r.name, rar: rarityClass(shownRarity(r, { crafted })), clear: `data-unpin="${esc(k)}"`, extra: modBtn };
+      const mythBtn = !isCharm(k) && r.kind === "item" && canCraftMythic(r)
+        ? `<button type="button" class="pd__myth mono${crafted ? " is-on" : ""}" data-mythic="${esc(k)}" aria-pressed="${crafted}" aria-label="${crafted ? "Back to the unique" : "Make it the crafted Mythic"}: ${esc(r.name)}" title="${crafted ? "Crafted Mythic: click for the unique" : "Show the crafted Mythic version"}">M</button>` : "";
+      return { label, key: isCharm(k) ? "charm:" + k : k, ic: r.icon, name: r.name, rar: rarityClass(shownRarity(r, { crafted })), clear: `data-unpin="${esc(k)}"`, extra: modBtn + mythBtn };
     };
     const offIsShield = classOffhands(cls).some((t) => /Shield/.test(t));
     const emptyFor = (slot) => ({ ranged: "Bow", off: WEAPON_RULES[cls] ? "Weapon" : offIsShield ? "Shield" : "Weapon" })[slot] || "Weapon";
@@ -2213,8 +2389,8 @@
         const si = socketInfo(d.spec, L);
         if (!si.n) return "";
         return `<span class="pd__socks">${socketsOf(d.spec, L).map((v, i) => {
-          const ln = v && socketLine(v, si.target);
-          const tip = v ? (v.startsWith("g:") ? `gem:${v.slice(2)}|${si.target}` : `rune:${v.slice(2)}|${d.spec}@${i}`) : "";
+          const ln = v && socketLine(v, si.target, d.spec, L);
+          const tip = v ? (v.startsWith("g:") ? `gem:${v.slice(2)}|${si.target}|${d.spec}` : v.startsWith("p:") ? `splinter:${v.split(":")[1]}|${v.split(":")[2]}|${d.spec}|${i}` : `rune:${v.slice(2)}|${d.spec}@${i}`) : "";
           return `<button type="button" class="pd__sock${v ? " is-full" : ""}" data-pick="s|${esc(d.spec)}|${i}" data-label="${esc(d.label)} socket ${i + 1}"${tip ? ` data-key="${esc(tip)}"` : ""} aria-label="${esc(d.label)} socket ${i + 1}: ${ln ? esc(ln.name) : "empty"}">${PD.frames.socket ? itemIcon(PD.frames.socket, "pd__sockframe") : ""}${ln && ln.ic ? itemIcon(ln.ic, "pd__sockic") : ""}</button>`;
         }).join("")}</span>`;
       };
@@ -2248,14 +2424,15 @@
       const seen = new Set();
       const tierOpts = ruby.map((g, i) => ({ n: i + 1, label: tierName(g) })).reverse().filter((o) => !seen.has(o.label) && seen.add(o.label)).reverse()
         .map((o) => `<option value="${o.n}"${state.sandbox.gt === o.n ? " selected" : ""}>${esc(o.label)}</option>`).join("");
-      const totals = new Map();
+      const totals = new Map(), actSpl = activeSplinters(L);
       const rows = pdSlots.filter((d) => !d.blocked).map((d) => {
         const si = socketInfo(d.spec, L);
         if (!si.n) return "";
-        const socks = socketsOf(d.spec, L), lines = socks.map((v) => (v ? socketLine(v, si.target) : null));
-        const gemLis = lines.filter((x) => x && !x.rune).map((x) => {
+        const socks = socketsOf(d.spec, L), lines = socks.map((v) => (v ? socketLine(v, si.target, d.spec, L) : null));
+        const gemLis = lines.map((x, i) => ({ x, i })).filter(({ x }) => x && !x.rune).map(({ x, i }) => {
           totals.set(x.text, (totals.get(x.text) || 0) + 1);
-          return `<li><span class="sk__name">${esc(x.name)}</span> ${Engine.renderText(x.text).html}</li>`;
+          const dup = x.power && !actSpl.has(`${d.spec}#${i}`);
+          return `<li><span class="sk__name">${esc(x.name)}</span> ${Engine.renderText(x.text).html}${x.power ? `<br><span class="sk__splinter${dup ? " is-off" : ""}">${x.power.html}</span>${dup ? `<br><span class="hint mono">POWER DOESN'T STACK: another ${esc(x.splinter.name)} counts</span>` : ""}` : ""}</li>`;
         }).join("");
         const runes = lines.filter((x) => x && x.rune).map((x) => x.rune);
         const rit = runes.filter((r) => r.kind === "Ritual"), inv = runes.filter((r) => r.kind === "Invocation");
@@ -2270,22 +2447,24 @@
           rw = `<li class="sk__warn mono">${runes.length === 1 ? `${esc(runes[0].name)} does nothing alone: add a ${runes[0].kind === "Ritual" ? "Rune of Invocation" : "Rune of Ritual"} in the other socket` : "A runeword needs one Rune of Ritual and one Rune of Invocation"}</li>`;
         }
         const used = socks.filter(Boolean).length;
-        return `<li class="sk__slot"><span class="mono sk__label">${esc(d.label)} <span class="sk__tg">${GEM_TARGETS[si.target]} · ${used}/${si.n}</span></span>
+        return `<li class="sk__slot"><span class="mono sk__label">${esc(d.label)} <span class="sk__tg">${GEM_TARGETS[si.target]} · ${used}/${si.n}</span></span>${(() => { const gb = gemBoost(d.spec, L); return gb.crown || gb.f !== 1 ? `<span class="hint sk__boost">${gb.crown ? `${esc(gb.crown.name)}: counts as Jewelry. ` : ""}${gb.f !== 1 ? `Gem strength ${esc(gemBoostText(gb))}` : ""}</span>` : ""; })()}
           ${gemLis || rw ? `<ul class="sk__lines">${gemLis}${rw}</ul>` : `<span class="sk__empty">empty: click a socket on the item</span>`}</li>`;
       }).filter(Boolean).join("");
       // Weapon gem bonuses are damage multipliers ("x"): they multiply, so 2 × x32% is x74.2%, not x64%.
       // Other gem bonuses (stats, resistance, barrier, healing) add up.
       const MULT = /^x([\d.]+)% (.+ Damage Multiplier)$/;
       const fmtPct = (v) => (Math.round(v * 1000) / 10).toString();
-      const mults = new Map(), adds = [];
+      const mults = new Map(), adds = [], sums = new Map();
       for (const [t, q] of totals) {
         const m = MULT.exec(t);
-        if (m) mults.set(m[2], [...(mults.get(m[2]) || []), ...Array(q).fill(+m[1] / 100)]);
-        else {
-          const n = /^([+-]?)([\d,.]+)(%?) (.+)$/.exec(t);
-          adds.push(n && q > 1 ? `${n[1] || "+"}${(+n[2].replace(/,/g, "") * q).toLocaleString("en-US")}${n[3]} ${n[4]} <span class="mono sk__x">${q} gems</span>` : esc(t));
-        }
+        if (m) { mults.set(m[2], [...(mults.get(m[2]) || []), ...Array(q).fill(+m[1] / 100)]); continue; }
+        // The same stat from different gems / splinters / tiers adds up (+6,562.5 and +375 Cold Resistance).
+        const n = /^([+-]?)([\d,.]+)(%?) (.+)$/.exec(t);
+        if (!n) { adds.push(esc(t)); continue; }
+        const k = n[3] + "|" + n[4], e = sums.get(k) || { v: 0, q: 0, pct: n[3], what: n[4] };
+        e.v += (n[1] === "-" ? -1 : 1) * +n[2].replace(/,/g, "") * q; e.q += q; sums.set(k, e);
       }
+      for (const e of sums.values()) adds.push(`${e.v < 0 ? "-" : "+"}${(Math.round(Math.abs(e.v) * 10) / 10).toLocaleString("en-US")}${e.pct} ${e.what}${e.q > 1 ? ` <span class="mono sk__x">${e.q} sockets</span>` : ""}`);
       const multLis = [...mults].map(([what, vs]) => {
         const prod = vs.reduce((p, v) => p * (1 + v), 1) - 1;
         return `<li><span class="gt-mult">x${fmtPct(prod)}%</span> ${esc(what)}${vs.length > 1 ? ` <span class="mono sk__x">${vs.map((v) => (1 + v).toFixed(2)).join(" × ")}</span>` : ""}</li>`;
@@ -2470,10 +2649,11 @@
       setCh.forEach((x) => x.a.filter(Boolean).forEach((id, j) => src.push({ id: `setaff:${x.i}:${j}`, name: x.piece.name, lines: Engine.renderAffix(id, W850).map((l) => l.plain) })));
       for (const { set: st, types } of bySet.values())
         st.tiers.filter((tr) => types.size >= setNeed(tr.n)).forEach((tr) => src.push({ id: `setbonus:${st.id}:${tr.n}`, name: `${st.name} (${setNeed(tr.n)})`, lines: Engine.renderAffix(tr.a, W850).map((l) => l.plain) }));
+      const actSplD = activeSplinters(L);
       for (const d of pdSlots) {
         const si = socketInfo(d.spec, L);
         if (!si.n) continue;
-        socketsOf(d.spec, L).forEach((v, i) => { const ln = v && v.startsWith("g:") && socketLine(v, si.target); if (ln && ln.text) src.push({ id: `gem:${d.spec}:${i}`, name: `${ln.name} (${d.label})`, lines: [ln.text] }); });
+        socketsOf(d.spec, L).forEach((v, i) => { const ln = v && (v.startsWith("g:") || v.startsWith("p:")) && socketLine(v, si.target, d.spec, L); if (ln && (ln.text || ln.power)) src.push({ id: `gem:${d.spec}:${i}`, name: `${ln.name} (${d.label})`, lines: [ln.text, ln.power && actSplD.has(`${d.spec}#${i}`) && ln.power.plain].filter(Boolean) }); });
       }
       // Classify every number.
       const off = new Set(state.sandbox.dmgOff || []);
@@ -4201,10 +4381,7 @@
       }
       const myth = e.target.closest("[data-mythic]");
       if (myth) {
-        const k = myth.dataset.mythic, list = state.sandbox.mythic, i = list.indexOf(k);
-        if (i >= 0) list.splice(i, 1); else list.push(k);
-        try { localStorage.setItem(SB_KEY, JSON.stringify(state.sandbox)); } catch { /* ignore */ }
-        renderSandbox();
+        toggleMythic(myth.dataset.mythic);
       }
       const view = e.target.closest("[data-view]");
       if (view) setView(view.dataset.view);
@@ -4313,7 +4490,7 @@
     });
     els.sbClear.addEventListener("click", () => { state.pins = []; state.sandbox.charms = []; state.sandbox.sets = []; state.sandbox.torch = false; state.sandbox.leg = {}; state.sandbox.sock = {}; state.sandbox.mods = {}; saveSandbox(); savePins(); renderSandbox(); state.mode = null; });
     els.sbShare.addEventListener("click", async () => {
-      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}${Object.keys(state.sandbox.sock).length ? "&sock=" + encodeURIComponent(Object.entries(state.sandbox.sock).map(([sp, v]) => [sp, ...v].join("~")).join(",")) + "&gt=" + state.sandbox.gt : ""}${Object.keys(state.sandbox.mods || {}).length ? "&mods=" + encodeURIComponent(encodeMods(state.sandbox.mods)) : ""}${sealMods().p.some(Boolean) || sealMods().a.some(Boolean) ? "&sm=" + encodeURIComponent(sealMods().p.join(".") + "~" + sealMods().a.join(".")) : ""}${encodeSkills() ? "&sk=" + encodeURIComponent(encodeSkills()) : ""}${encodeParagon() ? "&pg=" + encodeURIComponent(encodeParagon()) : ""}`;
+      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}${Object.keys(state.sandbox.sock).length ? "&sock=" + encodeURIComponent(Object.entries(state.sandbox.sock).map(([sp, v]) => [sp, ...v].join("~")).join(",")) + "&gt=" + state.sandbox.gt : ""}${Object.keys(state.sandbox.mods || {}).length ? "&mods=" + encodeURIComponent(encodeMods(state.sandbox.mods)) : ""}${sealMods().p.some(Boolean) || sealMods().a.some(Boolean) ? "&sm=" + encodeURIComponent(sealMods().p.join(".") + "~" + sealMods().a.join(".")) : ""}${encodeSkills() ? "&sk=" + encodeURIComponent(encodeSkills()) : ""}${state.sandbox.mythic.length ? "&my=" + encodeURIComponent(state.sandbox.mythic.join(",")) : ""}${encodeParagon() ? "&pg=" + encodeURIComponent(encodeParagon()) : ""}`;
       try { await navigator.clipboard.writeText(url); els.sbShare.textContent = "COPIED"; }
       catch { window.prompt("Copy this link:", url); }
       setTimeout(() => (els.sbShare.textContent = "COPY LINK"), 1400);

@@ -928,6 +928,10 @@ select option:disabled { color: var(--faint); }
 .tooltip--rune { --rarity: #d9a35a; }
 .picker__item--gem { --rarity: #cfd6e6; }
 .picker__item--rune { --rarity: #d9a35a; }
+/* Season 15 Soul Splinters (seasonal socketables) */
+.card--seasonal, .tooltip--seasonal, .picker__item--seasonal { --rarity: #4fd1c5; }
+.sk__splinter { font-size: 0.8rem; color: var(--text-soft); }
+.sk__splinter.is-off { opacity: 0.5; text-decoration: line-through; }
 .picker__item--common { --rarity: var(--faint); }
 @media (max-width: 760px) { .sk__slot { grid-template-columns: 1fr; } }
 .gt-mult { color: #ff9d5c; font-weight: 700; }
@@ -981,6 +985,19 @@ select option:disabled { color: var(--faint); }
 .pd__mods:hover { color: var(--text); border-color: var(--accent); }
 .pd__mods.is-on { color: #1a0f00; background: var(--c-ga); border-color: var(--c-ga); }
 .pd__mods.is-locked { background: var(--c-transfig); border-color: var(--c-transfig); }
+/* Crafted Mythic toggle on a unique's paperdoll slot (top-left; the ⚒ editor is bottom-left) */
+.pd__myth {
+  position: absolute; left: -6px; top: 14%; z-index: 3; width: 22px; height: 22px; padding: 0;
+  display: grid; place-items: center; font: 700 0.66rem var(--font-mono); line-height: 1; cursor: pointer;
+  color: var(--muted); background: #111114; border: 1px solid var(--line); border-radius: 50%;
+  opacity: 0; transition: opacity .12s, color .12s, border-color .12s;
+}
+.pd__slot:hover .pd__myth, .pd__myth:focus-visible, .pd__myth.is-on { opacity: 1; }
+@media (hover: none) { .pd__myth { opacity: 1; } }
+.pd__myth:hover { color: var(--r-mythic); border-color: var(--r-mythic); }
+.pd__myth.is-on { color: #1a0a24; background: var(--r-mythic); border-color: var(--r-mythic); box-shadow: 0 0 8px color-mix(in srgb, var(--r-mythic) 60%, transparent); }
+/* Item editor: crafted Mythic toggle at the top */
+.mods__myth { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 
 .mods { width: min(640px, 100%); max-height: min(88vh, 900px); grid-template-rows: auto 1fr; }
 .mods__body { overflow-y: auto; display: grid; gap: 14px; padding-right: 4px; min-width: 0; }

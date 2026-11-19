@@ -553,6 +553,50 @@ def main():
         if tiers:
             gems["types"].append({"type": gtype, "tiers": tiers})
 
+    # ---------- Season 15 Soul Splinters: seasonal socketables (Jewelry sockets only) ----------
+    # Item/S15_SoulSplinter_<Boss>_0N.itm (item type S15_SeasonalSocketable), tiers 1-4 (Lesser ... Abyssal).
+    # ptSocketedEffects, eSocketTarget 2: a resistance / stat attribute (text = the item's Description) and the
+    # boss power attribute S15_Socketable_<Boss> (its value = {VALUE2} in the AttributeDescriptions text of that name;
+    # other numbers come from PowerTag.S15_Socketable_<Boss>."Script Formula N"). The Triad splinters
+    # (Terror / Destruction / Hatred) are consumables with no socket effect and are skipped.
+    def plain_desc(t):
+        t = re.sub(r"\{/?[a-z_]+[^}]*\}", "", t or "").strip()
+        return re.sub(r"\d{4,}", lambda m: f"{int(m.group(0)):,}", t)
+
+    splinters = []
+    for sp in sorted(glob.glob(os.path.join(item_dir, "S15_SoulSplinter_*_01.itm.json"))):
+        boss = os.path.basename(sp)[len("S15_SoulSplinter_"):-len("_01.itm.json")]
+        tiers, tag = [], None
+        for n in range(1, 10):
+            sid = f"S15_SoulSplinter_{boss}_{n:02d}"
+            gp = os.path.join(item_dir, sid + ".itm.json")
+            if not os.path.exists(gp):
+                break
+            j = load(gp)
+            se = next((x for x in j.get("ptSocketedEffects") or [] if x.get("ptAttributes")), None)
+            if not se:
+                break
+            power_attr = next((a for a in se["ptAttributes"] if (a.get("__eAttribute_name__") or "").startswith("S15_Socketable_")), None)
+            if power_attr:
+                tag = power_attr["__eAttribute_name__"]
+            s = strings(stl_dir, "Item_" + sid)
+            rec = {"id": sid, "name": s.get("Name", sid), "eff": plain_desc(s.get("Description", "")),
+                   "pv": float(power_attr["szAttributeFormula"]["value"]) if power_attr else None}
+            ic = icons and icons.for_item(j, (), item_dir)
+            if ic:
+                rec["ic"] = ic
+            tiers.append(rec)
+            if n == 4:
+                flavor = re.sub(r"\{icon:[^}]*\}?", "", s.get("Flavor", "")).strip()
+        if not tiers or not tag:
+            continue
+        tmpl = attr_by_label.get(tag, "")
+        powertags.update(POWERTAG_RE.findall(tmpl))
+        top = tiers[-1]["name"]
+        splinters.append({"id": boss, "name": top.split(" ", 1)[1] if " " in top else top, "power": tmpl, "pt": tag,
+                          "flavor": flavor if len(tiers) >= 4 else "", "tiers": tiers})
+    print(f"Soul Splinters: {len(splinters)} ({', '.join(x['name'] for x in splinters)})")
+
     # Paperdoll art (2DUI_InventoryGrid slot frames, 2DUI_PaperDoll_EmptySlotIcons, class sigils from
     # 2DUI_ClassIcons_Rendered / _X2_Rendered). The figures themselves are original SVGs in data/figures/.
     pd_frames = {"slot": 512199407, "small": 3647096516, "gold": 1364076039, "blocked": 2149698886, "socket": 771034155}
@@ -815,6 +859,7 @@ def main():
         "talisman": talisman,
         "paperdoll": paperdoll,
         "gems": gems,
+        "splinters": splinters,
         "itemTypes": item_types,
         "temper": temper,
         "transfig": transfig,
