@@ -5,6 +5,8 @@
 /data/StringList/
 # Raw icon export (~115 MB); tools/build_index.py copies the used ones to data/icons/
 /webp_icons/
+# All extracted Diablo 4 game graphics (~15 GB): 2DUI sheets, D4_GFX frames, exporter tool
+/Diablo_Files/
 
 # Earlier experiments, not used by the site
 /maxroll-d4-scraper/
