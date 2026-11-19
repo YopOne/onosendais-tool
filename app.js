@@ -3199,14 +3199,23 @@
     // Gear: "Blazing Scream is now an Archfiend Skill" (Elegy).
     const conv = new RegExp(st.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + " is now an? ([A-Z][A-Za-z ]+?) Skill", "i");
     for (const g of gp) { const m = conv.exec(g.plain); if (m) add(m[1], g.name); }
-    // The variant taken in the Sandbox's tree (needs the skill's power id).
+    // The variant taken in the Sandbox's tree (needs the skill's power id), plus variants gear grants for free
+    // ("Blazing Scream gains the Skull Splitter Variant for free": Elegy).
     const tree = power && skTree(), s = tree && skState();
-    const taken = tree ? tree.nodes.filter((n, i) => n.k === "mod" && n.p === power && s.pts[i] > 0 && n.ex != null && tree.nodes.filter((x) => x.ex === n.ex).length >= 3).map((n) => st.m[n.m]).filter(Boolean) : [];
+    const taken = tree ? tree.nodes.filter((n, i) => n.k === "mod" && n.p === power && s.pts[i] > 0 && n.ex != null && tree.nodes.filter((x) => x.ex === n.ex).length >= 3).map((n) => ({ ...st.m[n.m], free: "" })).filter((v) => v.n) : [];
+    if (power) for (const f of skFreeMods(power, gp)) if (!taken.some((v) => v.n === f.m.n)) taken.push({ ...f.m, free: f.src });
+    const tagRe = (t) => new RegExp("(^|\\s)" + t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(\\s|$)");
     for (const v of taken) {
-      // The variant's own tags: "Rampage becomes a Hellfire Mobility leap attack", "… becomes an Abyss Recast Skill".
+      const label = v.free ? `${v.n} variant, free from ${v.free}` : `${v.n} variant`;
       const plain = Engine.render(v.d || "", { power, world: { t: 1, rank: 1, skillRank: 1 }, depth: 0 }).plain;
-      const m = /\bbecomes an? (.+?)\s(?:Skill|attack)\b/i.exec(plain);
-      if (m) for (const t of skAllTags()) if (new RegExp("(^|\\s)" + t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(\\s|$)").test(m[1])) add(t, `${v.n} variant`);
+      // The variant's own tags: "Rampage becomes a Hellfire Mobility leap attack", "… becomes an Abyss Recast Skill",
+      // "… is now also a Summon Skill" (Summon = the Summoning tag).
+      for (const m of plain.matchAll(/\b(?:becomes|is now(?: also)?) an? (.+?)\s(?:Skill|attack)\b/gi)) {
+        const phrase = m[1].replace(/\bSummon\b/g, "Summoning");
+        for (const t of skAllTags()) if (tagRe(t).test(phrase)) add(t, label);
+      }
+      // A tag naming what the variant creates: "shoots out smaller Lesser Demon Skulls" (Skull Splitter).
+      for (const t of skAllTags()) if (new RegExp("\\b" + t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + " (?:Skulls?|Demons?|Summons?|Minions?)\\b").test(plain)) add(t, label);
       // Gear: "Archfiend Demonform Skill Variants are Core Skills" (Anathema of the Primes): a skill with the first tag
       // whose taken variant is a <Word> one (Demonic Smash "transforms you into Demonform") gets the second tag.
       for (const g of gp) for (const r of g.plain.matchAll(/([A-Z][A-Za-z]*(?: [A-Z][A-Za-z]*)*?) ([A-Z][A-Za-z]+) Skill Variants are ([A-Z][A-Za-z ]+?) Skills/g)) {
@@ -3235,12 +3244,26 @@
     if (si && si.power) out.add(si.power);
     return out;
   }
-  /** "<power>:<mod name hash>" for every upgrade / variant taken in the Sandbox's tree, for Mod.<Name> in formulas. */
+  /** "<power>:<mod name hash>" for every upgrade / variant taken in the Sandbox's tree or granted free by gear,
+   * for Mod.<Name> in formulas. */
   function skTakenMods() {
     const out = new Set(), tree = SK && skTree();
     if (!tree) return out;
-    const s = skState();
+    const s = skState(), gp = skGearPowers();
     tree.nodes.forEach((n, i) => { const e = n.k === "mod" && s.pts[i] > 0 && SK.skills[n.p] && SK.skills[n.p].m[n.m]; if (e && e.h != null) out.add(`${n.p}:${e.h >>> 0}`); });
+    for (const p of new Set(tree.nodes.filter((n) => n.k === "skill").map((n) => n.p))) for (const f of skFreeMods(p, gp)) if (f.m.h != null) out.add(`${p}:${f.m.h >>> 0}`);
+    return out;
+  }
+  /** Upgrades / variants of a skill that Sandbox gear grants for free: "<Skill> gains the <Name> Variant for free".
+   * [{ m: mod entry, src: item name }] */
+  function skFreeMods(power, gp) {
+    const st = SK && SK.skills[power];
+    if (!st) return [];
+    const out = [], re = new RegExp(st.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + " gains the (.+?) (?:Variant|Upgrade)s? for free", "gi");
+    for (const g of gp || skGearPowers()) for (const m of g.plain.matchAll(re)) {
+      const e = Object.values(st.m || {}).find((x) => x.n && x.n.toLowerCase() === m[1].toLowerCase());
+      if (e && !out.some((o) => o.m === e)) out.push({ m: e, src: g.name });
+    }
     return out;
   }
   /** The formula world for skill text in the Sandbox build: gear and the tree's choices are known. */
@@ -3322,6 +3345,7 @@
     const foot = [
       ["RANK", `${pts} / ${n.max}${!isMod && gear ? ` + ${gear} from gear = ${pts + gear}` : ""}`],
       !isMod && gearParts.length ? ["GEAR RANKS", gearParts.map((l) => `+${l.n} ${l.target} (${l.src})`).join(" · ")] : null,
+      !isMod ? (() => { const ch = skChoices(tree, s, n.p), v = ch.find((c) => c.variant), u = ch.filter((c) => !c.variant).length; return ["CHOSEN", [v ? `Variant: ${v.e.n}${v.free ? " (free)" : ""}` : "No variant", `${u} upgrade${u === 1 ? "" : "s"}`].join(" · ")]; })() : null,
       isMod ? ["UPGRADES", st.n] : null,
       n.ex != null ? ["CHOICE", tree.nodes.filter((x) => x.ex === n.ex).length >= 3 ? "Variant: pick 1 of 3 (changes how the skill works)" : "Upgrade: pick 1 of 2"] : null,
       n.lv ? ["LEVEL", `Needs level ${n.lv}`] : null,
@@ -3330,10 +3354,36 @@
     ].filter(Boolean);
     const ic = (isMod && m.ic) || st.ic;
     return `<div class="tt__head">${ic ? `<span class="ico-well ico-well--tt ico-well--skill">${itemIcon(ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(isMod ? m.n : st.n)}</p><p class="tt__type">${esc(cls)} ${isMod ? (n.ex != null && tree.nodes.filter((x) => x.ex === n.ex).length >= 3 ? "Skill Variant" : "Skill Upgrade") + " · " + esc(st.n) : "Skill"}${!isMod ? ` · Rank ${rank}` : ""}</p>${!isMod ? skTagsHTML(skSkillTags(st, null, n.p)) : ""}</div></div>
-      <div class="tt__body"><p class="tt__power">${body.html}</p>${gearHtml}${group ? `<div class="tt__sep"></div><p class="hint mono" style="margin:0 0 4px">OR INSTEAD:</p>${group}` : ""}</div>
+      <div class="tt__body"><p class="tt__power">${body.html}</p>${!isMod ? skChoicesHTML(cls, tree, s, n.p, ctx) : ""}${gearHtml}${group ? `<div class="tt__sep"></div><p class="hint mono" style="margin:0 0 4px">OR INSTEAD:</p>${group}` : ""}</div>
       <dl class="tt__foot">${foot.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
   }
 
+  /** The upgrades / variant chosen for a skill in the Sandbox tree (and ones gear grants for free), in full, for the
+   * skill's tooltip: the variant first (it changes how the skill works), then the upgrades. */
+  function skChoices(tree, s, power) {
+    const st = SK.skills[power], seen = new Set(), out = [];
+    tree.nodes.forEach((n, i) => {
+      if (n.k !== "mod" || n.p !== power || !(s.pts[i] > 0) || seen.has(n.m)) return;
+      const e = st.m[n.m];
+      if (!e) return;
+      seen.add(n.m);
+      out.push({ e, variant: n.ex != null && tree.nodes.filter((x) => x.ex === n.ex).length >= 3, free: "", lv: n.lv });
+    });
+    for (const f of skFreeMods(power)) {
+      const id = Object.keys(st.m).find((k) => st.m[k] === f.m);
+      if (id == null || seen.has(id)) continue;
+      const node = tree.nodes.find((x) => x.p === power && x.m === id);
+      seen.add(id);
+      out.push({ e: f.m, variant: !!node && node.ex != null && tree.nodes.filter((x) => x.ex === node.ex).length >= 3, free: f.src, lv: node && node.lv });
+    }
+    return out.sort((a, b) => b.variant - a.variant);
+  }
+  function skChoicesHTML(cls, tree, s, power, ctx) {
+    const ch = skChoices(tree, s, power);
+    if (!ch.length) return "";
+    return `<div class="tt__sep"></div><p class="hint mono sk-tt-choiceh" style="margin:0 0 4px">YOUR CHOICES:</p><ul class="tt__lines sk-tt-choices">${ch.map((c) =>
+      `<li class="${c.variant ? "sk-tt-variant" : ""}"><span class="mono sk-tt-kind">${c.variant ? "VARIANT" : "UPGRADE"}</span> <b>${esc(c.e.n)}</b>${c.free ? ` <span class="sk-tt-free">free from ${esc(c.free)}</span>` : ""}: ${Engine.render(c.e.d || "", ctx).html}</li>`).join("")}</ul>`;
+  }
   /** Spread-out layout (data positions are tight): clusters a bit further apart, each skill further from its root,
    * each upgrade branch further from its skill. Returns [[x, y], ...] per node; cached on the tree. */
   function skLayout(tree) {

@@ -1023,6 +1023,12 @@ select option:disabled { color: var(--faint); }
 /* Skill tags under a skill's name in tooltips (Core · Hellfire · Demonology…); ✦ = added by gear */
 .tt__tags { margin: 3px 0 0; font-size: 0.7rem; letter-spacing: 0.06em; color: var(--muted); }
 .tt__tag--gear { color: var(--r-mythic); }
+/* Skill tooltip: the upgrades / variant chosen in the tree */
+.sk-tt-choiceh { color: #d8b46a !important; }
+.sk-tt-choices li { font-size: 0.84rem; }
+.sk-tt-kind { font-size: 0.64rem; letter-spacing: 0.12em; color: var(--faint); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-right: 2px; }
+.sk-tt-variant .sk-tt-kind { color: #d8b46a; border-color: color-mix(in srgb, #d8b46a 50%, transparent); }
+.sk-tt-choices .sk-tt-free { margin: 0; font-size: 0.74rem; }
 
 /* Sandbox skill bar */
 .skb__slots { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
