@@ -144,7 +144,8 @@
       if (astCache.has(src)) return astCache.get(src);
       let ast;
       try {
-        const toks = tokenize(src);
+        // SNO.Affix.<id>: ids may start with a digit (2HSword_Unique_…), which the tokenizer would read as a number.
+        const toks = tokenize(src.replace(/\bSNO\.Affix\.([A-Za-z0-9_]+)/g, 'SNO.Affix."$1"'));
         let i = 0;
         const peek = () => toks[i];
         const isOp = (v) => toks[i] && toks[i].t === "op" && toks[i].v === v;
@@ -309,6 +310,13 @@
           return UNKNOWN;
         }
         case "call": {
+          // AffixIsEquipped(SNO.Affix.<affix id>): is that unique / aspect power in the Sandbox build?
+          // world.equipped: Set of affix ids (unknown outside the Sandbox: a tooltip without a build).
+          if (n.name.toLowerCase() === "affixisequipped") {
+            const a = n.args[0], id = a && a.k === "ref" && a.path[0] === "SNO" && a.path[1] === "Affix" ? a.path.slice(2).join(".") : null;
+            if (!id) return UNKNOWN;
+            return ctx.world.equipped ? (ctx.world.equipped.has(id) ? 1 : 0) : 0;
+          }
           const f = FUNCS[n.name] || FUNCS_LC[n.name.toLowerCase()];
           if (!f) return UNKNOWN;
           return f(ctx, n.args.map((a) => evalNode(a, ctx)));
@@ -376,8 +384,15 @@
       if (head === "ParagonBoardEquipIndex" && !rest.length) return ctx.world.boardIndex || 0;
       // Skill rank in skill formulas (Skills view): sLevel = points in the skill (+ ranks from gear).
       if ((head === "sLevel" || head === "sRank") && !rest.length) return ctx.world.skillRank || 1;
-      // Mod.UpgradeN: whether a skill upgrade is taken; the tooltip shows each upgrade on its own, so 0.
-      if (head === "Mod" && rest.length) return 0;
+      // Mod.<Name>: whether that upgrade / variant of the power is taken. The game stores each mod's name as a
+      // hash (h = h*33 + c over the lowercased name; "DemonForm" = Rampage's Demonic Smash). world.takenMods: Set of
+      // "<power>:<hash>" from the Sandbox tree; without it (each upgrade shown on its own) 0.
+      if (head === "Mod" && rest.length) {
+        if (!ctx.world.takenMods || !ctx.power) return 0;
+        let h = 0;
+        for (const ch of rest.join(".").toLowerCase()) h = (h * 33 + ch.charCodeAt(0)) >>> 0;
+        return ctx.world.takenMods.has(`${ctx.power}:${h}`) ? 1 : 0;
+      }
 
       // Owner.*, live character attributes: not knowable offline
       return UNKNOWN;
@@ -435,11 +450,22 @@
       c_runecondition: "gt-rune-ritual", c_runeeffect: "gt-rune-invoke",
     };
 
-    function applyConditions(text, flags) {
+    function applyConditions(text, flags, ctx) {
+      // A condition is a flag (SF.IsMythic) or, with a power in context, a script formula such as {if:SF_51}
+      // (Rampage: Wrath Cost when its Demonform variant is taken and Anathema of the Primes is equipped).
+      // Anything unknown (ADVANCED_TOOLTIP, live stats) takes the {else} branch.
+      const test = (cond) => {
+        const k = cond.trim();
+        if (k in flags) return flags[k];
+        if (!ctx || !ctx.power || !/^SF_\d+$/.test(k)) return false;
+        let v;
+        try { v = evalFormula(k, ctx); } catch (e) { return false; }
+        return v !== UNKNOWN && Boolean(v);
+      };
       let prev;
       do {
         prev = text;
-        text = text.replace(IF_RE, (_, cond, a, b) => (flags[cond.trim()] ? a : b || ""));
+        text = text.replace(IF_RE, (_, cond, a, b) => (test(cond) ? a : b || ""));
       } while (text !== prev);
       return text;
     }
@@ -447,7 +473,7 @@
     /** Render a game template to { html, plain }. */
     function render(template, ctx) {
       const flags = { "SF.IsMythic": !!(ctx.world.mythic || ctx.world.crafted) };
-      let text = applyConditions(String(template || ""), flags).replace(PLURAL_RE, (_, one, many) => many);
+      let text = applyConditions(String(template || ""), flags, ctx).replace(PLURAL_RE, (_, one, many) => many);
 
       const parts = text.split(PIECE_RE);
       let html = "", plain = "";
@@ -985,6 +1011,7 @@
     if (kind === "skill") { const [c, i] = id.split(":"); const h = skTooltip(c, i); return h && { html: h, rarity: "skill" }; }
     if (kind === "pg") { const h = SK && pgTooltip(id); return h && { html: h, rarity: "skill" }; }
     if (kind === "pgdef") { const h = SK && pgDefTooltip(id); return h && { html: h, rarity: "skill" }; }
+    if (kind === "sks" || kind === "skb" || kind === "skn" || kind === "skg") { const h = SK && skxTooltip(kind, id); return h && { html: h, rarity: kind === "skb" ? "legendary" : kind === "sks" ? "skill" : "rare" }; }
     if (kind === "torch") {
       const it = codexItem(TORCH_ID);
       if (!it) return null;
@@ -1162,7 +1189,8 @@
       if (ok) shown++;
     }
     els.count.innerHTML = `<b>${shown}</b> / ${cards.length} RECORDS${state.filters.q ? ` // QUERY "${esc(state.filters.q)}"` : ""}`;
-    els.empty.hidden = shown > 0;
+    const skHits = renderSkResults();
+    els.empty.hidden = shown > 0 || skHits > 0;
     els.viewCatalog.querySelectorAll(".pill[data-filter]").forEach((p) => {
       p.setAttribute("aria-pressed", String(state.filters[p.dataset.filter] === p.dataset.value));
     });
@@ -2423,11 +2451,13 @@
       { const SL = sealModLines(); [...SL.pw.filter((x) => x.on), ...SL.af].forEach((x, j) => { if (x.r) src.push({ id: `sealmod:${x.id}:${j}`, name: `${sealName} (${x.set ? "set power" : "affix"})`, lines: [x.r.plain.replace(/^[^:]*:\s*/, "")] }); }); }
       const W850 = { t: state.sandbox.t, rank: 1, ip: 850 };
       const skS = state.sandbox.skills, skT = SK && skS && skS.cls === sandboxClass() && SK.trees[skS.cls];
+      const skGR = skT ? skGearRanks() : {};
       if (skT) for (const [k, v] of Object.entries(skS.pts || {})) {
         const n = skT.nodes[+k], st = n && SK.skills[n.p];
         if (!st || !(v > 0) || n.k !== "mod") continue;
         const m = st.m[n.m] || {};
-        src.push({ id: `skill:${k}`, name: `${m.n || "Upgrade"} (${st.n})`, lines: [Engine.render(m.d, { power: n.p, world: { t: 1, rank: 1, skillRank: Math.max(1, skS.pts[skT.nodes.findIndex((x) => x.k === "skill" && x.p === n.p)] || 1) }, depth: 0 }).plain] });
+        const rk = (skS.pts[skT.nodes.findIndex((x) => x.k === "skill" && x.p === n.p)] || 0) + (skGR[st.n.toLowerCase()] || 0);
+        src.push({ id: `skill:${k}`, name: `${m.n || "Upgrade"} (${st.n})`, lines: [Engine.render(m.d, { power: n.p, world: skWorld({ skillRank: Math.max(1, rk) }), depth: 0 }).plain] });
       }
       const pgS = state.sandbox.paragon;
       if (SK && pgS && pgS.cls === sandboxClass() && (pgS.pts || []).length) {
@@ -2456,10 +2486,25 @@
           const at = Math.max(0, idx - 50), ctx = line.slice(at, idx + m.length + 70).trim();
           ent[bucket].push({ id, v, src: sc.name, ctx: (at ? "…" : "") + ctx + (idx + m.length + 70 < line.length ? "…" : ""), on: !off.has(id) });
         };
+        // Stacking bonuses: "xA% per <something>, up to xB%" is one multiplier, not two. Its stacks: for "with a <Tag>
+        // Skill … per Skill" (Anathema of the Primes), the different skills with that tag on the skill bar; otherwise the cap.
+        const skip = new Set();
+        for (const m of line.matchAll(/x(\d[\d,]*(?:\.\d+)?)%\s+per\s+([^,.;]{1,40}?),?\s+up to\s+(?:a maximum of\s+)?x(\d[\d,]*(?:\.\d+)?)%/gi)) {
+          const per = num(m[1]), cap = num(m[3]), maxN = per > 0 ? Math.round(cap / per) : 1;
+          const head = line.slice(0, m.index), sent = head.slice(Math.max(head.lastIndexOf(". "), head.lastIndexOf("; ")) + 1);
+          const tag = /skill/i.test(m[2]) && (/with an? ([A-Z][A-Za-z ]+?) Skill\b/.exec(sent) || [])[1];
+          const bar = tag ? skBarTagged(tag) : null;
+          const n = bar ? Math.min(bar.length, maxN) : maxN;
+          const id = `${sc.id}#${li}#stack${mi++}`;
+          const note = bar ? `${n} of ${maxN} stacks: ${bar.length ? bar.join(", ") : "no"} ${tag} Skill${bar.length === 1 ? "" : "s"} on the skill bar` : `${maxN} stacks (max)`;
+          ent.mult.push({ id, v: per * n, src: sc.name, ctx: `${m[0]} → ${note}`, on: !off.has(id) && n > 0 });
+          skip.add(m.index); skip.add(m.index + m[0].lastIndexOf("x"));
+        }
         // What an x bonus multiplies: the nearest "Critical Strike Chance / Damage" mention in its sentence
         // (before the number first, e.g. "Critical Strike Damage is increased by x75%", else after it).
         const CRIT = /Critical Strikes?'?s? (Chance|Damage)/gi;
         for (const m of line.matchAll(/x(\d[\d,]*(?:\.\d+)?)%/g)) {
+          if (skip.has(m.index)) continue;
           const head = line.slice(0, m.index), cut = Math.max(head.lastIndexOf(". "), head.lastIndexOf("; "), head.lastIndexOf("•"));
           const before = [...head.slice(cut + 1).matchAll(CRIT)].pop();
           const tail = line.slice(m.index + m[0].length), end = tail.search(/\. |; |•|$/);
@@ -2522,7 +2567,7 @@
       return `<article class="sb-entry sb-entry--legendary">${tooltipInner(rv, rendered)}
         <p class="hint mono" style="padding:0 16px 10px">ON A LEGENDARY ${esc(slotNameOf(sp).toUpperCase())}${bonus === "amulet" ? " // AMULET ×1.5" : bonus === "2h" ? " // 2H WEAPON ×2" : ""} // RANK ${r.maxRank ? Math.min(state.sandbox.rank, r.maxRank) + " / " + r.maxRank : state.sandbox.rank}</p></article>`;
     }).join("");
-    els.sbList.innerHTML = limitNote + build + talisman + damage + aspects + (state.pins.length || legDetails ? details : "") + legDetails + state.pins.map((key) => {
+    els.sbList.innerHTML = limitNote + build + skillBarHTML() + talisman + damage + aspects + (state.pins.length || legDetails ? details : "") + legDetails + state.pins.map((key) => {
       const r0 = state.byId.get(key);
       if (!r0) return "";
       const asCharm = isCharm(key) && charmOf(r0);
@@ -2823,16 +2868,180 @@
   const SK_MAX_LV = 70; // Lord of Hatred max level (user, 18 Nov)
   // Max points at max level with every seasonal Renown reward (user, 18 Nov): 83 skill points, 342 Paragon points.
   const SK_POINTS = 83, PG_POINTS = 342;
+  // Skill bar: 6 skills you can cast (default keyboard: left / right mouse button, 1-4).
+  const SKBAR_SLOTS = 6, SKBAR_KEYS = ["LMB", "RMB", "1", "2", "3", "4"];
   function loadSkills() {
     if (SK) return Promise.resolve(SK);
     if (!skLoading) skLoading = fetch("data/index/skills.json", { cache: "no-cache" }).then((r) => r.json()).then((d) => {
       SK = d;
+      // Upgrades and variants take one point each (user, 19 Nov); older skills.json files carry the data's 3 or 5.
+      for (const t of Object.values(d.trees || {})) for (const n of t.nodes || []) if (n.k === "mod") n.max = 1;
       Object.assign(Engine.codex.powers, d.powers || {});
       Engine.codex.tables = d.tables || [];
       if (d.paragon) { Object.assign(Engine.codex.gb, d.paragon.gb || {}); Engine.codex.paragonBudget = d.paragon.budget || []; }
       return SK;
     });
     return skLoading;
+  }
+
+  /* ---------- Skills & Paragon in the global search (Database / Aspect Codex) ----------
+     A query also lists matching skills, upgrades / variants, Paragon boards (by their legendary node),
+     rare Paragon nodes and glyphs, above the item cards. skills.json is loaded on the first query.
+     Card keys: sks:<class>:<tree node index>, skb:<class>:<board id>, skn:<node id>, skg:<glyph id>. */
+  let SKX = null, skxShowAll = false, skxLastQ = "";
+  const SKX_LIMIT = 24;
+  const SKX_W = { t: 1, rank: 1, skillRank: 1, ip: 850 };
+  const skxRender = (txt, ctx) => { try { return Engine.render(txt || "", ctx); } catch (e) { return { html: esc(txt || ""), plain: txt || "" }; } };
+  const skxLine = (ln, W) => { try { return Engine.renderLine(ln, W); } catch (e) { return { html: esc(ln.t || ""), plain: ln.t || "" }; } };
+  const skxClsLabel = (c) => (!c.length || c.length >= 8 ? "All classes" : c.join(" · "));
+  function skxBuild() {
+    if (SKX || !SK) return SKX;
+    const out = [], P = PG(), nodes = P.nodes || {};
+    const W = { ...SKX_W, ip: Engine.DEFAULT_IP };
+    // Skills, upgrades and variants (one entry per class tree node; a skill shared by two nodes is listed once).
+    for (const [cls, tree] of Object.entries(SK.trees || {})) {
+      const seen = new Set();
+      tree.nodes.forEach((n, i) => {
+        if ((n.k !== "skill" && n.k !== "mod") || !n.p || !SK.skills[n.p]) return;
+        const st = SK.skills[n.p], isMod = n.k === "mod", m = isMod ? st.m[n.m] || {} : null;
+        const id = n.p + "|" + (isMod ? n.m : "");
+        if (seen.has(id)) return;
+        seen.add(id);
+        const variant = isMod && n.ex != null && tree.nodes.filter((x) => x.ex === n.ex).length >= 3;
+        out.push({ key: `sks:${cls}:${i}`, type: isMod ? "upgrade" : "skill", cls: [cls], name: (isMod ? m.n : st.n) || "Upgrade",
+          kind: isMod ? (variant ? "Skill Variant" : "Skill Upgrade") : "Skill", of: isMod ? st.n : "", ic: (isMod && m.ic) || st.ic, tags: st.tg || [],
+          text: skxRender(isMod ? m.d : st.d, { power: n.p, world: W, depth: 0 }).plain });
+      });
+    }
+    // Paragon boards: named, with one legendary node; the class start boards are left out.
+    const nodeCls = new Map();
+    for (const [cls, defs] of Object.entries(P.boards || {})) for (const d of defs) {
+      for (const [, nm] of d.cells) { const s = nodeCls.get(nm) || new Set(); s.add(cls); nodeCls.set(nm, s); }
+      if (d.start) continue;
+      const cell = d.cells.find(([, nm]) => (nodes[nm] || {}).pw), ln = cell && nodes[cell[1]];
+      const rares = d.cells.filter(([, nm]) => (nodes[nm] || {}).r === "rare").length;
+      out.push({ key: `skb:${cls}:${d.id}`, type: "board", cls: [cls], name: d.n, kind: "Paragon Board", of: ln ? ln.n : "", ic: ln && ln.ic,
+        text: ln && SK.skills[ln.pw] ? skxRender(SK.skills[ln.pw].d, { power: ln.pw, world: W, depth: 0 }).plain : "", rares });
+    }
+    // Rare nodes (named; their stats and bonus).
+    for (const [id, n] of Object.entries(nodes)) {
+      if (n.r !== "rare" || !n.n || !nodeCls.has(id)) continue;
+      out.push({ key: `skn:${id}`, type: "rare", cls: [...nodeCls.get(id)].sort(), name: n.n, kind: "Rare Paragon Node", of: "", ic: n.ic,
+        text: (n.l || []).map((ln) => skxLine(ln, { ...W, boardIndex: 1 }).plain).join(" · ") });
+    }
+    // Glyphs (values at level 1 for the card text).
+    for (const [id, g] of Object.entries(P.glyphs || {})) {
+      out.push({ key: `skg:${id}`, type: "glyph", cls: g.c || [], name: g.n, kind: "Glyph", of: "", ic: g.ic,
+        text: skxGlyphLines(g, 1).map((x) => x.plain).join(" · ") });
+    }
+    for (const e of out) e.search = [e.name, e.kind, e.of, e.cls.join(" "), ...(e.tags || []), e.text].join(" ").toLowerCase();
+    SKX = out;
+    return SKX;
+  }
+  /** A glyph's affix lines at a level, rendered without a build (no stats in range). */
+  function skxGlyphLines(g, lv) {
+    const W = { ...SKX_W, ip: Engine.DEFAULT_IP };
+    return (g.a || []).map((a) => {
+      if (a.op === 5 && a.pw && SK.skills[a.pw]) return { ...skxRender(SK.skills[a.pw].d, { power: a.pw, world: W, depth: 0 }), a };
+      const val = glyphScalar(a, lv);
+      return { ...skxRender((a.t || "").replace(/\{GlyphAffixScalar\}/g, String(Math.round(val * 1000) / 1000)), { affix: null, world: W, depth: 0 }), a };
+    });
+  }
+  function skxCard(e) {
+    const rarity = e.type === "board" ? "legendary" : e.type === "rare" || e.type === "glyph" ? "rare" : "skill";
+    return `<article class="card card--sk card--sk-${rarity}" tabindex="0" data-key="${esc(e.key)}" aria-describedby="tooltip">
+        <span class="card__meta">${esc(e.kind)}${e.of ? ` · ${esc(e.of)}` : ""}</span>
+        <span class="card__main">
+          <span class="card__text">
+            <span class="card__name">${esc(e.name)}</span>
+            <span class="card__effect">${esc(e.text)}</span>
+          </span>
+          ${e.ic ? `<span class="ico-well ico-well--skill">${itemIcon(e.ic)}</span>` : ""}
+        </span>
+        <span class="card__foot">
+          <span class="tag tag--cls">${esc(skxClsLabel(e.cls))}</span>
+          ${e.rares ? `<span class="tag">${e.rares} rare nodes</span>` : ""}
+        </span>
+      </article>`;
+  }
+  /** Skills & Paragon matches for the current query and class filter, above the catalog grid. */
+  function renderSkResults() {
+    const box = $("catalog-sk");
+    if (!box) return;
+    const f = state.filters;
+    if (f.q !== skxLastQ) { skxLastQ = f.q; skxShowAll = false; }
+    if (!f.tokens.length) { box.hidden = true; return 0; }
+    const head = $("catalog-sk-head"), more = $("catalog-sk-more"), grid = $("catalog-sk-grid");
+    if (!SK) {
+      box.hidden = false; head.textContent = "// SKILLS & PARAGON · loading…"; grid.innerHTML = ""; more.hidden = true;
+      loadSkills().then(() => applyFilters()).catch(() => { head.textContent = "// SKILLS & PARAGON · could not load skills data"; });
+      return 0;
+    }
+    skxBuild();
+    const hits = SKX.filter((e) => (f.cls === "all" || !e.cls.length || e.cls.includes(f.cls)) && f.tokens.every((t) => e.search.includes(t)));
+    box.hidden = !hits.length;
+    if (!hits.length) return 0;
+    const shown = skxShowAll ? hits : hits.slice(0, SKX_LIMIT);
+    head.textContent = `// SKILLS & PARAGON · ${hits.length} match${hits.length === 1 ? "" : "es"}`;
+    grid.innerHTML = shown.map(skxCard).join("");
+    more.hidden = hits.length <= SKX_LIMIT;
+    more.textContent = skxShowAll ? "SHOW FEWER" : `SHOW ALL ${hits.length}`;
+    return hits.length;
+  }
+  /** Tooltips for the search cards: the game text without a build (rank 1, glyph level 1 and max). */
+  function skxTooltip(kind, id) {
+    const W = { ...SKX_W, ip: Engine.DEFAULT_IP }, P = PG();
+    const head = (ic, name, type, extra = "") => `<div class="tt__head">${ic ? `<span class="ico-well ico-well--tt ico-well--skill">${itemIcon(ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(name)}</p><p class="tt__type">${esc(type)}</p>${extra}</div></div>`;
+    const foot = (rows) => `<dl class="tt__foot">${rows.filter(Boolean).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
+    if (kind === "sks") {
+      const [cls, i] = id.split(":"), tree = SK.trees[cls], n = tree && tree.nodes[+i], st = n && SK.skills[n.p];
+      if (!st) return null;
+      const isMod = n.k === "mod", m = isMod ? st.m[n.m] || {} : null, ctx = { power: n.p, world: W, depth: 0 };
+      const group = isMod && n.ex != null ? tree.nodes.filter((x) => x.ex === n.ex) : [];
+      const variant = group.length >= 3;
+      let extra = "";
+      if (isMod && group.length > 1) {
+        extra = `<div class="tt__sep"></div><p class="hint mono" style="margin:0 0 4px">${variant ? "VARIANT · PICK 1 OF " + group.length : "UPGRADE · PICK 1 OF " + group.length} · OR INSTEAD:</p><ul class="tt__lines">${group.filter((x) => x !== n).map((x) => { const e = (SK.skills[x.p].m || {})[x.m] || {}; return `<li><b>${esc(e.n || "")}</b>: ${skxRender(e.d, { power: x.p, world: W, depth: 0 }).html}</li>`; }).join("")}</ul>`;
+      } else if (!isMod) {
+        const mods = [...new Map(tree.nodes.filter((x) => x.k === "mod" && x.p === n.p).map((x) => [x.m, x])).values()];
+        if (mods.length) extra = `<div class="tt__sep"></div><p class="hint mono" style="margin:0 0 4px">UPGRADES &amp; VARIANTS:</p><ul class="tt__lines">${mods.map((x) => `<li><b>${esc((st.m[x.m] || {}).n || "")}</b>${x.lv ? ` <span class="hint">(L${x.lv})</span>` : ""}</li>`).join("")}</ul>`;
+      }
+      return head((isMod && m.ic) || st.ic, isMod ? m.n : st.n, `${cls} ${isMod ? (variant ? "Skill Variant" : "Skill Upgrade") + " · " + st.n : "Skill"}`, isMod ? "" : skTagsHTML({ base: st.tg || [], added: [] }))
+        + `<div class="tt__body"><p class="tt__power">${skxRender(isMod ? m.d : st.d, ctx).html}</p>${extra}</div>`
+        + foot([["CLASS", cls], ["RANK CAP", String(n.max || "")], n.lv ? ["LEVEL", `Needs level ${n.lv}`] : null, ["IN BUILD", "Skills & Paragon tab, with your class"]]);
+    }
+    if (kind === "skb") {
+      const [cls, bid] = id.split(":"), d = ((P.boards || {})[cls] || []).find((b) => b.id === bid);
+      if (!d) return null;
+      const nodes = P.nodes || {}, cell = d.cells.find(([, nm]) => (nodes[nm] || {}).pw), ln = cell && nodes[cell[1]];
+      const rares = [...new Set(d.cells.map(([, nm]) => nodes[nm]).filter((x) => x && x.r === "rare" && x.n).map((x) => x.n))];
+      const pw = ln && SK.skills[ln.pw] ? skxRender(SK.skills[ln.pw].d, { power: ln.pw, world: W, depth: 0 }).html : "";
+      return head(ln && ln.ic, d.n, `${cls} Paragon Board`)
+        + `<div class="tt__body">${ln ? `<p class="tt__power"><b>${esc(ln.n)}</b> (legendary node): ${pw}</p>` : ""}${rares.length ? `<div class="tt__sep"></div><p class="hint mono" style="margin:0 0 4px">RARE NODES:</p><p class="tt__power">${esc(rares.join(" · "))}</p>` : ""}${d.cells.some(([, nm]) => (nodes[nm] || {}).sock) ? '<p class="hint">Has a glyph socket.</p>' : ""}</div>`
+        + foot([["CLASS", cls], ["RARE NODES", String(d.cells.filter(([, nm]) => (nodes[nm] || {}).r === "rare").length)], ["IN BUILD", "Paragon tab: + at a free gate"]]);
+    }
+    if (kind === "skn") {
+      const n = (P.nodes || {})[id];
+      if (!n) return null;
+      const Wb = { ...W, boardIndex: 1 };
+      const lines = (n.l || []).map((ln, i) => `<li${(n.b || []).includes(i) ? ' class="tt__ga"' : ""}>${skxLine(ln, Wb).html}</li>`).join("");
+      const boards = Object.entries(P.boards || {}).flatMap(([cls, defs]) => defs.filter((d) => d.cells.some(([, nm]) => nm === id)).map((d) => `${d.n} (${cls})`));
+      const bonus = n.b ? `<p class="tt__power pg-bonus-off">Bonus: ${n.b.map((i) => (n.l || [])[i] ? skxLine(n.l[i], Wb).html : "").join(", ")} when its attribute threshold is met (the threshold rises with the board's position).</p>` : "";
+      return head(n.ic, n.n, "Rare Paragon Node") + `<div class="tt__body">${lines ? `<ul class="tt__lines">${lines}</ul>` : ""}${bonus}</div>`
+        + foot([["ON BOARDS", boards.slice(0, 6).join(", ") + (boards.length > 6 ? ` +${boards.length - 6} more` : "")]]);
+    }
+    if (kind === "skg") {
+      const g = (P.glyphs || {})[id];
+      if (!g) return null;
+      const lv1 = skxGlyphLines(g, 1), lvMax = skxGlyphLines(g, PG_GLYPH_MAX);
+      const li = (xs) => xs.map((x) => `<li${(x.a.req || 0) > 1 ? ' class="pg-bonus-off"' : ""}>${x.html}${(x.a.req || 0) > 1 ? ` <span class="hint">(Legendary glyph, level ${PG_GLYPH_LEG}+)</span>` : ""}</li>`).join("");
+      // radius = 1 + the last index whose level is reached (glyphRadius): [0, 0, 0, 25, 50] → 3, 4 at 25, 5 at 50.
+      const radii = (P.radius || []).length ? [String(glyphRadius(1)), ...(P.radius || []).map((need, i) => (need > 1 ? `${i + 1} at level ${need}` : "")).filter(Boolean)].join(" → ") : "";
+      return head(g.ic, g.n, `${skxClsLabel(g.c || [])} Glyph`)
+        + `<div class="tt__body"><p class="hint mono" style="margin:0 0 4px">LEVEL 1:</p><ul class="tt__lines">${li(lv1)}</ul><div class="tt__sep"></div><p class="hint mono" style="margin:0 0 4px">LEVEL ${PG_GLYPH_MAX}:</p><ul class="tt__lines">${li(lvMax)}</ul></div>`
+        + foot([["CLASS", skxClsLabel(g.c || [])], radii ? ["RADIUS", radii] : null, ["IN BUILD", "Paragon tab: GLYPHS panel"]]);
+    }
+    return null;
   }
   function skState() {
     const cls = sandboxClass();
@@ -2841,6 +3050,18 @@
     if (!s.pts || typeof s.pts !== "object") s.pts = {};
     if (!(s.lv >= 1 && s.lv <= SK_MAX_LV)) s.lv = SK_MAX_LV;
     if (s.lvv !== 2) { if (s.lv === 60) s.lv = SK_MAX_LV; s.lvv = 2; } // 60 was the old default max
+    // Saves and share links from before upgrades were capped at 1 point (they allowed 3 or 5).
+    const tree = SK && SK.trees[cls];
+    if (tree) for (const k of Object.keys(s.pts)) { const n = tree.nodes[+k]; if (n && n.max && s.pts[k] > n.max) s.pts[k] = n.max; }
+    // Skill bar: SKBAR_SLOTS skill node indexes ("" = empty); only skills with at least 1 point stay on it.
+    if (!Array.isArray(s.bar)) s.bar = [];
+    s.bar = Array.from({ length: SKBAR_SLOTS }, (_, j) => String(s.bar[j] ?? ""));
+    if (tree) s.bar = s.bar.map((k) => (k !== "" && tree.nodes[+k] && tree.nodes[+k].k === "skill" && s.pts[k] > 0 ? k : ""));
+    // Builds from before the bar existed: fill it once with the learned skills, in tree order.
+    if (tree && !s.barv) {
+      s.barv = 1;
+      if (s.bar.every((k) => k === "")) tree.nodes.forEach((n, i) => { const j = s.bar.indexOf(""); if (j >= 0 && n.k === "skill" && s.pts[i] > 0) s.bar[j] = String(i); });
+    }
     return s;
   }
   const skTree = () => (SK && SK.trees[sandboxClass()]) || null;
@@ -2885,6 +3106,7 @@
       for (const k of Object.keys(s.pts)) {
         const n = tree.nodes[+k];
         if (!n || !(s.pts[k] > 0) || (n.lv && s.lv < n.lv) || (!act.reach.has(+k) && !act.active.has(+k))) { delete s.pts[k]; changed = true; dropped++; }
+        else if (n.max && s.pts[k] > n.max) { s.pts[k] = n.max; changed = true; } // old saves / links: upgrades had 3 or 5
       }
     }
     return dropped;
@@ -2895,20 +3117,63 @@
     return n.k === "mod" ? ((st.m[n.m] || {}).n || "Upgrade") : st.n;
   };
   const skSpent = (s) => Object.values(s.pts).reduce((a, b) => a + (b || 0), 0);
-  /** Extra skill ranks from the Sandbox gear: "+N to <Skill name>" lines on equipped items (category bonuses not counted yet). */
-  function skGearRanks() {
-    const out = {};
-    if (!state.byId.size) return out;
-    const W = { t: state.sandbox.t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP };
-    const L = sbLayout();
-    const keys = new Set([...Object.values(L.weapons), ...Object.values(L.gear).flat()].filter(Boolean));
-    for (const k of keys) {
-      const r = state.byId.get(k), rd = r && renderedAt(r, W);
-      if (!rd) continue;
-      for (const l of [...(rd.imp || []), ...(rd.stats || []), ...(rd.temper || []), ...(rd.transfig || [])]) {
-        const m = /^\+(\d+) to (.+?)$/.exec((l.plain || "").trim());
-        if (m && !/Skills$/.test(m[2])) out[m[2].toLowerCase()] = (out[m[2].toLowerCase()] || 0) + +m[1];
+  /* Skill ranks from the Sandbox build. Gear lines: "+N to <Skill>" (Skill_Rank_Bonus), "+N to <Category> Skills"
+     (Skill_Rank_Skill_Tag_Bonus), "+N to All Skills" (Skill_Rank_All_Bonus), "+N to Marksman and Cutthroat Skills".
+     They add to the points spent in the tree. Category names on gear that differ from the skills' own tags: */
+  const SK_CAT_ALIAS = { pyromancy: ["Fire"], frost: ["Cold"], shock: ["Lightning"], werebear: ["Bear"], werewolf: ["Wolf"],
+    earth: ["Nature Magic Earth"], storm: ["Nature Magic Storm"], darkness: ["Shadow"] };
+  /** Every "+N to …" rank line in the Sandbox build: [{ n, target, src }] (target "Whirlwind", "Core Skills", "All Skills"). */
+  function skRankLines() {
+    if (!state.byId.size) return [];
+    const W = { t: state.sandbox.t, rank: state.sandbox.rank, ip: state.sandbox.ip || Engine.DEFAULT_IP }, W900 = { ...W, ip: 900 }, W850 = { t: state.sandbox.t, rank: 1, ip: 850 };
+    const out = [];
+    const take = (src, lines) => {
+      for (const l of lines) {
+        const txt = String((l && (l.plain ?? l)) || "").replace(/^[^:+]*:\s*(?=\+)/, "").trim(); // seal lines carry "Name: " in front
+        // A shown range ("+1 - 4 to All Skills") counts its top value: the Sandbox assumes rerolled-to-max gear.
+        const m = /^\+(\d+)(?:\s*[-–]\s*(\d+))?\s+to\s+(.+?)\.?$/.exec(txt);
+        if (m) out.push({ n: +(m[2] || m[1]), target: m[3], src });
       }
+    };
+    const rdLines = (rd) => (rd ? [rd.power, ...(rd.imp || []), ...(rd.stats || []), ...(rd.mythicLines || []), ...(rd.temper || []), ...(rd.transfig || [])].filter(Boolean) : []);
+    const L = sbLayout();
+    for (const k of new Set([...Object.values(L.weapons), ...Object.values(L.gear).flat()].filter(Boolean))) { const r = state.byId.get(k); if (r) take(r.name, rdLines(renderedAt(r, W))); }
+    for (const [sp, e] of Object.entries(state.sandbox.leg || {})) { const r = state.byId.get(e.a); if (r) take(`${r.name} (${slotNameOf(sp)})`, rdLines(renderLegAspect(r.key, sp))); }
+    for (const k of state.sandbox.charms || []) { const r = state.byId.get(k), ch = r && charmOf(r); if (ch) take(r.name + " (charm)", rdLines(renderItem(ch, W, false))); }
+    if (state.sandbox.torch && codexItem(TORCH_ID)) take("Hellfire Torch", rdLines(renderItem(codexItem(TORCH_ID), W900, false)));
+    const seal = sealOf()[2], sealIt = seal.item && codexItem(seal.item), sealName = (sealIt && sealIt.name) || "Seal";
+    if (sealIt) take(sealName, rdLines(renderItem(sealIt, W900, false)));
+    { const SL = sealModLines(); for (const x of [...SL.pw.filter((p) => p.on), ...SL.af]) if (x.r) take(`${sealName} (${x.set ? "set power" : "affix"})`, [x.r]); }
+    for (const x of state.sandbox.sets || []) { const p = talismanIdx().piece.get(x.p); for (const id of (x.a || []).filter(Boolean)) take(p ? p.name : "Set charm", Engine.renderAffix(id, W850)); }
+    return out;
+  }
+  /** Does a "+N to <target>" line apply to this skill (name, its categories, All Skills)? */
+  function skRankHits(target, name, cats) {
+    const t = target.toLowerCase();
+    if (t === name.toLowerCase() || t === "all skills") return true;
+    if (!/ skills$/.test(t)) return false;
+    return t.replace(/ skills$/, "").split(/ and |, /).some((g) => {
+      if (g === "imbuement" || g === "imbuements") return / imbuement$/i.test(name);
+      return (SK_CAT_ALIAS[g] || [g]).some((tag) => cats.some((c) => c.toLowerCase() === tag.toLowerCase()));
+    });
+  }
+  /** Extra ranks per skill (lowercased name) for the Sandbox class tree; .parts[name] lists where they come from. */
+  function skGearRanks() {
+    const out = {}, parts = {};
+    Object.defineProperty(out, "parts", { value: parts });
+    const tree = skTree(), lines = tree ? skRankLines() : [];
+    if (!lines.length) return out;
+    const gp = skGearPowers();
+    for (const n of tree.nodes) {
+      const st = n.k === "skill" && SK.skills[n.p];
+      if (!st) continue;
+      const nm = st.n.toLowerCase();
+      if (parts[nm]) continue;
+      // Its tags, plus categories gear converts it into ("Blazing Scream is now an Archfiend Skill").
+      const tg = skSkillTags(st, gp, n.p), cats = [...tg.base, ...tg.added.map((a) => a.t)];
+      parts[nm] = lines.filter((l) => skRankHits(l.target, st.n, cats));
+      const sum = parts[nm].reduce((a, l) => a + l.n, 0);
+      if (sum) out[nm] = sum;
     }
     return out;
   }
@@ -2924,6 +3189,80 @@
     for (const k of state.sandbox.charms || []) { const r = state.byId.get(k), ch = r && charmOf(r), rd = ch && renderItem(ch, W, false); if (rd && rd.power) out.push({ name: r.name + " (charm)", html: rd.power.html, plain: rd.power.plain }); }
     return out;
   }
+  /** A skill's tags as the game lists them under its name (Core, Hellfire, Demonology, Greater Demon…), plus tags its
+   * Sandbox gear adds: "Blazing Scream is now an Archfiend Skill" (Elegy). { base: [tag], added: [{ t, src }] } */
+  function skSkillTags(st, gp, power) {
+    const base = [...(st.tg || [])], added = [];
+    if (!gp) gp = skGearPowers();
+    const has = (t) => base.some((b) => b.toLowerCase() === t.toLowerCase()) || added.some((a) => a.t.toLowerCase() === t.toLowerCase());
+    const add = (t, src) => { if (!has(t)) added.push({ t, src }); };
+    // Gear: "Blazing Scream is now an Archfiend Skill" (Elegy).
+    const conv = new RegExp(st.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + " is now an? ([A-Z][A-Za-z ]+?) Skill", "i");
+    for (const g of gp) { const m = conv.exec(g.plain); if (m) add(m[1], g.name); }
+    // The variant taken in the Sandbox's tree (needs the skill's power id).
+    const tree = power && skTree(), s = tree && skState();
+    const taken = tree ? tree.nodes.filter((n, i) => n.k === "mod" && n.p === power && s.pts[i] > 0 && n.ex != null && tree.nodes.filter((x) => x.ex === n.ex).length >= 3).map((n) => st.m[n.m]).filter(Boolean) : [];
+    for (const v of taken) {
+      // The variant's own tags: "Rampage becomes a Hellfire Mobility leap attack", "… becomes an Abyss Recast Skill".
+      const plain = Engine.render(v.d || "", { power, world: { t: 1, rank: 1, skillRank: 1 }, depth: 0 }).plain;
+      const m = /\bbecomes an? (.+?)\s(?:Skill|attack)\b/i.exec(plain);
+      if (m) for (const t of skAllTags()) if (new RegExp("(^|\\s)" + t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(\\s|$)").test(m[1])) add(t, `${v.n} variant`);
+      // Gear: "Archfiend Demonform Skill Variants are Core Skills" (Anathema of the Primes): a skill with the first tag
+      // whose taken variant is a <Word> one (Demonic Smash "transforms you into Demonform") gets the second tag.
+      for (const g of gp) for (const r of g.plain.matchAll(/([A-Z][A-Za-z]*(?: [A-Z][A-Za-z]*)*?) ([A-Z][A-Za-z]+) Skill Variants are ([A-Z][A-Za-z ]+?) Skills/g)) {
+        if (base.some((b) => b.toLowerCase() === r[1].toLowerCase()) && new RegExp("\\b" + r[2] + "\\b", "i").test(`${v.n} ${plain}`)) add(r[3], `${g.name} (${v.n})`);
+      }
+    }
+    return { base, added };
+  }
+  /** Affix ids of the powers in the Sandbox build, for AffixIsEquipped() in skill formulas: equipped uniques /
+   * Mythics, legendary aspects in slots, unique charms, the Hellfire Torch and the seal. */
+  function skEquippedAffixes() {
+    const out = new Set();
+    if (!state.byId.size) return out;
+    const addRec = (r) => {
+      if (!r) return;
+      if (r.kind === "aspect") { out.add(r.id); return; }
+      const it = codexItem(r.id);
+      if (it && it.power) out.add(it.power);
+    };
+    const L = sbLayout();
+    for (const k of [...Object.values(L.weapons), ...Object.values(L.gear).flat()]) if (k) addRec(state.byId.get(k));
+    for (const e of Object.values(state.sandbox.leg || {})) addRec(state.byId.get(e.a));
+    for (const k of state.sandbox.charms || []) { const r = state.byId.get(k), ch = r && charmOf(r); addRec(r); if (ch && ch.power) out.add(ch.power); }
+    if (state.sandbox.torch) { const t = codexItem(TORCH_ID); if (t && t.power) out.add(t.power); }
+    const seal = sealOf()[2], si = seal.item && codexItem(seal.item);
+    if (si && si.power) out.add(si.power);
+    return out;
+  }
+  /** "<power>:<mod name hash>" for every upgrade / variant taken in the Sandbox's tree, for Mod.<Name> in formulas. */
+  function skTakenMods() {
+    const out = new Set(), tree = SK && skTree();
+    if (!tree) return out;
+    const s = skState();
+    tree.nodes.forEach((n, i) => { const e = n.k === "mod" && s.pts[i] > 0 && SK.skills[n.p] && SK.skills[n.p].m[n.m]; if (e && e.h != null) out.add(`${n.p}:${e.h >>> 0}`); });
+    return out;
+  }
+  /** The formula world for skill text in the Sandbox build: gear and the tree's choices are known. */
+  const skWorld = (extra) => ({ t: 1, rank: 1, equipped: skEquippedAffixes(), takenMods: skTakenMods(), ...extra });
+  /** Names of the skills on the Sandbox skill bar that have a tag (their own, from gear or from their variant),
+   * or null when there's no skill data / class to count with. */
+  function skBarTagged(tag) {
+    const tree = SK && skTree();
+    if (!tree) return null;
+    const s = skState(), gp = skGearPowers(), t = tag.toLowerCase();
+    return s.bar.filter((k) => k !== "").map((k) => tree.nodes[+k]).filter((n) => n && SK.skills[n.p]).filter((n) => {
+      const tg = skSkillTags(SK.skills[n.p], gp, n.p);
+      return [...tg.base, ...tg.added.map((a) => a.t)].some((x) => x.toLowerCase() === t);
+    }).map((n) => SK.skills[n.p].n);
+  }
+  /** Every skill tag in the data (for reading tags out of variant text). */
+  let SK_TAGS = null;
+  const skAllTags = () => SK_TAGS || (SK_TAGS = [...new Set(Object.values(SK.skills).flatMap((x) => x.tg || []))].sort((a, b) => b.length - a.length));
+  /** The tag line under a skill's name: base tags, then gear-added ones (✦, with the item in the title). */
+  const skTagsHTML = (tg) => (tg.base.length || tg.added.length
+    ? `<p class="tt__tags mono">${[...tg.base.map((t) => esc(t)), ...tg.added.map((a) => `<span class="tt__tag--gear" title="Added by ${esc(a.src)}">✦ ${esc(a.t)}</span>`)].join(" · ")}</p>`
+    : "");
   /** Gear powers that touch one skill: by name, or by a category it has ("Archfiend Skills"), including categories gear
    * adds ("Blazing Scream is now an Archfiend Skill"); plus upgrades / variants gear grants "for free". */
   function skGearFor(skillPower, modName) {
@@ -2931,8 +3270,7 @@
     if (!st) return { hits: [], free: false, cats: [] };
     const gp = skGearPowers(), nm = st.n.toLowerCase();
     const has = (txt, w) => new RegExp("(^|[^a-z])" + w.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "([^a-z]|$)").test(txt);
-    const cats = [...(st.tg || [])];
-    for (const g of gp) { const m = new RegExp(st.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + " is now an? ([A-Z][A-Za-z ]+?) Skill", "i").exec(g.plain); if (m && !cats.includes(m[1])) cats.push(m[1]); }
+    const tg = skSkillTags(st, gp, skillPower), cats = [...tg.base, ...tg.added.map((a) => a.t)];
     // "X is now an Archfiend Skill" converts X; it isn't a bonus to every Archfiend Skill, so it doesn't count as a category hit.
     const hits = gp.filter((g) => { const t = g.plain.toLowerCase(), tc = t.replace(/is now an? [a-z ]+? skill/g, ""); return has(t, nm) || cats.some((c) => has(tc, c + " skill")) || (modName && has(t, modName.toLowerCase())); });
     const free = !!modName && gp.some((g) => has(g.plain.toLowerCase(), nm) && new RegExp(modName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + " (Variant|Upgrade)s? for free", "i").test(g.plain));
@@ -2963,9 +3301,9 @@
     if (!n || !n.p) return null;
     const st = SK.skills[n.p], s = skState(), pts = s.pts[+i] || 0;
     const skillIdx = tree.nodes.findIndex((x) => x.k === "skill" && x.p === n.p);
-    const gear = (skGearRanks()[st.n.toLowerCase()] || 0);
+    const gr = skGearRanks(), gear = gr[st.n.toLowerCase()] || 0, gearParts = gr.parts[st.n.toLowerCase()] || [];
     const rank = Math.max(1, (s.pts[skillIdx] || 0) + gear);
-    const ctx = { power: n.p, world: { t: 1, rank: 1, skillRank: rank }, depth: 0 };
+    const ctx = { power: n.p, world: skWorld({ skillRank: rank }), depth: 0 };
     const isMod = n.k === "mod", m = isMod ? st.m[n.m] || {} : null;
     const body = Engine.render(isMod ? m.d : st.d, ctx);
     const gf = skGearFor(n.p, isMod ? m.n : null);
@@ -2982,7 +3320,8 @@
     }
     const why = pts < n.max ? skCanAdd(tree, s, +i, skActive(tree, s)) : "";
     const foot = [
-      ["RANK", `${pts} / ${n.max}${!isMod && gear ? ` + ${gear} from gear` : ""}`],
+      ["RANK", `${pts} / ${n.max}${!isMod && gear ? ` + ${gear} from gear = ${pts + gear}` : ""}`],
+      !isMod && gearParts.length ? ["GEAR RANKS", gearParts.map((l) => `+${l.n} ${l.target} (${l.src})`).join(" · ")] : null,
       isMod ? ["UPGRADES", st.n] : null,
       n.ex != null ? ["CHOICE", tree.nodes.filter((x) => x.ex === n.ex).length >= 3 ? "Variant: pick 1 of 3 (changes how the skill works)" : "Upgrade: pick 1 of 2"] : null,
       n.lv ? ["LEVEL", `Needs level ${n.lv}`] : null,
@@ -2990,7 +3329,7 @@
       ["CONTROLS", "Click: add a point · right-click or long-press: remove"],
     ].filter(Boolean);
     const ic = (isMod && m.ic) || st.ic;
-    return `<div class="tt__head">${ic ? `<span class="ico-well ico-well--tt ico-well--skill">${itemIcon(ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(isMod ? m.n : st.n)}</p><p class="tt__type">${esc(cls)} ${isMod ? (n.ex != null && tree.nodes.filter((x) => x.ex === n.ex).length >= 3 ? "Skill Variant" : "Skill Upgrade") + " · " + esc(st.n) : "Skill"}${!isMod ? ` · Rank ${rank}` : ""}</p></div></div>
+    return `<div class="tt__head">${ic ? `<span class="ico-well ico-well--tt ico-well--skill">${itemIcon(ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(isMod ? m.n : st.n)}</p><p class="tt__type">${esc(cls)} ${isMod ? (n.ex != null && tree.nodes.filter((x) => x.ex === n.ex).length >= 3 ? "Skill Variant" : "Skill Upgrade") + " · " + esc(st.n) : "Skill"}${!isMod ? ` · Rank ${rank}` : ""}</p>${!isMod ? skTagsHTML(skSkillTags(st, null, n.p)) : ""}</div></div>
       <div class="tt__body"><p class="tt__power">${body.html}</p>${gearHtml}${group ? `<div class="tt__sep"></div><p class="hint mono" style="margin:0 0 4px">OR INSTEAD:</p>${group}` : ""}</div>
       <dl class="tt__foot">${foot.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
   }
@@ -3114,7 +3453,7 @@
     const list = [...bySkill].map(([p, xs]) => {
       const st = SK.skills[p] || {}, sk = xs.find((x) => x.n.k === "skill"), g = gear[(st.n || "").toLowerCase()] || 0;
       const gfL = skGearFor(p, null), totL = gfL.mult.reduce((a, m) => a * (1 + m.v), 1);
-      return `<li><span class="sk-li__name">${st.ic ? itemIcon(st.ic, "sk-li__ic") : ""}${esc(st.n || p)}</span> <span class="mono">${sk ? `RANK ${sk.p}${g ? " + " + g : ""}` : "—"}</span>${gfL.mult.length ? ` <span class="sk-li__syn mono" title="${esc(gfL.mult.map((m) => `x${fmtPct(m.v)}% ${m.src}`).join(" × "))}">GEAR ×${(Math.round(totL * 100) / 100).toFixed(2)}</span>` : ""}
+      return `<li><span class="sk-li__name">${st.ic ? itemIcon(st.ic, "sk-li__ic") : ""}${esc(st.n || p)}</span> <span class="mono">${sk ? `RANK ${sk.p}${g ? ` + ${g} = ${sk.p + g}` : ""}` : "—"}</span>${gfL.mult.length ? ` <span class="sk-li__syn mono" title="${esc(gfL.mult.map((m) => `x${fmtPct(m.v)}% ${m.src}`).join(" × "))}">GEAR ×${(Math.round(totL * 100) / 100).toFixed(2)}</span>` : ""}
         ${xs.filter((x) => x.n.k === "mod").map((x) => `<span class="sk-li__mod" data-key="skill:${esc(cls)}:${x.i}">${esc(skNodeName(x.n))} <span class="mono">${x.p}/${x.n.max}</span></span>`).join("")}</li>`;
     }).join("");
     root.innerHTML = `
@@ -3127,7 +3466,7 @@
         <svg class="sk-svg" viewBox="${skView.vb.join(" ")}" data-skfull="${full.join(" ")}" role="group" aria-label="${esc(cls)} skill tree">${back}${lines.join("")}${dots}</svg>
         <aside class="sk-side"><h3 class="sb-loadout__title mono">${esc(cls).toUpperCase()} // SKILLS</h3>
           ${list ? `<ul class="sk-list">${list}</ul>` : `<p class="hint">Click a skill in a cluster to take it, then its upgrades. Clusters open at levels ${[...new Set(N.filter((n) => n.k === "root").map((n) => n.lv || 0))].sort((a, b) => a - b).join(", ")}.</p>`}
-          <p class="hint">Click adds a point, right-click (or long-press) removes one. Drag to move, wheel or pinch to zoom, FIT shows the whole tree. In each branch you pick one upgrade per group. Skills go to rank ${Math.max(...N.filter((n) => n.k === "skill").map((n) => n.max))}, upgrades to ${[...new Set(N.filter((n) => n.k === "mod").map((n) => n.max))].sort((a, b) => a - b).join(" or ")}. "+N to Skill" lines on your Sandbox gear add ranks (shown as 5+2). Damage numbers from your upgrades go to the Sandbox DAMAGE panel.</p>
+          <p class="hint">Click adds a point, right-click (or long-press) removes one. Drag to move, wheel or pinch to zoom, FIT shows the whole tree. In each branch you pick one upgrade per group. Skills go to rank ${Math.max(...N.filter((n) => n.k === "skill").map((n) => n.max))}; an upgrade or variant takes 1 point. "+N to Skill", "+N to Core Skills" (any category) and "+N to All Skills" lines on your Sandbox gear add ranks (shown as 5+2). Damage numbers from your upgrades go to the Sandbox DAMAGE panel.</p>
         </aside>
       </div>`;
     // First view of a tree: match the view box to the panel's shape (no empty band), starting at the top.
@@ -3144,6 +3483,8 @@
       const why = skCanAdd(tree, s, i, skActive(tree, s));
       if (why) { toast(`${skNodeName(n)}: ${why}.`); return; }
       s.pts[i] = (s.pts[i] || 0) + 1;
+      // A newly learned skill goes into the first empty skill bar slot (the bar is edited in the Sandbox).
+      if (n.k === "skill" && s.pts[i] === 1 && !s.bar.includes(String(i))) { const j = s.bar.indexOf(""); if (j >= 0) s.bar[j] = String(i); }
     } else {
       if (!(s.pts[i] > 0)) return;
       s.pts[i] -= 1;
@@ -3154,6 +3495,40 @@
     saveSandbox();
     hideTooltip();
     renderSkills();
+  }
+  /** Sandbox SKILL BAR: 6 slots for skills with at least 1 point in the tree (rank = points + gear ranks). */
+  function skillBarHTML() {
+    const cls = sandboxClass();
+    const wrap = (inner) => `<section class="sb-build skb"><div class="sb-build__head"><h3 class="sb-loadout__title mono">SKILL BAR${inner.count != null ? ` // ${inner.count} / ${SKBAR_SLOTS}` : ""}</h3></div>${inner.html}</section>`;
+    if (!cls) return wrap({ html: '<p class="hint">Choose a class to set up the skill bar.</p>' });
+    if (!SK) {
+      loadSkills().then(() => { if (route() === "sandbox") renderSandbox(); }).catch(() => {});
+      return wrap({ html: '<p class="hint mono">LOADING SKILLS…</p>' });
+    }
+    const tree = SK.trees[cls];
+    if (!tree) return "";
+    const s = skState(), gr = skGearRanks(), gp = skGearPowers();
+    const learned = tree.nodes.map((n, i) => ({ n, i: String(i) })).filter(({ n, i }) => n.k === "skill" && s.pts[i] > 0);
+    const slots = s.bar.map((k, j) => {
+      const n = k !== "" && tree.nodes[+k], st = n && SK.skills[n.p];
+      const rank = st ? (s.pts[k] || 0) + (gr[st.n.toLowerCase()] || 0) : 0;
+      const tg = st && skSkillTags(st, gp, n.p);
+      const opts = `<option value="">${st ? "— remove —" : "— empty —"}</option>` + learned
+        .filter((x) => x.i === k || !s.bar.includes(x.i))
+        .map((x) => `<option value="${x.i}"${x.i === k ? " selected" : ""}>${esc(SK.skills[x.n.p].n)}</option>`).join("");
+      return `<div class="skb__slot${st ? " is-set" : ""}">
+          <span class="skb__key mono">${SKBAR_KEYS[j]}</span>
+          <span class="skb__ico"${st ? ` data-key="skill:${esc(cls)}:${k}" tabindex="0"` : ""}>${st ? itemIcon(st.ic) : ""}</span>
+          <span class="skb__name">${st ? esc(st.n) : ""}</span>
+          <span class="skb__rank mono">${st ? `RANK ${rank}${gr[st.n.toLowerCase()] ? ` <span class="hint">(${s.pts[k]}+${gr[st.n.toLowerCase()]})</span>` : ""}` : ""}</span>
+          ${st && tg.base.length ? `<span class="skb__tags mono">${esc(tg.base.slice(0, 3).join(" · "))}${tg.added.length ? ` · <b>✦ ${esc(tg.added.map((a) => a.t).join(" · "))}</b>` : ""}</span>` : ""}
+          <select class="input mono" data-skbar="${j}" aria-label="Skill bar slot ${SKBAR_KEYS[j]}"${learned.length ? "" : " disabled"}>${opts}</select>
+        </div>`;
+    }).join("");
+    const note = learned.length
+      ? `Skills with at least 1 point in Skills &amp; Paragon can go on the bar: 6 slots (default keyboard: left and right mouse button, 1–4). A newly learned skill fills the first empty slot. ${learned.length > SKBAR_SLOTS ? `${learned.length} skills are learned: ${learned.length - s.bar.filter((x) => x !== "").length} aren't on the bar.` : ""}`
+      : `No skills learned yet: spend points in <a href="#/skills">Skills &amp; Paragon</a>, then put up to 6 of them on the bar.`;
+    return wrap({ count: s.bar.filter((x) => x !== "").length, html: `<div class="skb__slots">${slots}</div><p class="hint">${note}</p>` });
   }
   function bindSkills() {
     const view = els.viewSkills;
@@ -3647,18 +4022,23 @@
     return { cls, boards, pts: (ps || "").split(",").filter((k) => /^\d+\.\d+$/.test(k)), glyphs };
   }
 
-  /** Share link: sk=<level>.<node>:<pts>.<node>:<pts>... */
+  /** Share link: sk=<level>.<node>:<pts>.<node>:<pts>...[.b<node>-<node>-...] (b = skill bar, 6 slots, empty = ""). */
   const encodeSkills = () => {
     const s = state.sandbox.skills;
     if (!s || !Object.keys(s.pts || {}).length) return "";
-    return [s.lv || SK_MAX_LV, ...Object.entries(s.pts).map(([k, v]) => `${k}:${v}`)].join(".");
+    const bar = (s.bar || []).some((k) => k !== "") ? ["b" + s.bar.join("-")] : [];
+    return [s.lv || SK_MAX_LV, ...Object.entries(s.pts).map(([k, v]) => `${k}:${v}`), ...bar].join(".");
   };
   function parseSkills(str, cls) {
     if (!str) return null;
     const [lv, ...rest] = decodeURIComponent(str).split(".");
     const pts = {};
-    for (const x of rest) { const [k, v] = x.split(":"); if (/^\d+$/.test(k) && +v > 0) pts[k] = Math.min(99, +v); }
-    return { cls, lv: Math.max(1, Math.min(SK_MAX_LV, +lv || SK_MAX_LV)), pts };
+    let bar = [];
+    for (const x of rest) {
+      if (x.startsWith("b")) { bar = x.slice(1).split("-").map((k) => (/^\d+$/.test(k) ? k : "")); continue; }
+      const [k, v] = x.split(":"); if (/^\d+$/.test(k) && +v > 0) pts[k] = Math.min(99, +v);
+    }
+    return { cls, lv: Math.max(1, Math.min(SK_MAX_LV, +lv || SK_MAX_LV)), pts, bar, barv: bar.some((k) => k !== "") ? 1 : 0 };
   }
 
   function render() {
@@ -3712,6 +4092,7 @@
       const p = e.target.closest(".pill[data-filter]");
       if (p && !p.disabled) { state.filters[p.dataset.filter] = p.dataset.value; applyFilters(); }
     });
+    $("catalog-sk-more").addEventListener("click", () => { skxShowAll = !skxShowAll; renderSkResults(); });
     els.reset.addEventListener("click", () => {
       Object.assign(state.filters, { q: "", tokens: [], cls: "all", rarity: "all", slot: "all", source: "all", avail: "all", cat: "all" });
       els.search.value = "";
@@ -3824,6 +4205,13 @@
     });
     els.sbList.addEventListener("change", (e) => {
       const el = e.target;
+      if (el.matches("[data-skbar]")) {
+        const s = skState(), j = +el.dataset.skbar, v = el.value;
+        if (v) { const prev = s.bar.indexOf(v); if (prev >= 0) s.bar[prev] = ""; } // a skill sits in one slot
+        s.bar[j] = v;
+        saveSandbox(); renderSandbox();
+        return;
+      }
       if (el.matches("[data-addset]")) {
         if (!el.value) return;
         if (talismanUsed() >= charmSlots()) toast(`The Talisman is full (${charmSlots()} charm slots with a ${sealOf()[0]}).`);

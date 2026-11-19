@@ -290,6 +290,9 @@ def extract(meta_dir, stl_dir, power_dir, icons=None, stat_line=None, attr_desc=
                         node["k"] = "skill"
                     else:
                         node["k"] = "mod"
+                        # Upgrades and variants take one point (user, 19 Nov). The data's
+                        # dwMaxTalentRanks of 3 or 5 on these rewards isn't how the game spends them.
+                        node["max"] = 1
                         mid = next((m.get("dwModId") for m in (pow_json(pname) or {}).get("arMods") or [] if m.get("szName") == rw.get("szPowerMod")), None)
                         if mid is not None:
                             node["m"] = str(mid)

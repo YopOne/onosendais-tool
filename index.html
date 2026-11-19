@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Gemunu+Libre:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261119b">
+  <link rel="stylesheet" href="style.css?v=20261119g">
 </head>
 <body>
   <div class="scanlines" aria-hidden="true"></div>
@@ -94,6 +94,13 @@
         <p id="result-count" class="mono" aria-live="polite"></p>
         <button id="filter-reset" class="btn btn--ghost mono" type="button">RESET</button>
       </div>
+      <section id="catalog-sk" class="skx" hidden aria-label="Skills and Paragon matches">
+        <div class="skx__head">
+          <p class="eyebrow mono" id="catalog-sk-head">// SKILLS &amp; PARAGON</p>
+          <button id="catalog-sk-more" class="btn btn--ghost mono" type="button" hidden></button>
+        </div>
+        <div id="catalog-sk-grid" class="grid"></div>
+      </section>
       <div id="catalog-grid" class="grid"></div>
       <p id="catalog-empty" class="empty mono" hidden>NO MATCHES // shorten the query or reset filters</p>
     </section>
@@ -193,6 +200,6 @@
 
   <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
 
-  <script src="app.js?v=20261118zw"></script>
+  <script src="app.js?v=20261119i"></script>
 </body>
 </html>
