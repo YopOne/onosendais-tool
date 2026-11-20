@@ -2388,6 +2388,19 @@
     els.sbClass.value = state.sandbox.cls || "";
     const auto = !state.sandbox.cls && sandboxClass();
     els.sbClass.options[0].textContent = auto ? `Auto (${auto})` : "Auto";
+    // Page title: with a class, its sigil and "<Class> Builder" (Theorycraft Sandbox as a small line above).
+    const hCls = state.sandbox.cls || auto, hSig = hCls && ((Engine.codex.paperdoll || {}).sigil || {})[hCls];
+    const sbTitle = document.getElementById("sb-title");
+    if (sbTitle) {
+      sbTitle.classList.toggle("sb-title--cls", Boolean(hCls));
+      sbTitle.innerHTML = hCls
+        ? `${hSig ? `<img class="sb-title__sigil" src="data/icons/${hSig}.webp" alt="" draggable="false">` : ""}<span class="sb-title__txt"><span class="sb-title__kick mono">Theorycraft Sandbox</span>${esc(hCls)} Builder</span>`
+        : "Theorycraft Sandbox";
+      const sub = document.getElementById("sb-sub");
+      if (sub) sub.textContent = hCls
+        ? "Tap a slot to equip a unique, fill the Talisman with charms, then dial in roll quality to see the exact in-game numbers."
+        : "Build a character: pick a class, click a slot to equip a unique, fill the Talisman with charms, then dial in roll quality to see the exact in-game numbers.";
+    }
 
     // Only 1 Mythic upgraded from a 900 unique (keeps its affixes) can be equipped; dropped, bought or 3-combined Mythics don't count.
     const craftedN = state.pins.filter((k) => !isCharm(k) && state.sandbox.mythic.includes(k) && mythUp(k) && canCraftMythic(state.byId.get(k) || {})).length;

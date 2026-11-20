@@ -1494,3 +1494,9 @@ select option:disabled { color: var(--faint); }
 /* Touch on equipped items: tap = tooltip, tap again = change, hold = remove (app.js). No iOS image callout / selection on hold. */
 .pd__slot, .tal__sock { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .tt__touch { margin: 0; padding: 8px 16px 10px; border-top: 1px solid var(--line); color: var(--faint); font-size: 0.66rem; letter-spacing: 0.12em; text-align: center; }
+
+/* Sandbox page title with a class: its sigil (gold, like the paperdoll badge) + "<Class> Builder". */
+.sb-title--cls { display: flex; align-items: center; gap: 14px; }
+.sb-title__sigil { width: clamp(44px, 7vw, 64px); height: auto; flex: none; filter: invert(1) sepia(1) saturate(1.4) brightness(0.95) drop-shadow(0 0 10px rgba(255, 49, 49, 0.35)); }
+.sb-title__txt { display: grid; line-height: 1.05; }
+.sb-title__kick { font: 600 0.72rem var(--font-ui); letter-spacing: 0.22em; text-transform: uppercase; color: var(--accent); text-shadow: none; margin-bottom: 4px; }
