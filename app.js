@@ -769,9 +769,10 @@
     // Mythics are always item power 900. A crafted Mythic is made in the Cube from the same unique at 900
     // (Ancestral); it keeps every affix, promoted to its maximum value.
     // Crafted: every affix, including the unique power, is promoted to its maximum value.
-    // A Mythic's unique power gets the aspect slot bonus: amulet x1.5, 2H weapon x2. Plain uniques don't
-    // (in game: Moloch's Beating Flame 15-20% as a unique, 39% as a Mythic; Red Sermon 156% as a Mythic).
-    const slotBonus = orig || c ? aspectSlotBonus(bonusSlot(it)) : 0;
+    // A unique's power gets the aspect slot bonus: amulet x1.5, 2H weapon x2 (in game, user 21 Nov: Moloch's Beating
+    // Flame 30% max as a 900 unique amulet, 39% as a Mythic; Red Sermon 120% as a 900 unique 2H sword, 156% as a Mythic).
+    // A charm has no slot (type Charm), so no bonus: Red Sermon 60% as a charm, 78% as a Mythic charm.
+    const slotBonus = aspectSlotBonus(bonusSlot(it));
     const pw = { ...base, mythic: orig, crafted: c, forceMax: c, potency: c ? Engine.mythicPotency() : 0, slotBonus, ip: orig || c ? IP.mythic : base.ip };
     const sw = pw, q = mods ? itemQuality(mods, sw) : 0;
     return {
@@ -1040,8 +1041,8 @@
       r.kind === "item" ? ["SLOT", r.slot] : null,
       r.kind === "item" ? ["SOURCE", r.drop ? r.drop.text : "Unknown: not in the boss loot table or any recipe"] : null,
       r.maxRank ? ["RANKS", `1–${r.maxRank}`] : null,
-      r.kind === "item" && bonusSlot(r.raw) && r.raw.power && (rendered.crafted || r.rarity === "Mythic")
-        ? ["SLOT BONUS", r.type && /^Charm/.test(r.type) ? `none as a charm (it gets ${bonusSlot(r.raw) === "2h" ? "×2 only on a 2H weapon" : "×1.5 only on an amulet"})` : `Mythic ${bonusSlot(r.raw) === "2h" ? "2H weapon: unique power ×2" : "amulet: unique power ×1.5"}, included above`] : null,
+      r.kind === "item" && bonusSlot(r.raw) && r.raw.power
+        ? ["SLOT BONUS", r.type && /^Charm/.test(r.type) ? `none as a charm (it gets ${bonusSlot(r.raw) === "2h" ? "×2 only on a 2H weapon" : "×1.5 only on an amulet"})` : `${bonusSlot(r.raw) === "2h" ? "2H weapon: unique power ×2" : "amulet: unique power ×1.5"}, included above`] : null,
       r.kind === "aspect" && (r.aslots || []).length ? ["SLOTS", r.aslots.join(", ") + (r.aslots.includes("Weapon") ? " (2H weapon ×2)" : "") + (r.aslots.includes("Amulet") ? " · amulet ×1.5" : "")] : null,
       r.kind === "aspect" ? ["IMPRINT", "On a rare item in an allowed slot via the Codex of Power (salvage a legendary at the Blacksmith to save it), or over the aspect of a legendary in that slot"] : null,
       rendered.mods && rendered.mods.temper ? ["TEMPERED", (temperManual(rendered.mods.temper.m) || {}).name ? `${temperManual(rendered.mods.temper.m).name} (Tier ${temperManual(rendered.mods.temper.m).tier}, Blacksmith)` : "Blacksmith"] : null,
