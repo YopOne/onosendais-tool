@@ -20,6 +20,8 @@ Base stats come from the game's own balance tables, so values shown are the real
 ## Updates
 
 **20 Nov 2026**
+- Shorter Sandbox share links, plus COPY FOR DISCORD: a tidy named link ("Onosendai build: Barbarian · …") instead of a long URL.
+- Sandbox keeps one build per class in your browser: switch class and your build for that class comes back. Home class pictures open the Sandbox as that class.
 - Class specialization panels use the game's own art and icons (Soul Shard crystals, Oath cards, Book of the Dead sigils, Spirit crests, Weapon Expertise disks…).
 - New Home page: section tiles with game art, class cards and a What's New list. Fixed garbled characters in the page title and search box.
 - Class specializations in Skills & Paragon: Rogue Specializations (Combo Points, Inner Sight, Preparation), Barbarian Weapon Expertise and Technique, Spiritborn Spirit Hall, Druid Spirit Boons and Spirit Bonding, Necromancer Book of the Dead, Sorcerer Enchantments, Paladin Oaths and Warlock Soul Shards, with game text, unlock levels, share links and the DAMAGE panel.

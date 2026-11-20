@@ -982,7 +982,7 @@
     count: $("result-count"), reset: $("filter-reset"), grid: $("catalog-grid"), empty: $("catalog-empty"),
     tooltip: $("tooltip"),
     sbRoll: $("sb-roll"), sbRollOut: $("sb-roll-out"), sbRank: $("sb-rank"), sbRankOut: $("sb-rank-out"), sbIp: $("sb-ip"), sbIpOut: $("sb-ip-out"),
-    sbAdd: $("sb-add"), sbOptions: $("sb-options"), sbList: $("sb-list"), sbShare: $("sb-share"), sbClear: $("sb-clear"), sbClass: $("sb-class"),
+    sbAdd: $("sb-add"), sbOptions: $("sb-options"), sbList: $("sb-list"), sbShare: $("sb-share"), sbShareDc: $("sb-share-dc"), sbClear: $("sb-clear"), sbClass: $("sb-class"),
   };
   const esc = Engine.esc;
   const rarityClass = (r) => String(r || "unique").toLowerCase();
@@ -1295,6 +1295,11 @@
   /* ---------- Sandbox ---------- */
   const PIN_KEY = "onosendai.pins";
   const SB_KEY = "onosendai.sandbox";
+  /** Saved builds per class: { class (or "Auto"): { pins, ...LOADOUT_FIELDS } } (this browser only). */
+  const LOADOUT_KEY = "onosendai.loadouts";
+  const LOADOUT_FIELDS = ["charms", "sets", "torch", "leg", "mythic", "slot", "sock", "mods", "seal", "sealMods", "skills", "paragon", "spec"];
+  const LOADOUT_EMPTY = () => ({ charms: [], sets: [], torch: false, leg: {}, mythic: [], slot: {}, sock: {}, mods: {}, sealMods: { p: [], a: [] }, skills: null, paragon: null, spec: null });
+  const loadouts = () => { try { const x = JSON.parse(localStorage.getItem(LOADOUT_KEY)); return x && typeof x === "object" ? x : {}; } catch { return {}; } };
 
   /** Item mods in a share link: key~GA bits~manual.affix~masterwork~capstone~tf1.tf2~L, comma-separated. */
   const encodeMods = (all) => Object.entries(all).map(([k, m]) => [k, (m.ga || []).map((x) => (x ? 1 : 0)).join(""),
@@ -1330,6 +1335,15 @@
   function loadPins() {
     const fromHash = /[?&]pins=([^&]*)/.exec(location.hash);
     if (fromHash) {
+      // Keep the build this link replaces: save it under its class first (one loadout per class).
+      try {
+        const prev = JSON.parse(localStorage.getItem(SB_KEY)) || {}, prevPins = JSON.parse(localStorage.getItem(PIN_KEY)) || [];
+        if (prevPins.length || (prev.charms || []).length || (prev.sets || []).length || Object.keys(prev.leg || {}).length) {
+          const all = loadouts();
+          all[prev.cls || "Auto"] = { pins: prevPins, ...Object.fromEntries(LOADOUT_FIELDS.filter((k) => k in prev).map((k) => [k, prev[k]])) };
+          localStorage.setItem(LOADOUT_KEY, JSON.stringify(all));
+        }
+      } catch { /* ignore */ }
       state.pins = decodeURIComponent(fromHash[1]).split(",").filter((k) => k && state.byId.has(k));
       const cls = /[?&]cls=([^&]+)/.exec(location.hash);
       try { Object.assign(state.sandbox, JSON.parse(localStorage.getItem(SB_KEY)) || {}); } catch { /* ignore */ }
@@ -4541,7 +4555,7 @@
    * the eight classes (open the Database filtered to that class) and recent updates. */
   // [date, [[text, link], ...]]: each line opens the page it's about.
   const HOME_NEWS = [
-    ["20 Nov 2026", [["Specialization panels in the game's own art: Soul Shard crystals, Oath cards, Book of the Dead sigils, Spirit crests, Weapon Expertise disks.", "#/skills", "spec"], ["Class specializations: Rogue Specializations, Barbarian Weapon Expertise (ranks 0–10), Spiritborn Spirit Hall (Loyalty's Mantle), Druid Spirit Boons, Necromancer Book of the Dead, Sorcerer Enchantments, Paladin Oaths, Warlock Soul Shards.", "#/skills", "spec"],
+    ["20 Nov 2026", [["Shorter share links, and COPY FOR DISCORD in the Sandbox: posts as a tidy named link instead of a long URL.", "#/sandbox"], ["Sandbox: one build per class, saved in your browser. Switch class and that class's build comes back; click a class picture below to jump in.", "#/sandbox"], ["Specialization panels in the game's own art: Soul Shard crystals, Oath cards, Book of the Dead sigils, Spirit crests, Weapon Expertise disks.", "#/skills", "spec"], ["Class specializations: Rogue Specializations, Barbarian Weapon Expertise (ranks 0–10), Spiritborn Spirit Hall (Loyalty's Mantle), Druid Spirit Boons, Necromancer Book of the Dead, Sorcerer Enchantments, Paladin Oaths, Warlock Soul Shards.", "#/skills", "spec"],
       ["Skill tags use the game's names: Judicator, Pyromancy, Darkness, Jaguar… so \"+N to Judicator Skills\" gear counts.", "#/skills", "tree"]]],
     ["19 Nov 2026", [["Search finds skills, Paragon boards and glyphs; skill tooltips show tags, chosen upgrades and gear ranks.", "#/database"],
       ["Sandbox: 6-slot skill bar, crafted Mythic toggle on gear slots, Season 15 Soul Splinters, Leoric's Crown gem boost, masterwork as item quality.", "#/sandbox"]]],
@@ -4578,7 +4592,7 @@
     const cur = sandboxClass();
     const own = (kind, c) => state.records.filter((r) => r.kind === kind && r.classes.length === 1 && r.classes[0] === c).length;
     $h("home-classes").innerHTML = codex.meta.classes.slice().sort().map((c) => `<article class="home-cls${c === cur ? " is-cur" : ""}">
-        <img src="data/figures/${c.toLowerCase()}.webp" alt="" loading="lazy" onerror="this.src='data/figures/${c.toLowerCase()}.svg'">
+        <a class="home-cls__link" href="#/sandbox" data-homesandbox="${esc(c)}" title="Theorycraft Sandbox as ${esc(c)}" aria-label="Open the Theorycraft Sandbox as ${esc(c)}"><img src="data/figures/${c.toLowerCase()}.webp" alt="" loading="lazy" onerror="this.src='data/figures/${c.toLowerCase()}.svg'"></a>
         <div class="home-cls__info">
           <h3 class="home-cls__n">${esc(c)}${c === cur ? ' <span class="home-cls__cur mono">YOUR BUILD</span>' : ""}</h3>
           <p class="home-cls__spec">${esc(HOME_SPEC[c] || "")}</p>
@@ -4621,14 +4635,18 @@
       const setTab = (t) => { skTab = t; try { localStorage.setItem("onosendai.sktab", t); } catch { /* ignore */ } };
       const b = e.target.closest("[data-homecls]");
       if (b) { state.filters.cls = b.dataset.homecls; location.hash = "#/database"; return; }
-      // SKILLS: the Sandbox class follows (changing it clears other-class gear, with UNDO, as everywhere else).
+      // The class picture and SKILLS: the Sandbox class follows (changing it clears other-class gear, with UNDO, as everywhere else).
+      const setClass = (c) => {
+        if (sandboxClass() === c) return;
+        if (!els.sbClass.options.length) els.sbClass.innerHTML = `<option value="">Auto</option>` + Engine.codex.meta.classes.slice().sort().map((x) => `<option>${esc(x)}</option>`).join("");
+        els.sbClass.value = c;
+        els.sbClass.dispatchEvent(new Event("change"));
+      };
+      const sb = e.target.closest("[data-homesandbox]");
+      if (sb) { e.preventDefault(); setClass(sb.dataset.homesandbox); location.hash = "#/sandbox"; return; }
       const sk = e.target.closest("[data-homeskills]");
       if (sk) {
-        if (sandboxClass() !== sk.dataset.homeskills) {
-          if (!els.sbClass.options.length) els.sbClass.innerHTML = `<option value="">Auto</option>` + Engine.codex.meta.classes.slice().sort().map((x) => `<option>${esc(x)}</option>`).join("");
-          els.sbClass.value = sk.dataset.homeskills;
-          els.sbClass.dispatchEvent(new Event("change"));
-        }
+        setClass(sk.dataset.homeskills);
         setTab("tree");
         location.hash = "#/skills";
         return;
@@ -4809,35 +4827,64 @@
       saveSandbox();
       renderSandbox();
     });
-    // A new class starts a new build: gear and charms from the old class are cleared (seal and the
-    // roll / rank / item power settings stay). UNDO in the toast puts the old build back.
+    // One loadout per class, kept in this browser (localStorage LOADOUT_KEY): switching class saves the
+    // current build under its class and loads the new class's saved one (or starts it empty). The roll /
+    // rank / item power settings are shared.
     els.sbClass.addEventListener("change", () => {
-      const sb = state.sandbox;
-      const had = state.pins.length || sb.charms.length || sb.sets.length || sb.torch || Object.keys(sb.leg).length || Object.keys(sb.sock || {}).length || Object.keys(sb.mods || {}).length;
-      const before = { pins: state.pins.slice(), sb: JSON.parse(JSON.stringify(sb)) };
-      sb.cls = els.sbClass.value;
-      if (had) {
-        state.pins = [];
-        Object.assign(sb, { charms: [], sets: [], torch: false, leg: {}, mythic: [], slot: {}, sock: {}, mods: {}, sealMods: { p: [], a: [] } });
-        savePins();
-        toast(`Class set to ${sb.cls || "Auto"}: gear and charms cleared.`, ["UNDO", () => {
-          state.pins = before.pins; state.sandbox = before.sb;
-          savePins(); saveSandbox(); renderSandbox();
-        }]);
-      }
+      const sb = state.sandbox, from = sb.cls || "", to = els.sbClass.value;
+      const all = loadouts();
+      all[from || "Auto"] = { pins: state.pins.slice(), ...JSON.parse(JSON.stringify(Object.fromEntries(LOADOUT_FIELDS.map((k) => [k, sb[k]])))) };
+      sb.cls = to;
+      const saved = all[to || "Auto"];
+      state.pins = saved ? (saved.pins || []).filter((k) => state.byId.has(k)) : [];
+      Object.assign(sb, LOADOUT_EMPTY(), saved ? Object.fromEntries(LOADOUT_FIELDS.filter((k) => k in saved).map((k) => [k, saved[k]])) : {});
+      try { localStorage.setItem(LOADOUT_KEY, JSON.stringify(all)); } catch { /* ignore */ }
+      const n = state.pins.length + sb.charms.length + sb.sets.length + Object.keys(sb.leg || {}).length;
+      if (from !== to) toast(saved && n ? `${to || "Auto"}: your saved ${to || "Auto"} build is back. Your ${from || "Auto"} build is saved too.` : `${to || "Auto"}: new build. Your ${from || "Auto"} build is saved and comes back when you switch to it.`);
+      savePins();
       saveSandbox();
       renderSandbox();
     });
     els.sbClear.addEventListener("click", () => { state.pins = []; state.sandbox.charms = []; state.sandbox.sets = []; state.sandbox.torch = false; state.sandbox.leg = {}; state.sandbox.sock = {}; state.sandbox.mods = {}; saveSandbox(); savePins(); renderSandbox(); state.mode = null; });
-    els.sbShare.addEventListener("click", async () => {
-      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}${Object.keys(state.sandbox.sock).length ? "&sock=" + encodeURIComponent(Object.entries(state.sandbox.sock).map(([sp, v]) => [sp, ...v].join("~")).join(",")) + "&gt=" + state.sandbox.gt : ""}${Object.keys(state.sandbox.mods || {}).length ? "&mods=" + encodeURIComponent(encodeMods(state.sandbox.mods)) : ""}${sealMods().p.some(Boolean) || sealMods().a.some(Boolean) ? "&sm=" + encodeURIComponent(sealMods().p.join(".") + "~" + sealMods().a.join(".")) : ""}${encodeSkills() ? "&sk=" + encodeURIComponent(encodeSkills()) : ""}${state.sandbox.mythic.length ? "&my=" + encodeURIComponent(state.sandbox.mythic.join(",")) : ""}${encodeParagon() ? "&pg=" + encodeURIComponent(encodeParagon()) : ""}${encodeSpec() ? "&sp=" + encodeURIComponent(encodeSpec()) : ""}`;
-      try { await navigator.clipboard.writeText(url); els.sbShare.textContent = "COPIED"; }
-      catch { window.prompt("Copy this link:", url); }
-      setTimeout(() => (els.sbShare.textContent = "COPY LINK"), 1400);
-    });
+    els.sbShare.addEventListener("click", () => copyShare(false));
+    els.sbShareDc.addEventListener("click", () => copyShare(true));
     els.sbList.addEventListener("toggle", (e) => {
       if (e.target.matches("details[data-raw]") && e.target.open) loadRaw(e.target);
     }, true);
+  }
+
+  /* ---------- Share links ----------
+   * The build as a query string (pins=…&cls=…&…), packed into a short link: #/b/<code>, code = "z" + base64url of
+   * the deflate-compressed query (or "u" + base64url of the plain query where the browser can't compress).
+   * boot() unpacks #/b/ links back into #/sandbox?<query> before the build loads. */
+  const shareQuery = () => `pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}${Object.keys(state.sandbox.sock).length ? "&sock=" + encodeURIComponent(Object.entries(state.sandbox.sock).map(([sp, v]) => [sp, ...v].join("~")).join(",")) + "&gt=" + state.sandbox.gt : ""}${Object.keys(state.sandbox.mods || {}).length ? "&mods=" + encodeURIComponent(encodeMods(state.sandbox.mods)) : ""}${sealMods().p.some(Boolean) || sealMods().a.some(Boolean) ? "&sm=" + encodeURIComponent(sealMods().p.join(".") + "~" + sealMods().a.join(".")) : ""}${encodeSkills() ? "&sk=" + encodeURIComponent(encodeSkills()) : ""}${state.sandbox.mythic.length ? "&my=" + encodeURIComponent(state.sandbox.mythic.join(",")) : ""}${encodeParagon() ? "&pg=" + encodeURIComponent(encodeParagon()) : ""}${encodeSpec() ? "&sp=" + encodeURIComponent(encodeSpec()) : ""}`;
+  const b64u = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const unb64u = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+  async function packShare(q) {
+    const raw = new TextEncoder().encode(q);
+    if (typeof CompressionStream === "undefined") return "u" + b64u(raw);
+    const z = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream("deflate-raw"))).arrayBuffer());
+    return z.length < raw.length ? "z" + b64u(z) : "u" + b64u(raw);
+  }
+  async function unpackShare(code) {
+    const bytes = unb64u(code.slice(1));
+    if (code[0] === "u") return new TextDecoder().decode(bytes);
+    return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text();
+  }
+  /** A short Discord-friendly line: [Onosendai build: Class · Item, Item +N](<link>) (masked link, no embed). */
+  function shareLabel() {
+    const names = state.pins.map((k) => state.byId.get(k)).filter((r) => r && r.kind !== "aspect").map((r) => r.name);
+    const shown = names.slice(0, 3).join(", ") + (names.length > 3 ? ` +${names.length - 3}` : "");
+    return `Onosendai build: ${sandboxClass() || "Theorycraft"}${shown ? " · " + shown : ""}`.replace(/[\[\]]/g, "");
+  }
+  async function copyShare(discord) {
+    const btn = discord ? els.sbShareDc : els.sbShare, label = btn.textContent;
+    let url = `${location.origin}${location.pathname}#/sandbox?${shareQuery()}`;
+    try { url = `${location.origin}${location.pathname}#/b/${await packShare(shareQuery())}`; } catch { /* keep the long link */ }
+    const text = discord ? `[${shareLabel()}](<${url}>)` : url;
+    try { await navigator.clipboard.writeText(text); btn.textContent = "COPIED"; }
+    catch { window.prompt("Copy this:", text); }
+    setTimeout(() => (btn.textContent = label), 1400);
   }
 
   /** Quick-add suggestions: only what the build's class can use. */
@@ -4886,6 +4933,12 @@
       return;
     }
 
+    // A short share link (#/b/<code>) becomes the full #/sandbox?… link before the build loads.
+    const short = /^#\/b\/([A-Za-z0-9_-]+)/.exec(location.hash);
+    if (short) {
+      try { history.replaceState(null, "", `#/sandbox?${await unpackShare(short[1])}`); }
+      catch { history.replaceState(null, "", "#/sandbox"); showAlert("That build link is damaged or incomplete."); }
+    }
     const t0 = performance.now();
     Engine.load(codex);
     buildRecords(codex);
