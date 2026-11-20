@@ -317,6 +317,16 @@
             if (!id) return UNKNOWN;
             return ctx.world.equipped ? (ctx.world.equipped.has(id) ? 1 : 0) : 0;
           }
+          // Barbarian Weapon Expertise: TechniqueSlotIsItemType(SNO.ItemType.Axe) (the Technique slot's weapon type) and
+          // GetItemTypeCountForPower(SNO.ItemType.Axe) (equipped weapons of that type). world.technique: Set of item
+          // types, world.itemTypes: { type: count }; 0 without a build.
+          const lname = n.name.toLowerCase();
+          if (lname === "techniqueslotisitemtype" || lname === "getitemtypecountforpower") {
+            const a = n.args[0], id = a && a.k === "ref" && a.path[0] === "SNO" && a.path[1] === "ItemType" ? a.path.slice(2).join(".") : null;
+            if (!id) return UNKNOWN;
+            if (lname === "techniqueslotisitemtype") return ctx.world.technique && ctx.world.technique.has(id) ? 1 : 0;
+            return (ctx.world.itemTypes && ctx.world.itemTypes[id]) || 0;
+          }
           const f = FUNCS[n.name] || FUNCS_LC[n.name.toLowerCase()];
           if (!f) return UNKNOWN;
           return f(ctx, n.args.map((a) => evalNode(a, ctx)));
@@ -393,6 +403,9 @@
         for (const ch of rest.join(".").toLowerCase()) h = (h * 33 + ch.charCodeAt(0)) >>> 0;
         return ctx.world.takenMods.has(`${ctx.power}:${h}`) ? 1 : 0;
       }
+
+      // Attributes the build sets (class specializations: Weapon_Expertise_Level#Axe = 10, Level = the player level).
+      if (ctx.world.attrs && !rest.length && Object.prototype.hasOwnProperty.call(ctx.world.attrs, head)) return ctx.world.attrs[head];
 
       // Owner.*, live character attributes: not knowable offline
       return UNKNOWN;
@@ -1086,6 +1099,7 @@
     }
     if (kind === "skill") { const [c, i] = id.split(":"); const h = skTooltip(c, i); return h && { html: h, rarity: "skill" }; }
     if (kind === "pg") { const h = SK && pgTooltip(id); return h && { html: h, rarity: "skill" }; }
+    if (kind === "spec") { const h = SK && spTooltip(id); return h && { html: h, rarity: "skill" }; }
     if (kind === "pgdef") { const h = SK && pgDefTooltip(id); return h && { html: h, rarity: "skill" }; }
     if (kind === "sks" || kind === "skb" || kind === "skn" || kind === "skg") { const h = SK && skxTooltip(kind, id); return h && { html: h, rarity: kind === "skb" ? "legendary" : kind === "sks" ? "skill" : "rare" }; }
     if (kind === "torch") {
@@ -1346,6 +1360,8 @@
       state.sandbox.skills = skm ? parseSkills(skm[1], sandboxClass()) : null;
       const pgm = /[?&]pg=([^&]+)/.exec(location.hash);
       state.sandbox.paragon = pgm ? parseParagon(pgm[1], sandboxClass()) : null;
+      const spm = /[?&]sp=([^&]+)/.exec(location.hash);
+      state.sandbox.spec = spm ? parseSpec(spm[1], sandboxClass()) : null;
       saveSandbox();
       savePins();
       return;
@@ -2638,6 +2654,15 @@
         const rk = (skS.pts[skT.nodes.findIndex((x) => x.k === "skill" && x.p === n.p)] || 0) + (skGR[st.n.toLowerCase()] || 0);
         src.push({ id: `skill:${k}`, name: `${m.n || "Upgrade"} (${st.n})`, lines: [Engine.render(m.d, { power: n.p, world: skWorld({ skillRank: Math.max(1, rk) }), depth: 0 }).plain] });
       }
+      // Class specialization: chosen options (at the level), and Barbarian Expertise of equipped weapon types.
+      if (SK && spDef()) {
+        const spW = spWorld(), spD = spDef();
+        for (const c of spChosen()) { const t = spText(c.o, spW); if (t.plain) src.push({ id: `spec:${c.slot.id}:${c.o.id}`, name: `${c.o.n} (${spD.t}${spD.expertise ? " Technique" : ""})`, lines: [t.plain] }); }
+        if (spD.expertise) {
+          const wt = spWeaponTypes(), tech = spState().v.tech;
+          for (const o of (spSlot(spD, "tech") || { o: [] }).o) if (o.id !== tech && (o.it || []).some((t) => wt[t])) src.push({ id: `specexp:${o.id}`, name: `${o.n} Expertise (equipped)`, lines: [spText(o, spW).plain] });
+        }
+      }
       const pgS = state.sandbox.paragon;
       if (SK && pgS && pgS.cls === sandboxClass() && (pgS.pts || []).length) {
         const g = pgGrid(pgS.cls, pgS), tot = pgTotals(pgS.cls, pgS, g);
@@ -2645,7 +2670,7 @@
         tot.glyphs.forEach((g) => g.affs.forEach((x, j) => { if (!x.ok) return; const line = x.sum ? x.sum.plain : x.a.op === 2 ? "" : x.plain; if (line) src.push({ id: `glyph:${g.bi}:${j}`, name: `Glyph ${g.def.n}`, lines: [line] }); }));
         tot.legend.forEach((c) => { const st = SK.skills[c.node.pw]; if (st) src.push({ id: `pgleg:${c.key}`, name: `${c.node.n} (Paragon)`, lines: [Engine.render(st.d, { power: c.node.pw, world: { t: 1, rank: 1, ip: Engine.DEFAULT_IP }, depth: 0 }).plain] }); });
       }
-      if (!SK && ((skS && Object.keys(skS.pts || {}).length) || (pgS && (pgS.pts || []).length))) loadSkills().then(() => { if (route() === "sandbox") renderSandbox(); });
+      if (!SK && ((skS && Object.keys(skS.pts || {}).length) || (pgS && (pgS.pts || []).length) || (state.sandbox.spec && Object.keys(state.sandbox.spec.v || {}).length))) loadSkills().then(() => { if (route() === "sandbox") renderSandbox(); });
       setCh.forEach((x) => x.a.filter(Boolean).forEach((id, j) => src.push({ id: `setaff:${x.i}:${j}`, name: x.piece.name, lines: Engine.renderAffix(id, W850).map((l) => l.plain) })));
       for (const { set: st, types } of bySet.values())
         st.tiers.filter((tr) => types.size >= setNeed(tr.n)).forEach((tr) => src.push({ id: `setbonus:${st.id}:${tr.n}`, name: `${st.name} (${setNeed(tr.n)})`, lines: Engine.renderAffix(tr.a, W850).map((l) => l.plain) }));
@@ -3379,6 +3404,8 @@
     // Gear: "Blazing Scream is now an Archfiend Skill" (Elegy).
     const conv = new RegExp(st.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + " is now an? ([A-Z][A-Za-z ]+?) Skill", "i");
     for (const g of gp) { const m = conv.exec(g.plain); if (m) add(m[1], g.name); }
+    // Class specialization: "Skeleton Warrior is also a Bone Skill" (Book of the Dead: Skirmishers).
+    if (power) for (const c of spChosen()) if (c.o.skill === power) for (const t of c.o.tags || []) add(t, `${c.o.n} (${spDef().t})`);
     // The variant taken in the Sandbox's tree (needs the skill's power id), plus variants gear grants for free
     // ("Blazing Scream gains the Skull Splitter Variant for free": Elegy).
     const tree = power && skTree(), s = tree && skState();
@@ -3617,6 +3644,7 @@
       return;
     }
     if (skTab === "paragon") { renderParagon(root, clsSel, cls); return; }
+    if (skTab === "spec") { renderSpec(root, clsSel, cls); return; }
     const s = skState(), act = skActive(tree, s), N = tree.nodes, gear = skGearRanks();
     const P = skLayout(tree), UI = SK.ui || {};
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -3758,7 +3786,9 @@
     const note = learned.length
       ? `Skills with at least 1 point in Skills &amp; Paragon can go on the bar: 6 slots (default keyboard: left and right mouse button, 1–4). A newly learned skill fills the first empty slot. ${learned.length > SKBAR_SLOTS ? `${learned.length} skills are learned: ${learned.length - s.bar.filter((x) => x !== "").length} aren't on the bar.` : ""}`
       : `No skills learned yet: spend points in <a href="#/skills">Skills &amp; Paragon</a>, then put up to 6 of them on the bar.`;
-    return wrap({ count: s.bar.filter((x) => x !== "").length, html: `<div class="skb__slots">${slots}</div><p class="hint">${note}</p>` });
+    const spD = spDef(), spC = spD ? spChosen().filter((c) => c.o.p || c.o.d) : [];
+    const spLine = spD ? `<p class="hint skb__spec"><span class="mono">${esc(spD.t.toUpperCase())}:</span> ${spC.length ? spC.map((c) => `<b data-key="spec:${esc(c.slot.id)}|${esc(c.o.id)}" tabindex="0">${esc(c.o.n)}</b>`).join(" · ") : "none chosen"} <a href="#/skills" data-sp-open>(${spC.length ? "change" : "choose"} in Skills &amp; Paragon)</a></p>` : "";
+    return wrap({ count: s.bar.filter((x) => x !== "").length, html: `<div class="skb__slots">${slots}</div>${spLine}<p class="hint">${note}</p>` });
   }
   function bindSkills() {
     const view = els.viewSkills;
@@ -3826,6 +3856,13 @@
     view.addEventListener("click", (e) => {
       const tb = e.target.closest("[data-sktab]"); if (tb) { skTab = tb.dataset.sktab; try { localStorage.setItem("onosendai.sktab", skTab); } catch { /* ignore */ } hideTooltip(); renderSkills(); return; }
       const rmb = e.target.closest("[data-pgrm]"); if (rmb) { pgRemoveBoard(+rmb.dataset.pgrm); return; }
+      const spo = e.target.closest("[data-spopt]"); if (spo) { const [sid, ...oid] = spo.dataset.spopt.split("|"); spPick(sid, oid.join("|")); return; }
+      if (e.target.closest("[data-spreset]")) {
+        const sp = spState(), before = { ...sp.v };
+        sp.v = {}; saveSandbox(); renderSkills();
+        toast("Specialization reset.", ["UNDO", () => { spState().v = before; saveSandbox(); renderSkills(); }]);
+        return;
+      }
       if (e.target.closest("[data-pgreset]")) {
         const before = JSON.parse(JSON.stringify(pgState()));
         state.sandbox.paragon = null; pgState(); saveSandbox(); renderSkills();
@@ -3860,18 +3897,160 @@
       const gl = e.target.closest("[data-pgglv]");
       if (gl) { const s = pgState(), bi = gl.dataset.pgglv; if (s.glyphs[bi]) { s.glyphs[bi].lv = Math.max(1, Math.min(PG_GLYPH_MAX, Math.round(+gl.value || 1))); saveSandbox(); renderSkills(); } return; }
       const c = e.target.closest("[data-skcls]"); if (!c) return;
+      // The Sandbox's class list is filled when the Sandbox first renders: fill it here too, or a page opened on
+      // Skills & Paragon couldn't take the class.
+      if (!els.sbClass.options.length) els.sbClass.innerHTML = `<option value="">Auto</option>` + Engine.codex.meta.classes.slice().sort().map((x) => `<option>${esc(x)}</option>`).join("");
       els.sbClass.value = c.value;
       els.sbClass.dispatchEvent(new Event("change"));
       renderSkills();
     });
   }
+  /* ---------- Class specializations (skills.json "spec", built by tools/specs.py) ----------
+   * Rogue Specializations, Barbarian Weapon Expertise (Technique), Spiritborn Spirit Hall, Druid Spirit Boons,
+   * Necromancer Book of the Dead, Sorcerer Enchantments, Paladin Oaths, Warlock Soul Shards.
+   * Each class: { t, note, slots: [{ id, n, lv, dep?, uniq?, o: [{ id, n, p?, d?, g?, lv?, ic?, tags?, skill?, it? }] }] }.
+   * state.sandbox.spec = { cls, v: { slot id: option id } }; share link sp=<slot>~<option>,... */
+  const SP_EXPERTISE_RANK = 10; // Barbarian Weapon Expertise rank (1-10): assumed maxed
+  // Bonuses some gear / Paragon add to these powers (Enchantment potency, Spirit Hall bonus, Pack Leader chance):
+  // 0 without them, so the base value shows instead of "#".
+  const SP_GEAR_BONUS0 = { Sorc_Enchantment_Potency: 0, Spiritborn_Spirit_Bonus: 0, Druid_SpiritBoon_Packleader_LuckyHitChance: 0 };
+  const spDef = () => (SK && SK.spec && SK.spec[sandboxClass()]) || null;
+  function spState() {
+    const cls = sandboxClass();
+    let s = state.sandbox.spec;
+    if (!s || typeof s !== "object" || s.cls !== cls || !s.v || typeof s.v !== "object") s = state.sandbox.spec = { cls, v: {} };
+    return s;
+  }
+  const spSlot = (def, id) => def.slots.find((x) => x.id === id);
+  /** A dependent slot ("dep") offers the options of the value chosen in its parent slot (fragments of the shard,
+   * upgrades of the minion specialization, boons of the bonded spirit). */
+  const spOptions = (def, slot, v) => (!slot.dep ? slot.o : v[slot.dep] ? slot.o.filter((o) => o.g === v[slot.dep]) : []);
+  /** The player level from the Skill Tree tab (unlock levels follow it). */
+  const spLv = () => { const s = state.sandbox.skills; return (s && s.cls === sandboxClass() && s.lv) || SK_MAX_LV; };
+  /** Why an option can't go into a slot, or "". Slots sharing a "uniq" key can't hold the same option. */
+  function spWhy(def, slot, o, v, lv) {
+    if (slot.lv && lv < slot.lv) return `${slot.n} unlocks at level ${slot.lv}`;
+    if (o.lv && lv < o.lv) return `Needs level ${o.lv}`;
+    if (slot.dep && !v[slot.dep]) return `Choose ${spSlot(def, slot.dep).n} first`;
+    if (slot.uniq) { const other = def.slots.find((x) => x !== slot && x.uniq === slot.uniq && v[x.id] === o.id); if (other) return `Already chosen in ${other.n}`; }
+    return "";
+  }
+  /** Chosen options that work at the current level: [{ slot, o }] */
+  function spChosen() {
+    const def = spDef();
+    if (!def) return [];
+    const v = spState().v, lv = spLv(), out = [];
+    for (const slot of def.slots) {
+      const o = v[slot.id] && spOptions(def, slot, v).find((x) => x.id === v[slot.id]);
+      if (o && !(slot.lv && lv < slot.lv) && !(o.lv && lv < o.lv)) out.push({ slot, o });
+    }
+    return out;
+  }
+  /** Equipped weapons by item type: { Axe2H: ["Item name"], ... } (Barbarian Weapon Expertise). */
+  function spWeaponTypes() {
+    const out = {};
+    if (!state.byId.size) return out;
+    for (const k of new Set(Object.values(sbLayout().weapons).filter(Boolean))) {
+      const r = state.byId.get(k), it = r && codexItem(r.id);
+      if (it && it.typeId) (out[it.typeId] = out[it.typeId] || []).push(r.name);
+    }
+    return out;
+  }
+  /** Formula world for specialization text: the build, the level, the expertise rank and the Technique slot. */
+  function spWorld() {
+    const def = spDef(), v = def ? spState().v : {};
+    const tech = def && def.expertise && v.tech ? ((spSlot(def, "tech") || { o: [] }).o.find((o) => o.id === v.tech) || {}).it || [] : [];
+    const wt = spWeaponTypes();
+    return skWorld({ skillRank: 1, attrs: { Weapon_Expertise_Level: SP_EXPERTISE_RANK, Level: spLv(), ...SP_GEAR_BONUS0 }, technique: new Set(tech),
+      itemTypes: Object.fromEntries(Object.entries(wt).map(([k, a]) => [k, a.length])) });
+  }
+  /** An option's text: its power's description (formulas evaluated), or the data's own text. */
+  function spText(o, world) {
+    const w = world || spWorld(), parts = [];
+    const st = o.p && SK.skills[o.p];
+    if (st && st.d) parts.push(Engine.render(st.d, { power: o.p, world: w, depth: 0 }));
+    else if (o.d) parts.push(Engine.render(o.d, { world: w, depth: 0 }));
+    if (o.d2) parts.push(Engine.render(o.d2, { world: w, depth: 0 }));
+    return { html: parts.map((x) => x.html).join("<br><br>"), plain: parts.map((x) => x.plain).join(" ") };
+  }
+  const spTagsNote = (o) => (o.tags && o.tags.length && o.skill && SK.skills[o.skill] ? `${SK.skills[o.skill].n} is also a ${o.tags.join(" / ")} Skill` : "");
+  function spTooltip(id) {
+    const def = spDef();
+    if (!def) return null;
+    const [sid, oid] = id.split("|"), slot = spSlot(def, sid), o = slot && slot.o.find((x) => x.id === oid);
+    if (!o) return null;
+    const v = spState().v, on = v[sid] === oid, why = spWhy(def, slot, o, v, spLv());
+    const t = spText(o), tags = spTagsNote(o);
+    const foot = [
+      ["SLOT", slot.n + (slot.lv ? ` (level ${slot.lv})` : "")],
+      o.lv ? ["LEVEL", `Needs level ${o.lv}`] : null,
+      slot.dep && o.g ? ["OF", o.g] : null,
+      tags ? ["TAGS", tags] : null,
+      def.expertise ? ["RANK", `${SP_EXPERTISE_RANK} / 10 (assumed max)`] : null,
+      ["STATUS", on ? (why && !/^Already/.test(why) ? `Chosen, inactive: ${why}` : "Chosen") : why || "Click to choose"],
+    ].filter(Boolean);
+    return `<div class="tt__head">${o.ic ? `<span class="ico-well ico-well--tt ico-well--skill">${itemIcon(o.ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(o.n)}</p><p class="tt__type">${esc(sandboxClass())} · ${esc(def.t)} · ${esc(slot.n)}</p></div></div>
+      <div class="tt__body">${t.html ? `<p class="tt__power">${t.html}</p>` : `<p class="hint">Bond with the ${esc(o.n)} spirit: activate one more of its Boons.</p>`}${o.f ? `<div class="tt__sep"></div><p class="tt__flavor">"${esc(o.f)}"</p>` : ""}</div>
+      <dl class="tt__foot">${foot.map(([k, val]) => `<dt>${k}</dt><dd>${esc(val)}</dd>`).join("")}</dl>`;
+  }
+  function spPick(sid, oid) {
+    const def = spDef();
+    if (!def) return;
+    const s = spState(), slot = spSlot(def, sid), o = slot && slot.o.find((x) => x.id === oid);
+    if (!o) return;
+    if (s.v[sid] === oid) delete s.v[sid];
+    else {
+      const why = spWhy(def, slot, o, s.v, spLv());
+      if (why) { toast(`${o.n}: ${why}.`); return; }
+      s.v[sid] = oid;
+    }
+    // Dependent slots lose a choice that doesn't belong to the new parent choice.
+    for (const x of def.slots) if (x.dep && s.v[x.id] && !spOptions(def, x, s.v).some((y) => y.id === s.v[x.id])) delete s.v[x.id];
+    saveSandbox();
+    hideTooltip();
+    renderSkills();
+  }
+  function renderSpec(root, clsSel, cls) {
+    const def = spDef(), s = spState(), v = s.v, lv = spLv();
+    const bar = `<div class="sk-bar">${clsSel}${skTabs()}
+        <span class="sk-ctl mono">LEVEL <b>${lv}</b> <span class="hint">(Skill Tree tab)</span></span>
+        <span class="sk-tools"><button type="button" class="btn btn--ghost mono" data-spreset${Object.keys(v).length ? "" : " disabled"}>RESET</button></span>
+      </div>`;
+    if (!def) { root.innerHTML = `${bar}<p class="sb-empty">No specialization data for ${esc(cls)}.</p>`; return; }
+    const W = spWorld();
+    const tile = (slot, o, on, why) => `<button type="button" class="sp-opt${on ? " is-on" : ""}${why && !on ? " is-locked" : ""}" data-spopt="${esc(slot.id)}|${esc(o.id)}" data-key="spec:${esc(slot.id)}|${esc(o.id)}" aria-pressed="${on}">${o.ic ? itemIcon(o.ic, "sp-opt__ic") : `<span class="sp-opt__ic sp-opt__ic--none mono" aria-hidden="true">${esc(o.n.replace(/^Upgrade /, "")[0])}</span>`}<span class="sp-opt__n">${esc(o.n)}</span>${o.lv ? `<span class="sp-opt__lv mono">L${o.lv}</span>` : ""}</button>`;
+    const cards = def.slots.map((slot) => {
+      const opts = spOptions(def, slot, v), cur = v[slot.id], curO = cur && opts.find((o) => o.id === cur);
+      const locked = slot.lv && lv < slot.lv;
+      const tiles = opts.length ? opts.map((o) => tile(slot, o, cur === o.id, spWhy(def, slot, o, v, lv))).join("") : `<p class="hint">Choose ${esc(spSlot(def, slot.dep).n)} first.</p>`;
+      const t = curO && spText(curO, W), tags = curO && spTagsNote(curO);
+      const detail = curO && (t.html || tags) ? `<div class="sp-detail">${t.html ? `<p class="tt__power">${t.html}</p>` : ""}${tags && !/is also an? /i.test(t.plain) ? `<p class="sp-detail__tag mono">✦ ${esc(tags)}</p>` : ""}${curO.f ? `<p class="tt__flavor">"${esc(curO.f)}"</p>` : ""}</div>` : "";
+      return `<section class="sp-slot${locked ? " is-locked" : ""}${slot.dep ? " sp-slot--dep" : ""}"><h4 class="sp-slot__h mono">${esc(slot.n.toUpperCase())}${slot.lv ? ` <span class="sp-slot__lv">LEVEL ${slot.lv}${locked ? " · LOCKED" : ""}</span>` : ""}</h4><div class="sp-opts">${tiles}</div>${detail}</section>`;
+    }).join("");
+    // Barbarian: every weapon type's Expertise, working when a skill uses that weapon (equipped ones count).
+    let extra = "";
+    if (def.expertise) {
+      const wt = spWeaponTypes(), tech = (spSlot(def, "tech") || { o: [] }).o;
+      extra = `<section class="sp-slot sp-slot--wide"><h4 class="sp-slot__h mono">EXPERTISE BY WEAPON <span class="sp-slot__lv">RANK ${SP_EXPERTISE_RANK}</span></h4><ul class="sp-exp">${tech.map((o) => {
+        const eq = (o.it || []).flatMap((t) => wt[t] || []);
+        return `<li class="${eq.length ? "is-on" : ""}"><span class="sp-exp__n" data-key="spec:tech|${esc(o.id)}" tabindex="0">${o.ic ? itemIcon(o.ic, "sp-opt__ic") : ""}<b>${esc(o.n)}</b></span>${v.tech === o.id ? ' <span class="sp-tag mono">TECHNIQUE</span>' : ""}${eq.length ? ` <span class="sp-tag sp-tag--eq mono">EQUIPPED: ${esc(eq.join(", "))}</span>` : ""}<p class="tt__power">${spText(o, W).html}</p></li>`;
+      }).join("")}</ul><p class="hint">Expertise ranks (1–10, from using the weapon) are assumed at ${SP_EXPERTISE_RANK}. A weapon's Expertise works when a skill uses that weapon; the Technique applies to all your attacks. The Technique and the Expertise of equipped Sandbox weapons go to the Sandbox DAMAGE panel.</p></section>`;
+    }
+    const chosen = spChosen();
+    root.innerHTML = `${bar}
+      <div class="sp">
+        <div class="sp-head"><h3 class="sb-loadout__title mono">${esc(cls).toUpperCase()} // ${esc(def.t.toUpperCase())}</h3><p class="hint">${Engine.render(def.note, { world: {}, depth: 0 }).html} Click to choose, click again to clear. ${chosen.length ? `Active: <b>${chosen.filter((c) => c.o.p || c.o.d).map((c) => esc(c.o.n)).join(" · ") || "—"}</b>. Their numbers go to the Sandbox DAMAGE panel.` : ""}</p></div>
+        <div class="sp-grid">${cards}${extra}</div>
+      </div>`;
+  }
+
   /* ---------- Paragon boards (phase 2) ----------
    * state.sandbox.paragon = { cls, boards: [{ id, r: rotation 0-3, x, y: origin on the global grid, p: parent board, g: gate key }],
    *   pts: ["<board>.<cell>", ...] }   Board 0 is the class's start board at (0, 0); the start node is free.
    * A new board attaches at a free gate: its own gate on the facing edge sits next to it (rotation chosen by the player). */
   let skTab = (() => { try { return localStorage.getItem("onosendai.sktab") || "tree"; } catch { return "tree"; } })();
   const PG_MAX_BOARDS = 5; // start board + 4 (assumed; see status.md)
-  const skTabs = () => `<span class="sk-tabs" role="tablist">${[["tree", "SKILL TREE"], ["paragon", "PARAGON"]].map(([k, l]) => `<button type="button" class="btn btn--ghost mono" role="tab" data-sktab="${k}" aria-selected="${skTab === k}">${l}</button>`).join("")}</span>`;
+  const skTabs = () => `<span class="sk-tabs" role="tablist">${[["tree", "SKILL TREE"], ["paragon", "PARAGON"], ["spec", ((spDef() || {}).t || "Specialization").toUpperCase()]].map(([k, l]) => `<button type="button" class="btn btn--ghost mono" role="tab" data-sktab="${k}" aria-selected="${skTab === k}">${l}</button>`).join("")}</span>`;
   const PG = () => (SK && SK.paragon) || {};
   const pgBoardDefs = (cls) => (PG().boards || {})[cls] || [];
   const pgDef = (cls, id) => pgBoardDefs(cls).find((b) => b.id === id);
@@ -4252,6 +4431,13 @@
     return { cls, boards, pts: (ps || "").split(",").filter((k) => /^\d+\.\d+$/.test(k)), glyphs };
   }
 
+  /** Share link: sp=<slot>~<option>,... (class specialization). */
+  const encodeSpec = () => { const s = state.sandbox.spec; return s && s.v ? Object.entries(s.v).filter(([, o]) => o).map(([k, o]) => `${k}~${o}`).join(",") : ""; };
+  function parseSpec(str, cls) {
+    const v = {};
+    for (const x of decodeURIComponent(str || "").split(",")) { const [k, ...o] = x.split("~"); if (/^[a-z0-9_]+$/.test(k) && o.join("~")) v[k] = o.join("~"); }
+    return { cls, v };
+  }
   /** Share link: sk=<level>.<node>:<pts>.<node>:<pts>...[.b<node>-<node>-...] (b = skill bar, 6 slots, empty = ""). */
   const encodeSkills = () => {
     const s = state.sandbox.skills;
@@ -4298,6 +4484,8 @@
 
   function bindEvents() {
     window.addEventListener("hashchange", render);
+    // "(choose in Skills & Paragon)" under the Sandbox skill bar opens the specialization tab.
+    document.addEventListener("click", (e) => { if (e.target.closest("[data-sp-open]")) { skTab = "spec"; try { localStorage.setItem("onosendai.sktab", skTab); } catch { /* ignore */ } } });
     bindRunes();
     bindSkills();
 
@@ -4490,7 +4678,7 @@
     });
     els.sbClear.addEventListener("click", () => { state.pins = []; state.sandbox.charms = []; state.sandbox.sets = []; state.sandbox.torch = false; state.sandbox.leg = {}; state.sandbox.sock = {}; state.sandbox.mods = {}; saveSandbox(); savePins(); renderSandbox(); state.mode = null; });
     els.sbShare.addEventListener("click", async () => {
-      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}${Object.keys(state.sandbox.sock).length ? "&sock=" + encodeURIComponent(Object.entries(state.sandbox.sock).map(([sp, v]) => [sp, ...v].join("~")).join(",")) + "&gt=" + state.sandbox.gt : ""}${Object.keys(state.sandbox.mods || {}).length ? "&mods=" + encodeURIComponent(encodeMods(state.sandbox.mods)) : ""}${sealMods().p.some(Boolean) || sealMods().a.some(Boolean) ? "&sm=" + encodeURIComponent(sealMods().p.join(".") + "~" + sealMods().a.join(".")) : ""}${encodeSkills() ? "&sk=" + encodeURIComponent(encodeSkills()) : ""}${state.sandbox.mythic.length ? "&my=" + encodeURIComponent(state.sandbox.mythic.join(",")) : ""}${encodeParagon() ? "&pg=" + encodeURIComponent(encodeParagon()) : ""}`;
+      const url = `${location.origin}${location.pathname}#/sandbox?pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}${Object.keys(state.sandbox.sock).length ? "&sock=" + encodeURIComponent(Object.entries(state.sandbox.sock).map(([sp, v]) => [sp, ...v].join("~")).join(",")) + "&gt=" + state.sandbox.gt : ""}${Object.keys(state.sandbox.mods || {}).length ? "&mods=" + encodeURIComponent(encodeMods(state.sandbox.mods)) : ""}${sealMods().p.some(Boolean) || sealMods().a.some(Boolean) ? "&sm=" + encodeURIComponent(sealMods().p.join(".") + "~" + sealMods().a.join(".")) : ""}${encodeSkills() ? "&sk=" + encodeURIComponent(encodeSkills()) : ""}${state.sandbox.mythic.length ? "&my=" + encodeURIComponent(state.sandbox.mythic.join(",")) : ""}${encodeParagon() ? "&pg=" + encodeURIComponent(encodeParagon()) : ""}${encodeSpec() ? "&sp=" + encodeURIComponent(encodeSpec()) : ""}`;
       try { await navigator.clipboard.writeText(url); els.sbShare.textContent = "COPIED"; }
       catch { window.prompt("Copy this link:", url); }
       setTimeout(() => (els.sbShare.textContent = "COPY LINK"), 1400);

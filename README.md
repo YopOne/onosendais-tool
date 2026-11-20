@@ -11,12 +11,16 @@ Plain HTML, CSS and JavaScript. No frameworks, no build step for the site itself
 - **Database:** every unique and Season 15 Soul Splinter with live search (the search also finds skills, Paragon boards and glyphs); class, rarity, slot, drop source and availability filters (obtainable now or legacy); and Standard (item power 850), Ancestral (900) and crafted-Mythic views.
 - **Aspect Codex:** every legendary aspect, with how imprinting works (Codex of Power, amulet 150%, 2H weapon 200%).
 - **Runes & Recipes:** all runes, a socket-runeword builder, Season 15 classic runewords and crafting recipes, including the Horadric Cube chain from a white item to a unique to a Mythic.
-- **Skills & Paragon:** your class's skill tree with the game's layout, icons and text: spend points in skills and their upgrades (level gates, pick-one groups, rank caps), linked to the Sandbox build and its DAMAGE panel. Paragon boards too: attach boards at gates with rotation, path nodes from the start, rare-node thresholds and totals. Glyphs in each board's socket, with level, radius and their bonuses.
+- **Skills & Paragon:** your class's skill tree, its specialization (Spirit Hall, Book of the Dead, Weapon Expertise…) with the game's layout, icons and text: spend points in skills and their upgrades (level gates, pick-one groups, rank caps), linked to the Sandbox build and its DAMAGE panel. Paragon boards too: attach boards at gates with rotation, path nodes from the start, rare-node thresholds and totals. Glyphs in each board's socket, with level, radius and their bonuses.
 - **Theorycraft Sandbox:** pin items and aspects; set roll quality, aspect rank and item power; try aspects on an amulet or 2H weapon and uniques as crafted Mythics; modify uniques with Greater Affixes, rolled affixes, tempering, masterworking (to 25 + capstone) and Horadric Cube Transfiguration; socket gems, runes and splinters; a 6-slot skill bar; share a link.
 
 Base stats come from the game's own balance tables, so values shown are the real in-game numbers for the chosen item power. Values that depend on your character (weapon damage, health-scaled Thorns and Life) show `#`.
 
 ## Updates
+
+**20 Nov 2026**
+- Class specializations in Skills & Paragon: Rogue Specializations (Combo Points, Inner Sight, Preparation), Barbarian Weapon Expertise and Technique, Spiritborn Spirit Hall, Druid Spirit Boons and Spirit Bonding, Necromancer Book of the Dead, Sorcerer Enchantments, Paladin Oaths and Warlock Soul Shards, with game text, unlock levels, share links and the DAMAGE panel.
+- Fixes: choosing a class in Skills & Paragon works on a page opened there; the data build gives identical files when nothing changed.
 
 **19 Nov 2026**
 - Search also finds skills, upgrades, Paragon boards, rare nodes and glyphs.

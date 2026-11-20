@@ -304,6 +304,10 @@ def extract(meta_dir, stl_dir, power_dir, icons=None, stat_line=None, attr_desc=
 
     paragon = extract_paragon(meta_dir, stl_dir, icons, stat_line, attr_desc or {}, skill_text, pending) if stat_line else {}
 
+    # Class specializations (Rogue Specializations, Barbarian Weapon Expertise, Spiritborn Spirit Hall, ...): tools/specs.py
+    from specs import extract_specs
+    spec = extract_specs(meta_dir, stl_dir, skill_text, icons, skills)
+
     # Script formulas of every referenced power (and PowerTag references, recursively).
     while pending:
         pname = pending.pop()
@@ -344,4 +348,4 @@ def extract(meta_dir, stl_dir, power_dir, icons=None, stat_line=None, attr_desc=
             if os.path.exists(dst):
                 bgs[cls] = "data/skilltree/" + cls.lower() + ".webp"
     ui["bg"] = bgs
-    return {"trees": trees, "skills": skills, "powers": dict(sorted(powers.items())), "tables": tables, "paragon": paragon, "ui": ui}
+    return {"trees": trees, "skills": skills, "powers": dict(sorted(powers.items())), "tables": tables, "paragon": paragon, "spec": spec, "ui": ui}
