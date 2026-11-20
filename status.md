@@ -4,7 +4,7 @@ _Last updated: 20 Nov 2026 (Home page). Everything below is pushed and live._
 
 ## Overview
 
-A vanilla HTML/CSS/JS single-page app: a searchable Diablo 4 database of uniques, legendary aspects, runes, runewords and crafting recipes, plus a Theorycraft Sandbox (gear, item editor, sockets, Talisman with seals, damage model) and a Skills & Paragon view (skill tree, Paragon boards, glyphs), built from datamined game files. It needs no frameworks or build tools and runs on GitHub Pages.
+A vanilla HTML/CSS/JS single-page app with a Home landing page: a searchable Diablo 4 database of uniques, legendary aspects, runes, runewords and crafting recipes, plus a Theorycraft Sandbox (gear, item editor, sockets, Talisman with seals, damage model) and a Skills & Paragon view (skill tree, Paragon boards, glyphs), built from datamined game files. It needs no frameworks or build tools and runs on GitHub Pages.
 
 **Data version:** Lord of Hatred, Season 15, game build **3.2.4.74043** (d4data commit of 29 Oct 2026); max level 70. There is no Season 16 data yet.
 

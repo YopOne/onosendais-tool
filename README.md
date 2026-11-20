@@ -8,6 +8,7 @@ Plain HTML, CSS and JavaScript. No frameworks, no build step for the site itself
 
 ## Views
 
+- **Home:** the landing page: live counts, a tile for each section, a card per class (its specialization and class-only uniques and aspects, with links to its items and skill tree) and recent updates.
 - **Database:** every unique and Season 15 Soul Splinter with live search (the search also finds skills, Paragon boards and glyphs); class, rarity, slot, drop source and availability filters (obtainable now or legacy); and Standard (item power 850), Ancestral (900) and crafted-Mythic views.
 - **Aspect Codex:** every legendary aspect, with how imprinting works (Codex of Power, amulet 150%, 2H weapon 200%).
 - **Runes & Recipes:** all runes, a socket-runeword builder, Season 15 classic runewords and crafting recipes, including the Horadric Cube chain from a white item to a unique to a Mythic.
@@ -19,6 +20,7 @@ Base stats come from the game's own balance tables, so values shown are the real
 ## Updates
 
 **20 Nov 2026**
+- New Home page: section tiles with game art, class cards and a What's New list. Fixed garbled characters in the page title and search box.
 - Class specializations in Skills & Paragon: Rogue Specializations (Combo Points, Inner Sight, Preparation), Barbarian Weapon Expertise and Technique, Spiritborn Spirit Hall, Druid Spirit Boons and Spirit Bonding, Necromancer Book of the Dead, Sorcerer Enchantments, Paladin Oaths and Warlock Soul Shards, with game text, unlock levels, share links and the DAMAGE panel.
 - Skill tags use the game's names (Judicator, Pyromancy, Darkness, Jaguar…), so "+N to Judicator Skills" and similar gear lines count; Oath and Spirit cards list their skills.
 - Fixes: choosing a class in Skills & Paragon works on a page opened there; the data build gives identical files when nothing changed.
