@@ -350,7 +350,7 @@ def main():
     # ---------- Unique / Mythic items ----------
     items_by_name = {}
     scanned = 0
-    for path in glob.glob(os.path.join(item_dir, "*.itm.json")):
+    for path in sorted(glob.glob(os.path.join(item_dir, "*.itm.json"))):
         scanned += 1
         j = load(path)
         rarity = MAGIC_TYPES.get(j.get("eMagicType"))
@@ -417,7 +417,7 @@ def main():
     if os.path.isdir(aspect_dir):
         aspect_affixes = []
         aspect_icon = {}
-        for p in glob.glob(os.path.join(aspect_dir, "*.asp.json")):
+        for p in sorted(glob.glob(os.path.join(aspect_dir, "*.asp.json"))):
             asp = load(p)
             ref = asp.get("snoAffix") or {}
             if ref.get("name"):
@@ -427,7 +427,7 @@ def main():
         print("! Aspect folder not found: falling back to StringList/Affix_legendary_*.")
         aspect_icon = {}
         aspect_affixes = [os.path.basename(p)[len("Affix_"): -len(".stl.json")]
-                          for p in glob.glob(os.path.join(stl_dir, "Affix_legendary_*.stl.json"))]
+                          for p in sorted(glob.glob(os.path.join(stl_dir, "Affix_legendary_*.stl.json")))]
 
     aspects_by_name = {}
     for a in aspect_affixes:
@@ -850,7 +850,7 @@ def main():
         "items": items,
         "aspects": aspects,
         "affixes": out_affixes,
-        "powers": powers,
+        "powers": dict(sorted(powers.items())),
         "mythic": mythic,
         "gb": gb,
         "globals": globals_out,

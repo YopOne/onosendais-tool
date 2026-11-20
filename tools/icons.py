@@ -75,13 +75,13 @@ class Icons:
         atlases = {s for s, _ in files}
         sheets = {}  # atlas snoID -> whole-sheet PNG
         if atlas_dir and os.path.isdir(atlas_dir):
-            for f in os.listdir(atlas_dir):
+            for f in sorted(os.listdir(atlas_dir)):
                 m = PNG_NAME.search(f)
                 if m:
                     sheets[int(m[1])] = os.path.join(atlas_dir, f)
         self.frames = {}  # image handle -> webp path, or (sheet png, x, y, w, h)
         crops = []
-        for p in glob.glob(os.path.join(meta_dir, "Texture", "*.tex.json")):
+        for p in sorted(glob.glob(os.path.join(meta_dir, "Texture", "*.tex.json"))):
             with open(p, encoding="utf-8") as fh:
                 head = fh.read(400)
                 m = re.search(r'"__snoID__":\s*(\d+)', head)
@@ -166,7 +166,7 @@ class Icons:
     def write(self):
         """Copy used icons to out_dir; remove ones no longer used. Returns (count, KB)."""
         os.makedirs(self.out_dir, exist_ok=True)
-        for f in os.listdir(self.out_dir):
+        for f in sorted(os.listdir(self.out_dir)):
             if f.endswith(".webp") and f[:-5] not in self.used:
                 os.remove(os.path.join(self.out_dir, f))
         total = 0

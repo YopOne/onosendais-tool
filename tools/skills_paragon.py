@@ -336,7 +336,7 @@ def extract(meta_dir, stl_dir, power_dir, icons=None, stat_line=None, attr_desc=
         import subprocess
         os.makedirs(out_dir, exist_ok=True)
         for cls in TREE_FILES:
-            hits = _glob.glob(os.path.join(_glob.escape(bg_dir), _glob.escape(f"2DUI_SkillTreeBackgroundMiddle_{cls} [") + "*].png"))
+            hits = sorted(_glob.glob(os.path.join(_glob.escape(bg_dir), _glob.escape(f"2DUI_SkillTreeBackgroundMiddle_{cls} [") + "*].png")))
             dst = os.path.join(out_dir, cls.lower() + ".webp")
             if hits and not os.path.exists(dst):
                 # The stone-framed arch panel: the middle 54% of the 5120 px sheet, scaled to 1800 px tall.
@@ -344,4 +344,4 @@ def extract(meta_dir, stl_dir, power_dir, icons=None, stat_line=None, attr_desc=
             if os.path.exists(dst):
                 bgs[cls] = "data/skilltree/" + cls.lower() + ".webp"
     ui["bg"] = bgs
-    return {"trees": trees, "skills": skills, "powers": powers, "tables": tables, "paragon": paragon, "ui": ui}
+    return {"trees": trees, "skills": skills, "powers": dict(sorted(powers.items())), "tables": tables, "paragon": paragon, "ui": ui}
