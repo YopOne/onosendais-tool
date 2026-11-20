@@ -1092,8 +1092,9 @@ select option:disabled { color: var(--faint); }
   background: radial-gradient(ellipse at 50% 40%, rgba(255, 49, 49, 0.06), transparent 70%), #08080a; border: 1px solid var(--line); border-radius: var(--radius); }
 .sk-svg:active { cursor: grabbing; }
 .sk-bgimg { opacity: 0.9; pointer-events: none; }
-.sk-trunk { fill: none; stroke: #0a0909; stroke-width: 190; stroke-linecap: round; stroke-linejoin: round; }
-.sk-trunk__core { fill: none; stroke: #9c1218; stroke-width: 110; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 40px rgba(220, 30, 30, 0.55)); }
+/* Cluster trunk: a thinner, muted red with a soft feathered edge (the outer stroke is blurred, not a hard rim). */
+.sk-trunk { fill: none; stroke: rgba(120, 14, 18, 0.35); stroke-width: 150; stroke-linecap: round; stroke-linejoin: round; filter: blur(22px); }
+.sk-trunk__core { fill: none; stroke: #6e1418; stroke-width: 60; stroke-linecap: round; stroke-linejoin: round; opacity: 0.85; }
 .sk-link { fill: none; stroke: #3a3632; stroke-width: 34; stroke-linecap: round; stroke-linejoin: round; paint-order: stroke; }
 .sk-link.is-on { stroke: #c4161c; stroke-width: 42; filter: drop-shadow(0 0 30px rgba(220, 30, 30, 0.6)); }
 .sk-node image { pointer-events: none; }
