@@ -32,6 +32,7 @@ Base stats come from the game's own balance tables, so values shown are the real
 - Class specializations in Skills & Paragon: Rogue Specializations (Combo Points, Inner Sight, Preparation), Barbarian Weapon Expertise and Technique, Spiritborn Spirit Hall, Druid Spirit Boons and Spirit Bonding, Necromancer Book of the Dead, Sorcerer Enchantments, Paladin Oaths and Warlock Soul Shards, with game text, unlock levels, share links and the DAMAGE panel.
 - Skill tags use the game's names (Judicator, Pyromancy, Darkness, Jaguar…), so "+N to Judicator Skills" and similar gear lines count; Oath and Spirit cards list their skills.
 - Sandbox PARAMETERS: COPY LINK, COPY FOR DISCORD and CLEAR at the top, shorter hints, and the panel scrolls on its own if it's taller than the window.
+- Sandbox: the Class picker is under the character sheet; the list of slots beside it is gone. On wide screens the Talisman sits beside the character sheet.
 - The Sandbox title shows the class: its sigil and "Druid Builder" (etc.).
 - Home lists the classes first, above the section tiles. Opening another page starts at its top.
 - Sandbox on phones: the character sheet and Skill Bar come first, above the sliders; tap an equipped item (gear or Talisman) for its tooltip, tap again to change it, hold to remove it (with UNDO).

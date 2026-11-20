@@ -2369,6 +2369,9 @@
 
   const rawCache = new Map(); // key -> rendered raw-files HTML
 
+  // Width at which the Talisman fits beside the character sheet (see .sb-build--side in style.css).
+  const TAL_SIDE = matchMedia("(min-width: 1240px)");
+  TAL_SIDE.addEventListener("change", () => { if (route() === "sandbox") renderSandbox(); });
   function renderSandbox() {
     fillQuickAdd();
     syncPinButtons();
@@ -2523,7 +2526,7 @@
           <img class="pd__fig" src="data/figures/${esc(figCls)}.svg" alt="${esc(cls || "Wanderer")} figure" draggable="false">`}
           ${photo && sigil ? `<img class="pd__badge" src="data/icons/${sigil}.webp" alt="" draggable="false">` : ""}
           ${pdSlots.map(cellHTML).join("")}</div>
-        <ul class="pd__list">${pdSlots.map((d) => `<li class="${d.blocked ? "is-blocked" : d.name ? "pd__li--" + d.rar : "is-empty"}"><span class="mono">${esc(d.label)}</span> ${d.blocked ? "held by the 2H weapon" : d.name ? esc(d.name) : "empty"}</li>`).join("")}</ul></div>`;
+        <div class="pd__cls" id="sb-cls-spot"></div><!--TAL--></div>`;
     })() : "";
     // Build-wide rune problems (old builds, links): a rune used twice, more than 2 runewords.
     function runeProblems() {
@@ -2877,7 +2880,12 @@
       return `<article class="sb-entry sb-entry--legendary">${tooltipInner(rv, rendered)}
         <p class="hint mono" style="padding:0 16px 10px">ON A LEGENDARY ${esc(slotNameOf(sp).toUpperCase())}${bonus === "amulet" ? " // AMULET ×1.5" : bonus === "2h" ? " // 2H WEAPON ×2" : ""} // RANK ${r.maxRank ? Math.min(state.sandbox.rank, r.maxRank) + " / " + r.maxRank : state.sandbox.rank}</p></article>`;
     }).join("");
-    els.sbList.innerHTML = limitNote + build + skillBarHTML() + talisman + damage + aspects + (state.pins.length || legDetails ? details : "") + legDetails + state.pins.map((key) => {
+    const clsField = document.getElementById("sb-class-field");
+    if (clsField) clsField.remove(); // keep the element (and its listener) while the list is rebuilt
+    // Wide screens: the Talisman sits beside the character sheet (in the room the old slot list used).
+    const talSide = Boolean(pdHTML) && TAL_SIDE.matches;
+    const buildOut = talSide ? build.replace("<!--TAL-->", talisman.replace('<section class="sb-build" id="sb-talisman">', '<section class="sb-build sb-build--side" id="sb-talisman">')) : build;
+    els.sbList.innerHTML = limitNote + buildOut + skillBarHTML() + (talSide ? "" : talisman) + damage + aspects + (state.pins.length || legDetails ? details : "") + legDetails + state.pins.map((key) => {
       const r0 = state.byId.get(key);
       if (!r0) return "";
       const asCharm = isCharm(key) && charmOf(r0);
@@ -2906,6 +2914,12 @@
           </details>`}
         </article>`;
     }).join("");
+    // The Class picker sits under the character sheet (or in PARAMETERS when there's no paperdoll art).
+    if (clsField) {
+      const spot = document.getElementById("sb-cls-spot");
+      if (spot) spot.appendChild(clsField);
+      else document.querySelector(".sandbox__controls .sandbox__actions").after(clsField);
+    }
   }
 
   // Fetch the original datamined JSON straight from data/Item, data/StringList and data/Power.

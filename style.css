@@ -864,7 +864,10 @@ select option:disabled { color: var(--faint); }
 @media (max-width: 760px) { .tal-wrap { grid-template-columns: 1fr; } .tal { max-width: 520px; margin: 0 auto; } }
 
 /* ---------- Paperdoll: armor and weapons around a class figure (panel units 600×860) ---------- */
-.pd-wrap { display: grid; grid-template-columns: minmax(0, 460px) minmax(200px, 1fr); gap: 18px; align-items: start; margin: 8px 0 4px; }
+.pd-wrap { display: grid; grid-template-columns: minmax(0, 460px); gap: 12px; align-items: start; margin: 8px 0 4px; }
+/* Class picker under the character sheet. */
+.pd__cls .sb-clsfield { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; }
+.pd__cls .sb-clsfield label { font: 600 0.72rem var(--font-ui); letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); }
 .pd { position: relative; width: 100%; aspect-ratio: 600 / 860; border: 1px solid #2e2a24; border-radius: 6px; overflow: hidden;
   background: radial-gradient(ellipse 60% 48% at 50% 40%, #2a241d 0%, #15120f 60%, #0b0a09 100%); box-shadow: inset 0 0 70px rgba(0, 0, 0, 0.8); }
 .pd .ico { width: auto; height: auto; }
@@ -893,15 +896,7 @@ select option:disabled { color: var(--faint); }
 .pd__slot:hover .pd__clear, .pd__clear:focus-visible { opacity: 1; }
 @media (hover: none) { .pd__clear { opacity: 1; } }
 .pd__toggle { position: absolute; left: -6px; top: -6px; z-index: 2; }
-.pd__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; font-size: 0.86rem; }
-.pd__list li { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; color: var(--text); }
-.pd__list .mono { color: var(--faint); font-size: 0.68rem; letter-spacing: 0.08em; min-width: 9.5em; text-transform: uppercase; }
-.pd__list .is-empty, .pd__list .is-blocked { color: var(--faint); font-style: italic; }
-.pd__list .pd__li--unique { color: var(--r-unique); }
-.pd__list .pd__li--mythic { color: var(--r-mythic); }
-.pd__list .pd__li--legendary { color: var(--r-legendary); }
-.pd__list .pd__li--ancestral { color: var(--r-ancestral); }
-@media (max-width: 760px) { .pd-wrap { grid-template-columns: 1fr; } .pd { max-width: 460px; margin: 0 auto; } .pd__list .mono { min-width: 8em; } }
+@media (max-width: 760px) { .pd-wrap { grid-template-columns: 1fr; } .pd { max-width: 460px; margin: 0 auto; } .pd__cls { max-width: 460px; width: 100%; margin: 0 auto; } }
 /* Class portrait from the Season 15 battle pass armor art, faded into the panel. */
 .pd__photo { position: absolute; left: 50%; top: 0; width: 64%; height: 86%; transform: translateX(-50%); object-fit: cover; object-position: 50% 12%; pointer-events: none;
   -webkit-mask-image: radial-gradient(ellipse 50% 55% at 50% 45%, #000 62%, transparent 100%); mask-image: radial-gradient(ellipse 50% 55% at 50% 45%, #000 62%, transparent 100%); }
@@ -1500,3 +1495,11 @@ select option:disabled { color: var(--faint); }
 .sb-title__sigil { width: clamp(44px, 7vw, 64px); height: auto; flex: none; filter: invert(1) sepia(1) saturate(1.4) brightness(0.95) drop-shadow(0 0 10px rgba(255, 49, 49, 0.35)); }
 .sb-title__txt { display: grid; line-height: 1.05; }
 .sb-title__kick { font: 600 0.72rem var(--font-ui); letter-spacing: 0.22em; text-transform: uppercase; color: var(--accent); text-shadow: none; margin-bottom: 4px; }
+
+/* Wide screens: the Talisman panel beside the character sheet (app.js TAL_SIDE, min-width 1240px). */
+.pd-wrap:has(> .sb-build--side) { grid-template-columns: minmax(0, 460px) minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 22px; }
+.pd-wrap > .pd, .pd-wrap > .pd__cls { grid-column: 1; }
+.pd-wrap > .sb-build--side { grid-column: 2; grid-row: 1 / span 2; padding: 0; border: 0; background: none; box-shadow: none; align-content: start; }
+.sb-build--side .tal-wrap { grid-template-columns: minmax(0, 1fr); }
+.sb-build--side .tal { max-width: 460px; }
+.sb-build--side .tal__list { display: none; }
