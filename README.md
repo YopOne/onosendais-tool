@@ -21,6 +21,9 @@ Base stats come from the game's own balance tables, so values shown are the real
 
 **20 Nov 2026**
 - Skill tree drawn like the game: square skill icons in round sockets with a `0/15 +N` rank counter (gear ranks in blue) instead of names, round upgrade nodes, diamond variant nodes, small junctions, connectors in straight runs and 45° forks that turn red as you buy, a red trunk joining the clusters one by one down to the Ultimate, and each cluster root shows its category emblem from the game (eye = Basic, star = Core…). Laid out with the game's proportions, so nothing overlaps.
+- Two kinds of Mythic: dropped, bought or made from 3 of the same Mythic (no equip limit) vs upgraded in the Horadric Cube from a 900 unique (only 1 can be equipped); set it under MYTHIC in the ⚒ item editor. New recipes: Horadric Cube 3 Mythics → 1 and Occultist Enchanting; ENCHANT in the item editor replaces one affix.
+- Plain uniques get the slot bonus too (amulet ×1.5, 2H ×2; checked in game: Moloch's Beating Flame 30%, Red Sermon 120%). Unique charms can be Mythic quality (**M** on the charm socket) and get no slot bonus as a charm.
+- Sandbox ↔ Skills links: SKILL BAR ↓ and TALISMAN ↓ jumps, buttons to the Skill Tree, Paragon and specialization tabs, ← SANDBOX in Skills & Paragon; hover the seal for its tooltip.
 - Specialization tooltips follow your gear: Loyalty's Mantle with matching Spirit Hall choices, Spirit Potency tempers, The Hemat Stone on the Ritualist shard and similar boosts are in the numbers and listed; gear that mentions an Oath, Shard, Enchantment, etc. is shown with it.
 - Shorter Sandbox share links, plus COPY FOR DISCORD: a tidy named link ("Onosendai build: Barbarian · …") instead of a long URL.
 - Sandbox keeps one build per class in your browser: switch class and your build for that class comes back. Home class pictures open the Sandbox as that class.
@@ -28,7 +31,7 @@ Base stats come from the game's own balance tables, so values shown are the real
 - New Home page: section tiles with game art, class cards and a What's New list. Fixed garbled characters in the page title and search box.
 - Class specializations in Skills & Paragon: Rogue Specializations (Combo Points, Inner Sight, Preparation), Barbarian Weapon Expertise and Technique, Spiritborn Spirit Hall, Druid Spirit Boons and Spirit Bonding, Necromancer Book of the Dead, Sorcerer Enchantments, Paladin Oaths and Warlock Soul Shards, with game text, unlock levels, share links and the DAMAGE panel.
 - Skill tags use the game's names (Judicator, Pyromancy, Darkness, Jaguar…), so "+N to Judicator Skills" and similar gear lines count; Oath and Spirit cards list their skills.
-- Fixes: choosing a class in Skills & Paragon works on a page opened there; the data build gives identical files when nothing changed.
+- Fixes: tooltips open with a tap on iPhone (tap again or anywhere else to close); choosing a class in Skills & Paragon works on a page opened there; the data build gives identical files when nothing changed.
 
 **19 Nov 2026**
 - Search also finds skills, upgrades, Paragon boards, rare nodes and glyphs.

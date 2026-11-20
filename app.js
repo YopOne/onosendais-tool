@@ -775,7 +775,7 @@
     // Mythics are always item power 900. A crafted Mythic is made in the Cube from the same unique at 900
     // (Ancestral); it keeps every affix, promoted to its maximum value.
     // Crafted: every affix, including the unique power, is promoted to its maximum value.
-    // A unique's power gets the aspect slot bonus: amulet x1.5, 2H weapon x2 (in game, user 21 Nov: Moloch's Beating
+    // A unique's power gets the aspect slot bonus: amulet x1.5, 2H weapon x2 (in game, user 20 Nov: Moloch's Beating
     // Flame 30% max as a 900 unique amulet, 39% as a Mythic; Red Sermon 120% as a 900 unique 2H sword, 156% as a Mythic).
     // A charm has no slot (type Charm), so no bonus: Red Sermon 60% as a charm, 78% as a Mythic charm.
     const slotBonus = aspectSlotBonus(bonusSlot(it));
@@ -1613,7 +1613,7 @@
    * its power at max roll with +30% Unique Potency, but no amulet x1.5 / 2H x2 slot bonus: a charm isn't in that
    * slot (the charm item's type is Charm). Charms don't count toward the 1 crafted Mythic limit (assumed). */
   const charmMythic = (k) => state.sandbox.mythic.includes(k);
-  /* Two kinds of Mythic from a unique (user, 21 Nov). By default a Mythic in the build is a world drop, bought from the
+  /* Two kinds of Mythic from a unique (user, 20 Nov). By default a Mythic in the build is a world drop, bought from the
    * Blacksmith / Jeweler, or made from 3 of the same Mythic in the Cube (new random affix structure): no equip limit.
    * One upgraded in the Cube from a 900 unique (5 Resplendent Sparks) keeps that unique's affix structure, and only 1
    * of those can be equipped. state.sandbox.mythUp = keys of the upgraded ones; share link mu=. */
@@ -4740,7 +4740,7 @@
    * the eight classes (open the Database filtered to that class) and recent updates. */
   // [date, [[text, link], ...]]: each line opens the page it's about.
   const HOME_NEWS = [
-    ["20 Nov 2026", [["Skill tree drawn like the game: square skills in round sockets with a 0/15 +N rank counter, round upgrades, variant diamonds, red connectors with 45° forks, a trunk between clusters and each cluster's emblem, laid out with the game's proportions.", "#/skills", "tree"], ["Specialization tooltips follow your gear: Loyalty's Mantle (matching Spirit Hall), Spirit Potency tempers, The Hemat Stone and more, in the numbers and listed.", "#/skills", "spec"], ["Shorter share links, and COPY FOR DISCORD in the Sandbox: posts as a tidy named link instead of a long URL.", "#/sandbox"], ["Sandbox: one build per class, saved in your browser. Switch class and that class's build comes back; click a class picture below to jump in.", "#/sandbox"], ["Specialization panels in the game's own art: Soul Shard crystals, Oath cards, Book of the Dead sigils, Spirit crests, Weapon Expertise disks.", "#/skills", "spec"], ["Class specializations: Rogue Specializations, Barbarian Weapon Expertise (ranks 0–10), Spiritborn Spirit Hall (Loyalty's Mantle), Druid Spirit Boons, Necromancer Book of the Dead, Sorcerer Enchantments, Paladin Oaths, Warlock Soul Shards.", "#/skills", "spec"],
+    ["20 Nov 2026", [["Skill tree drawn like the game: square skills in round sockets with a 0/15 +N rank counter, round upgrades, variant diamonds, red connectors with 45° forks, a trunk between clusters and each cluster's emblem, laid out with the game's proportions.", "#/skills", "tree"], ["Two kinds of Mythic (dropped / bought vs upgraded from a 900 unique: only 1 upgraded can be equipped), 3 Mythics → 1 and Occultist Enchanting recipes, ENCHANT in the item editor.", "#/sandbox"], ["Plain uniques get the slot bonus too (amulet ×1.5, 2H ×2); Mythic quality unique charms; seal tooltip; jumps between the Sandbox and Skills & Paragon.", "#/sandbox"],["Specialization tooltips follow your gear: Loyalty's Mantle (matching Spirit Hall), Spirit Potency tempers, The Hemat Stone and more, in the numbers and listed.", "#/skills", "spec"], ["Shorter share links, and COPY FOR DISCORD in the Sandbox: posts as a tidy named link instead of a long URL.", "#/sandbox"], ["Sandbox: one build per class, saved in your browser. Switch class and that class's build comes back; click a class picture below to jump in.", "#/sandbox"], ["Specialization panels in the game's own art: Soul Shard crystals, Oath cards, Book of the Dead sigils, Spirit crests, Weapon Expertise disks.", "#/skills", "spec"], ["Class specializations: Rogue Specializations, Barbarian Weapon Expertise (ranks 0–10), Spiritborn Spirit Hall (Loyalty's Mantle), Druid Spirit Boons, Necromancer Book of the Dead, Sorcerer Enchantments, Paladin Oaths, Warlock Soul Shards.", "#/skills", "spec"],
       ["Skill tags use the game's names: Judicator, Pyromancy, Darkness, Jaguar… so \"+N to Judicator Skills\" gear counts.", "#/skills", "tree"]]],
     ["19 Nov 2026", [["Search finds skills, Paragon boards and glyphs; skill tooltips show tags, chosen upgrades and gear ranks.", "#/database"],
       ["Sandbox: 6-slot skill bar, crafted Mythic toggle on gear slots, Season 15 Soul Splinters, Leoric's Crown gem boost, masterwork as item quality.", "#/sandbox"]]],
@@ -4943,27 +4943,51 @@
 
     // Tooltips: hover, keyboard focus, tap
     document.addEventListener("mouseover", (e) => {
+      if (fromTouch()) return;
       const card = e.target.closest("[data-key]");
       if (card && (card !== state.activeCard || els.tooltip.hidden)) showTooltip(card);
     });
     document.addEventListener("mouseout", (e) => {
+      if (fromTouch()) return;
       const card = e.target.closest("[data-key]");
       if (card && !card.contains(e.relatedTarget)) hideTooltip();
     });
     document.addEventListener("focusin", (e) => {
+      if (fromTouch()) return;
       const card = e.target.closest("[data-key]");
       if (card) showTooltip(card);
     });
     document.addEventListener("focusout", (e) => {
+      if (fromTouch()) return;
       if (e.target.closest("[data-key]")) hideTooltip();
     });
-    let tapWasOpen = false;
+    // Touch: iOS Safari only sends click / mouseover to elements that look clickable, so a tap on a card (or on empty
+    // space, to close) can go unseen. Pointer events reach every element, so a touch tap is handled here: tap a card to
+    // open its tooltip, tap it again or anywhere else to close. A drag (scroll) doesn't count. The mouse / focus
+    // events that follow a tap are then ignored for tooltips, so they can't reopen or double-toggle it.
+    const TT_SKIP = "[data-pin], [data-pick], [data-pval], .sb-cell__clear, .sb-cell__toggle";
+    let tapWasOpen = false, touchDown = null, lastTouch = 0;
+    const fromTouch = () => Date.now() - lastTouch < 800;
     document.addEventListener("pointerdown", (e) => {
       const card = e.target.closest("[data-key]");
       tapWasOpen = Boolean(card && card === state.activeCard && !els.tooltip.hidden);
+      touchDown = e.pointerType === "touch" ? { x: e.clientX, y: e.clientY } : null;
     });
+    document.addEventListener("pointerup", (e) => {
+      if (e.pointerType !== "touch" || !touchDown) return;
+      const moved = Math.hypot(e.clientX - touchDown.x, e.clientY - touchDown.y) > 10;
+      touchDown = null;
+      if (moved) return;
+      lastTouch = Date.now();
+      if (e.target.closest(TT_SKIP)) return;
+      if (e.target.closest("#tooltip")) { hideTooltip(); return; }
+      const card = e.target.closest("[data-key]");
+      if (!card || tapWasOpen) hideTooltip(); else showTooltip(card);
+    });
+    document.addEventListener("pointercancel", () => { touchDown = null; });
     document.addEventListener("click", (e) => {
-      if (e.target.closest("[data-pin], [data-pick], [data-pval], .sb-cell__clear, .sb-cell__toggle")) return;
+      if (fromTouch()) return; // handled on pointerup
+      if (e.target.closest(TT_SKIP)) return;
       const card = e.target.closest("[data-key]");
       if (!card) { hideTooltip(); return; }
       if (e.pointerType && e.pointerType !== "mouse" && tapWasOpen) hideTooltip(); else showTooltip(card);

@@ -237,7 +237,7 @@ def extract(item_dir, stl_dir, recipe_dir, src_path, items):
         r["out"] = {"n": "Mythic version of that Unique", "derived": True}
         cube["mythic"] = r
     # 3 Mythics -> 1 (X2_HoradricCube_RecycleMythicUnique; _IQM takes upgraded Mythics: quality 6 + modifier 5):
-    # a new Mythic of that item with a new random affix structure (user, 21 Nov).
+    # a new Mythic of that item with a new random affix structure (user, 20 Nov).
     if "X2_HoradricCube_RecycleMythicUnique" in all_ids:
         d = _load(os.path.join(recipe_dir, "X2_HoradricCube_RecycleMythicUnique.rcp.json"))
         q = ((d.get("tItemRecycleDescription") or {}).get("dwQuantity")) or 3
