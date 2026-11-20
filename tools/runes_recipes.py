@@ -20,7 +20,7 @@ import os
 import re
 import sys
 
-CRAFTERS = {0: "Blacksmith", 1: "Alchemist", 3: "Jeweler", 10: "Horadric Cube"}
+CRAFTERS = {0: "Blacksmith", 1: "Alchemist", 2: "Occultist", 3: "Jeweler", 10: "Horadric Cube"}
 RUNE_RARITY = {0: "Magic", 1: "Rare", 2: "Legendary", 3: "Seasonal"}
 MYTHIC_SLOT = {"1HWeapon": "1H Weapon", "2HWeapon": "2H Weapon", "Amulet": "Amulet", "Boots": "Boots", "Chest": "Chest",
                "Gloves": "Gloves", "Helm": "Helm", "Legs": "Pants", "Rings": "Ring"}
@@ -236,6 +236,32 @@ def extract(item_dir, stl_dir, recipe_dir, src_path, items):
         r["ins"][0]["n"] = "Ancestral Unique (item power 900)"
         r["out"] = {"n": "Mythic version of that Unique", "derived": True}
         cube["mythic"] = r
+    # 3 Mythics -> 1 (X2_HoradricCube_RecycleMythicUnique; _IQM takes upgraded Mythics: quality 6 + modifier 5):
+    # a new Mythic of that item with a new random affix structure (user, 21 Nov).
+    if "X2_HoradricCube_RecycleMythicUnique" in all_ids:
+        d = _load(os.path.join(recipe_dir, "X2_HoradricCube_RecycleMythicUnique.rcp.json"))
+        q = ((d.get("tItemRecycleDescription") or {}).get("dwQuantity")) or 3
+        cube["recycle"] = {"id": "X2_HoradricCube_RecycleMythicUnique", "station": "Horadric Cube", "gold": d.get("nCost") or 0, "hidden": False, "cond": "",
+                           "ins": [{"q": q, "n": "of the same Mythic (dropped, bought or upgraded)"}],
+                           "out": {"n": "That Mythic with a new random affix structure", "derived": True},
+                           "upgraded": "X2_HoradricCube_RecycleMythicUnique_IQM" in all_ids, "bases": []}
+    # Occultist: Enchanting (Recipe_Enchant): replace 1 affix from the slot's pool; materials by item kind and power.
+    if "Recipe_Enchant" in all_ids:
+        d = _load(os.path.join(recipe_dir, "Recipe_Enchant.rcp.json"))
+        by = {}
+        for ing in d.get("arIngredients", []):
+            c = (ing.get("snoCondition") or {}).get("name") or ""
+            it = (ing.get("snoItem") or {}).get("name") or ""
+            by.setdefault(c, []).append({"q": ing.get("nQuantity", 1), "ref": it, "n": item_name(it) or it})
+        g = lambda *cs: [x for c in cs for x in by.get(c, [])]
+        # Each item pays every ingredient whose condition it meets: an 800+ armor piece pays the "800+" Veiled
+        # Crystals and the "Armor 800+" Baleful Fragments.
+        recipes["enchant"] = {"id": "Recipe_Enchant", "station": "Occultist", "rows": [
+            {"when": "Item power below 800", "one": g("Item_Is_NonAncestral_And_LT800"), "two": g("Item_Is_2HNonAncestral_And_LT800")},
+            {"when": "Item power 800+ (not Ancestral)", "one": g("Item_Is_NonAncestral_And_GTE800", "Item_Is_Armor_And_NonAncestral_And_GTE800"),
+             "two": g("Item_Is_2HNonAncestral_And_GTE800")},
+            {"when": "Ancestral", "one": g("Item_Is_ArmorOr1HWeaponOrJewelry_Ancestral"), "two": g("Item_Is_2HAncestral")}],
+            "steps": [{"from": x.get("nEnchantCountMin", 0), "delta": x.get("flDelta")} for x in d.get("arEnchantCostScalarDeltas") or []]}
     # Rerolls (always available): Affix Value Reroll (all base affixes of equipment / Talisman items) and Unique Power Reroll.
     rerolls = []
     for rid, first in (("X2_HoradricCube_Bundle_RerollAffixValues", "Equipment or Talisman item"),

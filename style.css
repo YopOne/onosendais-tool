@@ -1456,3 +1456,16 @@ select option:disabled { color: var(--faint); }
 .tt__lines .tt__badge { background: rgba(199, 163, 90, 0.18); color: var(--gold); }
 .tal__seal { cursor: help; }
 .tal__seal:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 50%; }
+
+/* Item editor: where a Mythic comes from (drop / bought / 3 combined vs upgraded from a 900 unique) */
+.mods__mythsrc { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex-basis: 100%; margin-top: 6px; }
+.mods__mythsrc .btn { font-size: 0.66rem; padding: 4px 10px; }
+.mods__mythsrc [aria-checked="true"] { color: #fff; border-color: var(--r-mythic); background: color-mix(in srgb, var(--r-mythic) 22%, transparent); }
+.mods__mythsrc .hint { flex-basis: 100%; margin: 2px 0 0; }
+
+/* Occultist enchanting cost table (Runes & Recipes) */
+.ench-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.ench-table th { text-align: left; font-size: 0.62rem; letter-spacing: 0.14em; color: var(--faint); font-weight: 400; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.ench-table td { padding: 6px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); vertical-align: middle; }
+.ench-table .ing { margin-right: 6px; }
+.mods__tag--ench { color: #c9a0ff; border-color: #8a5fd0; }

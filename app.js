@@ -694,7 +694,7 @@
     mode: null,
     activeCard: null,
     pins: [],
-    sandbox: { t: 1, rank: 16, ip: 850, mythic: [], slot: {}, charms: [], sets: [], leg: {}, sock: {}, mods: {}, gt: 9 }, // slot: aspect key -> "amulet" | "2h"
+    sandbox: { t: 1, rank: 16, ip: 850, mythic: [], mythUp: [], slot: {}, charms: [], sets: [], leg: {}, sock: {}, mods: {}, gt: 9 }, // slot: aspect key -> "amulet" | "2h"
     view: { mythic: false, ip: IP.standard }, // Database view: Standard 850 / Ancestral 900 / crafted Mythic
     curation: null,
   };
@@ -743,10 +743,16 @@
     return q;
   }
   const modsOf = (key) => (state.sandbox.mods || {})[key] || null;
-  const hasMods = (m) => Boolean(m && ((m.ga || []).some(Boolean) || m.temper || m.mw || (m.tf || []).length || m.lock || m.tga || (m.rand || []).some(Boolean)));
+  const hasMods = (m) => Boolean(m && ((m.ga || []).some(Boolean) || m.temper || m.mw || (m.tf || []).length || m.lock || m.tga || (m.rand || []).some(Boolean) || (m.ench && m.ench.i >= 0)));
   /** An item has 4 base affixes: its fixed ones from the data, the rest rolled from the S04 pool (picked in the editor). */
   const BASE_AFFIXES = 4;
-  const baseAffixes = (it, m) => [...(it.stats || []), ...((m && m.rand) || []).slice(0, Math.max(0, BASE_AFFIXES - (it.stats || []).length))]; // "" = rolled slot not chosen (keeps indexes)
+  /** An item's base affixes: its fixed ones, then the rolled ones ("" = not chosen, keeps indexes); an enchanted
+   * affix (Occultist, mods.ench = { i, a }) replaces the one at index i. */
+  const baseAffixes = (it, m) => {
+    const out = [...(it.stats || []), ...((m && m.rand) || []).slice(0, Math.max(0, BASE_AFFIXES - (it.stats || []).length))];
+    if (m && m.ench && m.ench.a && m.ench.i >= 0 && m.ench.i < Math.max(BASE_AFFIXES, (it.stats || []).length)) out[m.ench.i] = m.ench.a;
+    return out;
+  };
   /** Capstone index: base affix i = i; Transfiguration stat k = TF_CAP + k (the capstone can land on either). */
   const TF_CAP = 100;
   /** Capstone / GA index of the tempered affix (it can roll as a GA, and the capstone can land on it). */
@@ -1049,7 +1055,10 @@
       rendered.mods && rendered.mods.mw ? ["MASTERWORK", `${rendered.mods.mw} / ${MW_CAP()}: item quality ${rendered.quality || rendered.mods.mw}${(rendered.quality || 0) > rendered.mods.mw ? ` (+${rendered.quality - rendered.mods.mw} from Transfiguration)` : ""}, every affix incl. temper and Transfiguration ×${(1 + (rendered.quality || rendered.mods.mw) / 100).toFixed(2)}`] : null,
       rendered.mods && (rendered.mods.tf || []).length ? ["TRANSFIGURED", `${rendered.mods.tf.length} stat${rendered.mods.tf.length > 1 ? "s" : ""} from the Horadric Cube`] : null,
       rendered.mods && rendered.mods.lock ? ["LOCKED", "Transfigured: nothing on this item can be changed any more"] : null,
-      rendered.crafted ? ["MYTHIC", r.charmMythic ? "Mythic quality charm: unique power at max +Unique Potency, no slot bonus. Doesn't count toward the 1 crafted Mythic limit (assumed)" : "Crafted: base stats at max, unique power +Unique Potency. Only 1 crafted Mythic can be equipped at a time"] : null,
+      rendered.crafted ? ["MYTHIC", r.charmMythic ? "Mythic quality charm: unique power at max +Unique Potency, no slot bonus. Doesn't count toward the 1 upgraded Mythic limit (assumed)"
+        : r.mythUp ? "Upgraded from a 900 unique in the Cube: keeps its affixes (at max), unique power +Unique Potency. Only 1 upgraded Mythic can be equipped at a time"
+        : r.mythUp === false ? "Drop, bought, or 3 combined in the Cube: random affix structure, base stats at max, unique power +Unique Potency. No equip limit"
+        : "Base stats at max, unique power +Unique Potency. Only 1 Mythic upgraded from a 900 unique can be equipped; dropped, bought or 3-combined ones don't count"] : null,
       r.kind === "item" && r.rarity === "Mythic" ? ["EQUIP", "Doesn't count toward the 1 crafted Mythic limit (dropped Iconic Mythics and random Mythics from the Blacksmith or Jeweler don't)"] : null,
       ["ID", r.id],
     ].filter(Boolean);
@@ -1127,7 +1136,7 @@
     if (r.kind === "splinter") { const h = splinterTooltip(r.raw, null); return h && { html: h, rarity: "seasonal" }; }
     if (!inSandbox) return { html: tooltipInner(r), rarity: rarityClass(shownRarity(r)) };
     const rendered = renderedAt(r, world);
-    return { html: tooltipInner(r, rendered), rarity: rarityClass(shownRarity(r, rendered)) };
+    return { html: tooltipInner({ ...r, mythUp: mythUp(key) }, rendered), rarity: rarityClass(shownRarity(r, rendered)) };
   }
 
   function showTooltip(card) {
@@ -1300,20 +1309,20 @@
   const SB_KEY = "onosendai.sandbox";
   /** Saved builds per class: { class (or "Auto"): { pins, ...LOADOUT_FIELDS } } (this browser only). */
   const LOADOUT_KEY = "onosendai.loadouts";
-  const LOADOUT_FIELDS = ["charms", "sets", "torch", "leg", "mythic", "slot", "sock", "mods", "seal", "sealMods", "skills", "paragon", "spec"];
-  const LOADOUT_EMPTY = () => ({ charms: [], sets: [], torch: false, leg: {}, mythic: [], slot: {}, sock: {}, mods: {}, sealMods: { p: [], a: [] }, skills: null, paragon: null, spec: null });
+  const LOADOUT_FIELDS = ["charms", "sets", "torch", "leg", "mythic", "mythUp", "slot", "sock", "mods", "seal", "sealMods", "skills", "paragon", "spec"];
+  const LOADOUT_EMPTY = () => ({ charms: [], sets: [], torch: false, leg: {}, mythic: [], mythUp: [], slot: {}, sock: {}, mods: {}, sealMods: { p: [], a: [] }, skills: null, paragon: null, spec: null });
   const loadouts = () => { try { const x = JSON.parse(localStorage.getItem(LOADOUT_KEY)); return x && typeof x === "object" ? x : {}; } catch { return {}; } };
 
   /** Item mods in a share link: key~GA bits~manual.affix~masterwork~capstone~tf1.tf2~L, comma-separated. */
   const encodeMods = (all) => Object.entries(all).map(([k, m]) => [k, (m.ga || []).map((x) => (x ? 1 : 0)).join(""),
-    m.temper ? m.temper.m + "." + m.temper.a : "", m.mw || 0, m.cap ?? -1, (m.tf || []).join("."), m.lock ? "L" : "", (m.rand || []).join("."), m.tga ? 1 : ""].join("~")).join(",");
+    m.temper ? m.temper.m + "." + m.temper.a : "", m.mw || 0, m.cap ?? -1, (m.tf || []).join("."), m.lock ? "L" : "", (m.rand || []).join("."), m.tga ? 1 : "", m.ench && m.ench.a ? m.ench.i + "." + m.ench.a : ""].join("~")).join(",");
   function parseMods(match) {
     const out = {};
     if (!match) return out;
     for (const x of decodeURIComponent(match[1]).split(",")) {
-      const [k, ga, tp, mw, cap, tf, lk, rd, tg] = x.split("~");
+      const [k, ga, tp, mw, cap, tf, lk, rd, tg, en] = x.split("~");
       const [tm, ta] = (tp || "").split(".");
-      out[k] = { ga: [...(ga || "")].map((c) => c === "1"), temper: tm && ta ? { m: tm, a: ta } : null, mw: +mw || 0, cap: cap === "" || cap == null ? -1 : +cap, tf: tf ? tf.split(".") : [], lock: lk === "L", rand: rd ? rd.split(".") : [], tga: tg === "1" };
+      out[k] = { ga: [...(ga || "")].map((c) => c === "1"), temper: tm && ta ? { m: tm, a: ta } : null, mw: +mw || 0, cap: cap === "" || cap == null ? -1 : +cap, tf: tf ? tf.split(".") : [], lock: lk === "L", rand: rd ? rd.split(".") : [], tga: tg === "1", ench: en ? { i: +en.split(".")[0], a: en.split(".").slice(1).join(".") } : null };
     }
     return out;
   }
@@ -1328,6 +1337,7 @@
         cap: Number.isInteger(m.cap) ? m.cap : -1, tf: (Array.isArray(m.tf) ? m.tf : []).filter((a) => aff[a]).slice(0, TF_MAX), lock: Boolean(m.lock),
         rand: (Array.isArray(m.rand) ? m.rand : []).slice(0, BASE_AFFIXES).map((a) => (aff[a] ? a : "")), tga: false };
       if (m.temper && temperManual(m.temper.m) && aff[m.temper.a]) { c.temper = { m: m.temper.m, a: m.temper.a }; c.tga = Boolean(m.tga); }
+      if (m.ench && aff[m.ench.a] && Number.isInteger(+m.ench.i) && +m.ench.i >= 0) c.ench = { i: +m.ench.i, a: m.ench.a };
       if (c.cap === TEMPER_CAP && !c.temper) c.cap = -1;
       if (!c.tf.length) c.lock = false;
       if (hasMods(c)) out[k] = c;
@@ -1353,6 +1363,8 @@
       // Crafted Mythics come from the link (my=), not from this browser's last build.
       const my = /[?&]my=([^&]+)/.exec(location.hash);
       state.sandbox.mythic = my ? decodeURIComponent(my[1]).split(",").filter((k) => state.pins.includes(k)) : [];
+      const mu = /[?&]mu=([^&]+)/.exec(location.hash);
+      state.sandbox.mythUp = mu ? decodeURIComponent(mu[1]).split(",").filter((k) => state.sandbox.mythic.includes(k)) : [];
       if (!state.sandbox.slot || typeof state.sandbox.slot !== "object") state.sandbox.slot = {};
       const ch = /[?&]charms=([^&]+)/.exec(location.hash), seal = /[?&]seal=([^&]+)/.exec(location.hash);
       state.sandbox.charms = ch ? decodeURIComponent(ch[1]).split(",").filter((k) => state.pins.includes(k)) : [];
@@ -1390,6 +1402,7 @@
     try { state.pins = (JSON.parse(localStorage.getItem(PIN_KEY)) || []).filter((k) => state.byId.has(k)); } catch { state.pins = []; }
     try { Object.assign(state.sandbox, JSON.parse(localStorage.getItem(SB_KEY)) || {}); } catch { /* ignore */ }
     if (!Array.isArray(state.sandbox.mythic)) state.sandbox.mythic = [];
+    if (!Array.isArray(state.sandbox.mythUp)) state.sandbox.mythUp = [];
     if (!state.sandbox.slot || typeof state.sandbox.slot !== "object") state.sandbox.slot = {};
     if (!Array.isArray(state.sandbox.charms)) state.sandbox.charms = [];
     if (!Array.isArray(state.sandbox.sets)) state.sandbox.sets = [];
@@ -1600,6 +1613,11 @@
    * its power at max roll with +30% Unique Potency, but no amulet x1.5 / 2H x2 slot bonus: a charm isn't in that
    * slot (the charm item's type is Charm). Charms don't count toward the 1 crafted Mythic limit (assumed). */
   const charmMythic = (k) => state.sandbox.mythic.includes(k);
+  /* Two kinds of Mythic from a unique (user, 21 Nov). By default a Mythic in the build is a world drop, bought from the
+   * Blacksmith / Jeweler, or made from 3 of the same Mythic in the Cube (new random affix structure): no equip limit.
+   * One upgraded in the Cube from a 900 unique (5 Resplendent Sparks) keeps that unique's affix structure, and only 1
+   * of those can be equipped. state.sandbox.mythUp = keys of the upgraded ones; share link mu=. */
+  const mythUp = (k) => (state.sandbox.mythUp || []).includes(k);
   /** A charm renders its unique power only: at Mythic quality the power is maxed with +30% potency, but the gear
    * Mythic's bonus lines (Cooldown Reduction, All Skills, Unique Potency) aren't on it. */
   const renderCharm = (ch, world, mythic) => ({ ...renderItem(ch, world, mythic), mythicLines: [] });
@@ -2182,7 +2200,7 @@
   /** Switch a unique between itself and its crafted Mythic version (Sandbox). */
   function toggleMythic(k) {
     const list = state.sandbox.mythic, i = list.indexOf(k);
-    if (i >= 0) list.splice(i, 1); else list.push(k);
+    if (i >= 0) { list.splice(i, 1); state.sandbox.mythUp = (state.sandbox.mythUp || []).filter((x) => x !== k); } else list.push(k);
     try { localStorage.setItem(SB_KEY, JSON.stringify(state.sandbox)); } catch { /* ignore */ }
     renderSandbox();
   }
@@ -2226,6 +2244,11 @@
     const r = modsRec(modsKey);
     if (!r) return;
     if (act === "mythic") { toggleMythic(modsKey); drawMods(); return; }
+    if (act === "mythup") {
+      const L = state.sandbox.mythUp || (state.sandbox.mythUp = []), i = L.indexOf(modsKey);
+      if (val === "1" && i < 0) L.push(modsKey); else if (val !== "1" && i >= 0) L.splice(i, 1);
+      saveSandbox(); renderSandbox(); drawMods(); return;
+    }
     const all = state.sandbox.mods || (state.sandbox.mods = {});
     const m = all[modsKey] || (all[modsKey] = { ga: [], temper: null, mw: 0, cap: -1, tf: [], lock: false, rand: [] });
     if (!m.rand) m.rand = [];
@@ -2237,6 +2260,8 @@
     else if (act === "tman") { const man = temperManual(val); m.temper = man ? { m: man.id, a: man.a[0] } : null; m.tga = false; if (m.cap === TEMPER_CAP) m.cap = -1; }
     else if (act === "tga") m.tga = val.split("|")[1] === "true";
     else if (act === "taff") { if (m.temper) { m.temper.a = val; m.tga = false; } }
+    else if (act === "enchi") { const i = +val; m.ench = i >= 0 ? { i, a: m.ench && m.ench.i === i ? m.ench.a : "" } : null; }
+    else if (act === "encha") { if (m.ench) { m.ench.a = val || ""; if (val) { m.ga[m.ench.i] = false; } } }
     else if (act === "rand") { const [idx, id] = val.split("|"); m.rand[+idx] = id || ""; if (!id) { const at = (r.raw.stats || []).length + +idx; m.ga[at] = false; if (m.cap === at) m.cap = -1; } }
     else if (act === "tfadd") { if (val && m.tf.length < TF_MAX && !m.tf.includes(val)) m.tf.push(val); }
     else if (act === "tfrm") { m.tf.splice(i, 1); if (m.cap === TF_CAP + i) m.cap = -1; else if (m.cap > TF_CAP + i) m.cap -= 1; }
@@ -2267,15 +2292,24 @@
     const slotsN = Math.max(BASE_AFFIXES, fixed);
     const capBtn = (ci) => `<button type="button" class="btn btn--ghost mono mods__cap" data-mact="cap" data-mval="${ci}" aria-pressed="${m.cap === ci}"${m.mw < cap || lock ? " disabled" : ""} title="${m.mw < cap ? `Reach masterwork ${cap} first` : `Capstone: +${Math.round((g.mwCapstone ?? 0.5) * 100)}% to this affix`}">CAPSTONE</button>`;
     const stats = Array.from({ length: slotsN }, (_, i) => {
-      const j = i - fixed, a = i < fixed ? r.raw.stats[i] : (m.rand || [])[j];
+      const j = i - fixed, en = m.ench && m.ench.a && m.ench.i === i, a = en ? m.ench.a : i < fixed ? r.raw.stats[i] : (m.rand || [])[j];
       if (!a) return `<li class="mods__stat mods__stat--empty"><span class="mods__tag mono">ROLLED</span>${randSel(j)}</li>`;
       const lines = Engine.renderAffix(a, { t: r.rarity === "Mythic" || crafted ? 1 : t, rank: state.sandbox.rank, ip: r.rarity === "Mythic" || crafted ? 900 : state.sandbox.ip || Engine.DEFAULT_IP, affixMult: affixMultFor(m, i, t, qE) });
       return `<li class="mods__stat${m.ga[i] ? " is-ga" : ""}${m.cap === i && m.mw >= cap ? " is-cap" : ""}">
-        <span class="mods__tag mono">${i < fixed ? "FIXED" : "ROLLED"}</span>
-        ${i < fixed ? `<span class="mods__text">${lines.map((l) => l.html).join("<br>")}</span>` : randSel(j)}
+        <span class="mods__tag mono${en ? " mods__tag--ench" : ""}">${en ? "ENCHANTED" : i < fixed ? "FIXED" : "ROLLED"}</span>
+        ${en || i < fixed ? `<span class="mods__text">${lines.map((l) => l.html).join("<br>")}</span>` : randSel(j)}
         <label class="mods__chk mono" title="Greater Affix: +${Math.round((g.gaBonus ?? 0.25) * 100)}%"><input type="checkbox" data-mact="ga" data-mval="${i}"${m.ga[i] ? " checked" : ""}${dis}> GA</label>
         ${capBtn(i)}</li>`;
     }).join("");
+    // Enchanting (Occultist): replace 1 base affix with another from the slot's pool; after that only that affix can be
+    // enchanted again. The original (fixed or rolled) shows when the enchant is cleared.
+    const E = m.ench || { i: -1, a: "" }, origOf = (i) => (i < fixed ? r.raw.stats[i] : (m.rand || [])[i - fixed]) || "";
+    const onItem = new Set(Array.from({ length: slotsN }, (_, i) => origOf(i)).filter(Boolean));
+    const enchIdx = `<select class="input mono" data-mact="enchi" aria-label="Affix to enchant"${dis}><option value="-1">Affix to enchant: none</option>${Array.from({ length: slotsN }, (_, i) => origOf(i) ? `<option value="${i}"${E.i === i ? " selected" : ""}>${i + 1}: ${esc(plainOf(origOf(i), t).slice(0, 60))}</option>` : "").join("")}</select>`;
+    const enchAff = E.i >= 0 ? `<select class="input mono" data-mact="encha" aria-label="Enchanted affix"${dis}><option value="">Replace it with…</option>${pool.filter((x) => x.id === E.a || !onItem.has(x.id)).map((x) => `<option value="${esc(x.id)}"${x.id === E.a ? " selected" : ""}>${esc(plainOf(x.id, t).slice(0, 80))}</option>`).join("")}</select>` : "";
+    const enchSec = `<section class="mods__sec"><h4 class="mods__h mono">ENCHANT <span>Occultist · 1 affix rerolled from the pool</span></h4>
+        <div class="mods__row">${enchIdx}${enchAff}</div>
+        <p class="hint">Enchanting replaces one base affix, fixed or rolled, with another affix from this slot's pool. Once an affix is enchanted, only that one can be enchanted again; the material cost rises with each try (see Runes &amp; Recipes, Occultist). A Greater Affix that's enchanted loses its GA.</p></section>`;
     const mans = temperOptions(r), man = m.temper && temperManual(m.temper.m);
     const byGroup = new Map();
     for (const x of mans) { if (!byGroup.has(x.g)) byGroup.set(x.g, []); byGroup.get(x.g).push(x); }
@@ -2288,7 +2322,11 @@
     el.querySelector(".picker__title").textContent = `Modify: ${r.name}`;
     const mythicRow = !modsKey.startsWith("leg:") && canCraftMythic(r)
       ? `<div class="mods__myth"><button type="button" class="btn btn--mythic mono" data-mact="mythic" aria-pressed="${crafted}" title="Unique + 5 Resplendent Sparks in the Horadric Cube: every affix at max, unique power +Unique Potency">MYTHIC</button>
-          <span class="hint">${crafted ? "Crafted Mythic: affixes at max, item power 900, unique power ×1.3 Unique Potency." : "Show this unique as its crafted Mythic version."}</span></div>` : "";
+          <span class="hint">${crafted ? "Mythic: affixes at max, item power 900, unique power ×1.3 Unique Potency." : "Show this unique as its Mythic version."}</span>
+          ${crafted ? `<div class="mods__mythsrc" role="radiogroup" aria-label="Where this Mythic comes from">
+            <button type="button" class="btn btn--ghost mono" role="radio" data-mact="mythup" data-mval="0" aria-checked="${!mythUp(modsKey)}">DROP · BOUGHT · 3 COMBINED</button>
+            <button type="button" class="btn btn--ghost mono" role="radio" data-mact="mythup" data-mval="1" aria-checked="${mythUp(modsKey)}">UPGRADED FROM 900 UNIQUE</button>
+            <span class="hint">${mythUp(modsKey) ? "Upgraded in the Cube with 5 Resplendent Sparks: keeps this unique's affix structure. Only 1 of these can be equipped." : "World drop, Blacksmith or Jeweler, or 3 of the same Mythic combined in the Cube (random affix structure): no equip limit."}</span></div>` : ""}</div>` : "";
     el.querySelector(".mods__body").innerHTML = `${mythicRow}
       ${lock ? `<p class="sb-note mono mods__lock">LOCKED // Transfigured in the Horadric Cube: nothing on this item can be changed. <button type="button" class="btn btn--ghost mono" data-mact="unlock" title="Not possible in game: only to edit this sandbox build">UNLOCK (SANDBOX ONLY)</button></p>` : ""}
       <section class="mods__sec"><h4 class="mods__h mono">BASE AFFIXES <span>${fixed} fixed + ${Math.max(0, BASE_AFFIXES - fixed)} rolled · GA +${Math.round((g.gaBonus ?? 0.25) * 100)}% each</span></h4>
@@ -2296,6 +2334,7 @@
       <section class="mods__sec"><h4 class="mods__h mono">MASTERWORK <span>${m.mw} / ${cap}</span></h4>
         <input type="range" min="0" max="${cap}" step="1" value="${m.mw}" data-mact="mw" aria-label="Masterwork level"${dis}>
         <p class="hint">Each level adds 1 <b>item quality</b>, and each point of item quality adds a flat 1% to <b>every</b> affix: base, temper and Transfiguration. Item quality now: <b>${qE}</b> (${m.mw} masterwork${tfQ ? ` + ${tfQ} Transfiguration` : ""}) = ×${(1 + qE / 100).toFixed(2)} (Maxroll: masterwork 25 = ×1.25). At ${cap} (+${cap} item quality) the <b>capstone</b> gives one affix +${Math.round((g.mwCapstone ?? 0.5) * 100)}%: base, temper or Transfiguration. It lands at random: reroll it (${gold(g.mwGoldReroll)} gold each) until it hits the one you want, while the item can still be modified. Strongest on a GA (a GA temper too). Cost ${gold(g.mwGoldLevel)} gold per level, capstone ${gold(g.mwGoldCapstone)}, capstone reroll ${gold(g.mwGoldReroll)} (+ materials).</p></section>
+      ${enchSec}
       <section class="mods__sec"><h4 class="mods__h mono">TEMPER <span>5th affix · Blacksmith · can be GA</span></h4>
         <div class="mods__row">${manSel}${affSel}</div>
         ${m.temper ? `<ul class="mods__list"><li class="mods__stat${m.tga ? " is-ga" : ""}${m.cap === TEMPER_CAP && m.mw >= cap ? " is-cap" : ""}"><span class="mods__tag mono">TEMPER</span>
@@ -2350,10 +2389,10 @@
     const auto = !state.sandbox.cls && sandboxClass();
     els.sbClass.options[0].textContent = auto ? `Auto (${auto})` : "Auto";
 
-    // Only 1 crafted Mythic can be equipped; dropped Iconic Mythics and bought random Mythics don't count.
-    const craftedN = state.pins.filter((k) => !isCharm(k) && state.sandbox.mythic.includes(k) && canCraftMythic(state.byId.get(k) || {})).length;
+    // Only 1 Mythic upgraded from a 900 unique (keeps its affixes) can be equipped; dropped, bought or 3-combined Mythics don't count.
+    const craftedN = state.pins.filter((k) => !isCharm(k) && state.sandbox.mythic.includes(k) && mythUp(k) && canCraftMythic(state.byId.get(k) || {})).length;
     const limitNote = craftedN > 1
-      ? `<p class="sb-note mono">${craftedN} CRAFTED MYTHICS // only 1 can be equipped at a time. Iconic Mythics (boss drops) and random Mythics from the Blacksmith or Jeweler don't count toward the limit.</p>`
+      ? `<p class="sb-note mono">${craftedN} UPGRADED MYTHICS // only 1 Mythic upgraded from a 900 unique (keeps its affixes) can be equipped at a time. Mythics that drop, are bought from the Blacksmith or Jeweler, or are made from 3 of the same Mythic in the Cube don't count.</p>`
       : "";
     const cls = sandboxClass();
     const rule = weaponRule(cls);
@@ -2423,7 +2462,7 @@
       const modBtn = !isCharm(k) && r.kind === "item"
         ? `<button type="button" class="pd__mods mono${hasMods(md) ? " is-on" : ""}${md && md.lock ? " is-locked" : ""}" data-mods="${esc(k)}" aria-label="Modify ${esc(r.name)}: Greater Affixes, temper, masterwork, Transfiguration" title="${md && md.lock ? "Transfigured: locked" : "Greater Affixes, temper, masterwork, Transfiguration"}">${md && md.lock ? "🔒" : "⚒"}</button>` : "";
       const mythBtn = !isCharm(k) && r.kind === "item" && canCraftMythic(r)
-        ? `<button type="button" class="pd__myth mono${crafted ? " is-on" : ""}" data-mythic="${esc(k)}" aria-pressed="${crafted}" aria-label="${crafted ? "Back to the unique" : "Make it the crafted Mythic"}: ${esc(r.name)}" title="${crafted ? "Crafted Mythic: click for the unique" : "Show the crafted Mythic version"}">M</button>` : "";
+        ? `<button type="button" class="pd__myth mono${crafted ? " is-on" : ""}" data-mythic="${esc(k)}" aria-pressed="${crafted}" aria-label="${crafted ? "Back to the unique" : "Make it a Mythic"}: ${esc(r.name)}" title="${crafted ? "Mythic: click for the unique" : "Show the Mythic version"}">M</button>` : "";
       return { label, key: isCharm(k) ? "charm:" + k : k, ic: r.icon, name: r.name, rar: rarityClass(shownRarity(r, { crafted })), clear: `data-unpin="${esc(k)}"`, extra: modBtn + mythBtn };
     };
     const offIsShield = classOffhands(cls).some((t) => /Shield/.test(t));
@@ -3021,11 +3060,17 @@
       `<p class="rnote">No recipe crafts the Season 15 uniques. They drop from the Baal, Mephisto and Diablo capstone dungeons: <a href="#/database" data-source="capstone">see them in the Database</a>.</p>`,
       sec("Season 15 rune chain", "Horadric Cube, hidden recipes. Combine runes to climb the chain toward Jah, Ber, Lo and Sol.", rc.runeUpgrades.map(recipeHTML).join("")),
       sec("Legendary rune recipes", "Horadric Cube: one specific rune plus 5 Rare and 5 Legendary runes of any kind gives the rune you want.", rc.legendaryRunes.map(recipeHTML).join("")),
-      sec("Mythic crafting", "Resplendent Sparks plus three runes per slot at the Jeweler, or a random Mythic at the Blacksmith (Torment only).", rc.mythic.map(recipeHTML).join("")),
+      sec("Mythic crafting", "Buy a Mythic of a category: Resplendent Sparks plus three runes per slot at the Jeweler, or a random Mythic at the Blacksmith (Torment only). A bought Mythic has the item's fixed affixes (some Mythics always roll the same ones) and 2 or 3 random from the slot's pool. These, dropped Mythics and Mythics made from 3 in the Cube have no equip limit.", rc.mythic.map(recipeHTML).join("")),
       rc.cube && rc.cube.unique ? sec("Horadric Cube: Unique → Mythic",
-        "Two steps. A white item with no affixes becomes a Unique of the same base; use an Ancestral (item power 900) base to get a 900 Unique. Only a 900 Unique can be upgraded to Mythic: it keeps all its affixes, promoted to their maximum values, and becomes item power 900.",
+        "Two steps. A white item with no affixes becomes a Unique of the same base; use an Ancestral (item power 900) base to get a 900 Unique. Only a 900 Unique can be upgraded to Mythic with 5 Resplendent Sparks: it keeps all its affixes, promoted to their maximum values, and becomes item power 900. <b>Only 1 upgraded (crafted) Mythic can be equipped.</b>",
         cubeStepHTML("1", rc.cube.unique, rc.cube.unique.ancestral ? "Each base has a normal and an Ancestral recipe." : "") +
-        (rc.cube.mythic ? cubeStepHTML("2", rc.cube.mythic, "") : "")) : "",
+        (rc.cube.mythic ? cubeStepHTML("2", rc.cube.mythic, "Keeps its affixes · only 1 equipped") : "")) : "",
+      rc.cube && rc.cube.recycle ? sec("Horadric Cube: 3 Mythics → 1",
+        "Combine 3 of the same Mythic for a new copy of it with a new random affix structure: its fixed affixes stay and the others are rolled again from the pool. The result isn't an upgraded Mythic, so it doesn't count toward the 1 upgraded Mythic limit.",
+        `<div class="cube-step"><p class="eyebrow">Recycle Mythics</p>${recipeHTML(rc.cube.recycle)}<p class="hint mono">Any slot${rc.cube.recycle.upgraded ? " // takes dropped, bought and upgraded Mythics" : ""}</p></div>`) : "",
+      rc.enchant ? sec("Occultist: Enchanting",
+        "Reroll one affix of an item from the slot's pool (fixed or random affix; not the unique power). Once an affix has been enchanted, only that affix can be enchanted again, and each try costs more. Set it in the Sandbox's ⚒ item editor under ENCHANT.",
+        `<div class="recipe"><table class="ench-table"><thead><tr><th class="mono">ITEM</th><th class="mono">ARMOR · 1H WEAPON · JEWELRY</th><th class="mono">2H WEAPON</th></tr></thead><tbody>${rc.enchant.rows.map((x) => `<tr><td>${esc(x.when)}</td>${[x.one, x.two].map((ins) => `<td>${(ins || []).map((i) => `<span class="ing"><span class="rchip__q">${i.q}×</span>${esc(i.n)}</span>`).join(" ")}</td>`).join("")}</tr>`).join("")}</tbody></table><div class="recipe__meta mono">Occultist · plus gold · the cost rises with each enchant on the same item</div></div>`) : "",
       rc.cube && (rc.cube.rerolls || []).length ? sec("Horadric Cube: rerolls",
         "Always available. Reroll a unique's base affixes and its unique power as often as you like to max them out, which is why the Sandbox defaults to Roll quality 100%.",
         rc.cube.rerolls.map((r) => `<div class="cube-step"><p class="eyebrow">${esc(r.name)}</p>${recipeHTML(r)}${r.desc ? `<p class="hint">${Engine.renderText(r.desc).html}</p>` : ""}</div>`).join("")) : "",
@@ -4985,7 +5030,7 @@
    * The build as a query string (pins=…&cls=…&…), packed into a short link: #/b/<code>, code = "z" + base64url of
    * the deflate-compressed query (or "u" + base64url of the plain query where the browser can't compress).
    * boot() unpacks #/b/ links back into #/sandbox?<query> before the build loads. */
-  const shareQuery = () => `pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}${Object.keys(state.sandbox.sock).length ? "&sock=" + encodeURIComponent(Object.entries(state.sandbox.sock).map(([sp, v]) => [sp, ...v].join("~")).join(",")) + "&gt=" + state.sandbox.gt : ""}${Object.keys(state.sandbox.mods || {}).length ? "&mods=" + encodeURIComponent(encodeMods(state.sandbox.mods)) : ""}${sealMods().p.some(Boolean) || sealMods().a.some(Boolean) ? "&sm=" + encodeURIComponent(sealMods().p.join(".") + "~" + sealMods().a.join(".")) : ""}${encodeSkills() ? "&sk=" + encodeURIComponent(encodeSkills()) : ""}${state.sandbox.mythic.length ? "&my=" + encodeURIComponent(state.sandbox.mythic.join(",")) : ""}${encodeParagon() ? "&pg=" + encodeURIComponent(encodeParagon()) : ""}${encodeSpec() ? "&sp=" + encodeURIComponent(encodeSpec()) : ""}`;
+  const shareQuery = () => `pins=${encodeURIComponent(state.pins.join(","))}${state.sandbox.cls ? "&cls=" + encodeURIComponent(state.sandbox.cls) : ""}${state.sandbox.charms.length ? "&charms=" + encodeURIComponent(state.sandbox.charms.join(",")) : ""}${state.sandbox.seal ? "&seal=" + state.sandbox.seal : ""}${state.sandbox.torch ? "&torch=1" : ""}${Object.keys(state.sandbox.leg).length ? "&leg=" + encodeURIComponent(Object.entries(state.sandbox.leg).map(([sp, e]) => [sp, e.a, e.two ? 1 : 0].join("~")).join(",")) : ""}${state.sandbox.sets.length ? "&sets=" + encodeURIComponent(state.sandbox.sets.map((x) => [x.p, ...x.a].join("~")).join(",")) : ""}${Object.keys(state.sandbox.sock).length ? "&sock=" + encodeURIComponent(Object.entries(state.sandbox.sock).map(([sp, v]) => [sp, ...v].join("~")).join(",")) + "&gt=" + state.sandbox.gt : ""}${Object.keys(state.sandbox.mods || {}).length ? "&mods=" + encodeURIComponent(encodeMods(state.sandbox.mods)) : ""}${sealMods().p.some(Boolean) || sealMods().a.some(Boolean) ? "&sm=" + encodeURIComponent(sealMods().p.join(".") + "~" + sealMods().a.join(".")) : ""}${encodeSkills() ? "&sk=" + encodeURIComponent(encodeSkills()) : ""}${state.sandbox.mythic.length ? "&my=" + encodeURIComponent(state.sandbox.mythic.join(",")) : ""}${(state.sandbox.mythUp || []).filter((k) => state.sandbox.mythic.includes(k)).length ? "&mu=" + encodeURIComponent(state.sandbox.mythUp.filter((k) => state.sandbox.mythic.includes(k)).join(",")) : ""}${encodeParagon() ? "&pg=" + encodeURIComponent(encodeParagon()) : ""}${encodeSpec() ? "&sp=" + encodeURIComponent(encodeSpec()) : ""}`;
   const b64u = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const unb64u = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
   async function packShare(q) {
