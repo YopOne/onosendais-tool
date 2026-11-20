@@ -1,6 +1,6 @@
 # Onosendai's Tool: Project Status
 
-_Last updated: 20 Nov 2026 (class specializations). Everything below is pushed and live._
+_Last updated: 20 Nov 2026 (Home page). Everything below is pushed and live._
 
 ## Overview
 
@@ -58,6 +58,10 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 | Only legendary aspects can be imprinted: salvage a legendary at the Blacksmith to save its aspect to the **Codex of Power**, then imprint it on any **non-unique** item. **Unique powers can't be imprinted.** | Database and Aspect Codex subtitles; aspect tooltips |
 
 ## Built so far ✅
+
+**Home page (`#/`, `renderHome` in `app.js`)**
+- Default landing view (the logo links here): hero with the class group shot and live counts, a tile per section with game icons/art, a card per class (specialization, class-only uniques/aspects, ITEMS and SKILLS links) and a dated "What's New" list (`HOME_NEWS`; add a line per feature).
+- Fixed mojibake in `index.html` (`Â·`, `â€¦`) and removed its UTF-8 BOM; save files as UTF-8 without BOM on Windows.
 
 **Data pipeline (`tools/build_index.py`)**
 - Connects item files to their names and descriptions (StringList), roll formulas (Affix files) and Power script formulas.

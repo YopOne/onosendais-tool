@@ -972,7 +972,7 @@
   const $ = (id) => document.getElementById(id);
   const els = {
     hudStatus: $("hud-status"), alert: $("alert"), search: $("search"), pinCount: $("pin-count"),
-    viewCatalog: $("view-catalog"), viewSandbox: $("view-sandbox"), viewSkills: $("view-skills"),
+    viewHome: $("view-home"), viewCatalog: $("view-catalog"), viewSandbox: $("view-sandbox"), viewSkills: $("view-skills"),
     catalogEyebrow: $("catalog-eyebrow"), catalogTitle: $("catalog-title"),
     filterClass: $("filter-class"), filterRarity: $("filter-rarity"), filterSlot: $("filter-slot"),
     rowRarity: $("row-rarity"), rowSlot: $("row-slot"), rowView: $("row-view"), rowCat: $("row-cat"), filterCat: $("filter-cat"),
@@ -3052,6 +3052,7 @@
 
   function route() {
     const h = location.hash.replace(/^#\/?/, "").split("?")[0];
+    if (h === "" || h === "home") return "home";
     return ["database", "codex", "runes", "sandbox", "skills"].includes(h) ? h : "database";
   }
 
@@ -4516,6 +4517,58 @@
     return { cls, lv: Math.max(1, Math.min(SK_MAX_LV, +lv || SK_MAX_LV)), pts, bar, barv: bar.some((k) => k !== "") ? 1 : 0 };
   }
 
+  /* ---------- Home ----------
+   * A slim intro strip (the game's class group shot, faded), a tile per section with game art,
+   * the eight classes (open the Database filtered to that class) and recent updates. */
+  // [date, [[text, link], ...]]: each line opens the page it's about.
+  const HOME_NEWS = [
+    ["20 Nov 2026", [["Class specializations: Rogue Specializations, Barbarian Weapon Expertise (ranks 0–10), Spiritborn Spirit Hall (Loyalty's Mantle), Druid Spirit Boons, Necromancer Book of the Dead, Sorcerer Enchantments, Paladin Oaths, Warlock Soul Shards.", "#/skills", "spec"],
+      ["Skill tags use the game's names: Judicator, Pyromancy, Darkness, Jaguar… so \"+N to Judicator Skills\" gear counts.", "#/skills", "tree"]]],
+    ["19 Nov 2026", [["Search finds skills, Paragon boards and glyphs; skill tooltips show tags, chosen upgrades and gear ranks.", "#/database"],
+      ["Sandbox: 6-slot skill bar, crafted Mythic toggle on gear slots, Season 15 Soul Splinters, Leoric's Crown gem boost, masterwork as item quality.", "#/sandbox"]]],
+    ["18 Nov 2026", [["Skills & Paragon: skill trees, Paragon boards and glyphs.", "#/skills", "tree"], ["Sandbox: Talisman, item editor, damage model and paperdoll; Season 15 data.", "#/sandbox"]]],
+  ];
+  // Each class's specialization (the Skills & Paragon tab), for the class cards.
+  const HOME_SPEC = { Barbarian: "Weapon Expertise", Druid: "Spirit Boons", Necromancer: "Book of the Dead", Paladin: "Oaths",
+    Rogue: "Specializations", Sorcerer: "Enchantments", Spiritborn: "Spirit Hall", Warlock: "Soul Shards" };
+  function renderHome() {
+    const codex = Engine.codex, $h = (id) => document.getElementById(id);
+    if (!codex) return;
+    const uniq = state.curation ? state.curation.visible.length : 0, asp = state.records.filter((r) => r.kind === "aspect").length;
+    const runes = ((codex.runes || {}).runes || []).length, classes = codex.meta.classes.length;
+    $h("home-eyebrow").textContent = "// DECK ONLINE · SEASON 15";
+    $h("home-stats").innerHTML = [[uniq, "Uniques & Mythics"], [asp, "Legendary aspects"], [runes, "Runes"], [classes, "Classes"]]
+      .map(([n, l]) => `<li><b>${n}</b><span>${esc(l)}</span></li>`).join("");
+    // A row of game icons for a tile: distinct names, first n with art.
+    const icons = (xs, n) => { const seen = new Set(); return xs.filter((x) => x.ic && !seen.has(x.name) && seen.add(x.name)).slice(0, n).map((x) => itemIcon(x.ic, "home-tile__ic")).join(""); };
+    const mythics = (codex.items || []).filter((i) => i.rarity === "Mythic" && !/Crucible|Seal|Torch/.test(i.name));
+    const pickAsp = ["Aspect of the Rampaging Werebeast", "Aspect of Disobedience", "Aspect of Shared Misery", "Accelerating Aspect", "Aspect of Burning Rage", "Aspect of the Umbral"];
+    const asps = [...pickAsp.map((n) => (codex.aspects || []).find((a) => a.name === n)).filter(Boolean), ...(codex.aspects || [])];
+    const tiles = [
+      { href: "#/database", n: "01", t: "Database", d: `${uniq} uniques and Mythics plus Season 15 Soul Splinters. Filter by class, slot and boss; view at item power 850, Ancestral 900 or as crafted Mythics.`, art: `<div class="home-tile__icons">${icons(mythics, 6)}</div>` },
+      { href: "#/codex", n: "02", t: "Aspect Codex", d: `${asp} legendary aspects with their slots, types and amulet / two-handed values.`, art: `<div class="home-tile__icons">${icons(asps, 6)}</div>` },
+      { href: "#/runes", n: "03", t: "Runes & Recipes", d: `${runes} runes, a runeword builder, classic runewords and the Horadric Cube chain from white item to Mythic.`, art: `<div class="home-tile__icons">${icons(((codex.runes || {}).runes || []).filter((r) => !r.legacy), 6)}</div>` },
+      { href: "#/sandbox", n: "04", t: "Theorycraft Sandbox", d: "Gear up on the paperdoll, roll Greater Affixes, temper, masterwork and Transfigure; socket gems, runes and splinters; fill the Talisman; read the damage model; share a link.", art: `<img class="home-tile__fig" src="data/figures/barbarian.webp" alt="" loading="lazy">`, wide: true, cls: "home-tile--sandbox" },
+      { href: "#/skills", n: "05", t: "Skills & Paragon", d: "Each class's skill tree, Paragon boards and glyphs, and its specialization: Spirit Hall, Book of the Dead, Weapon Expertise, Oaths, Soul Shards…", art: "", cls: "home-tile--skills" },
+    ];
+    $h("home-tiles").innerHTML = tiles.map((x) => `<a class="home-tile${x.wide ? " home-tile--wide" : ""}${x.cls ? " " + x.cls : ""}" href="${x.href}">
+        ${x.art ? `<div class="home-tile__art" aria-hidden="true">${x.art}</div>` : ""}
+        <div class="home-tile__body"><p class="home-tile__n mono">_${x.n}_</p><h3 class="home-tile__t">${esc(x.t)}</h3><p class="home-tile__d">${esc(x.d)}</p><span class="home-tile__go mono">OPEN →</span></div>
+      </a>`).join("");
+    // Class cards: art, specialization, class-only uniques / aspects, and links to that class's items and skill tree.
+    const cur = sandboxClass();
+    const own = (kind, c) => state.records.filter((r) => r.kind === kind && r.classes.length === 1 && r.classes[0] === c).length;
+    $h("home-classes").innerHTML = codex.meta.classes.slice().sort().map((c) => `<article class="home-cls${c === cur ? " is-cur" : ""}">
+        <img src="data/figures/${c.toLowerCase()}.webp" alt="" loading="lazy" onerror="this.src='data/figures/${c.toLowerCase()}.svg'">
+        <div class="home-cls__info">
+          <h3 class="home-cls__n">${esc(c)}${c === cur ? ' <span class="home-cls__cur mono">YOUR BUILD</span>' : ""}</h3>
+          <p class="home-cls__spec">${esc(HOME_SPEC[c] || "")}</p>
+          <p class="home-cls__stat mono">${own("item", c)} UNIQUES · ${own("aspect", c)} ASPECTS</p>
+          <div class="home-cls__go"><button type="button" class="btn btn--ghost mono" data-homecls="${esc(c)}" title="Database: ${esc(c)} items">ITEMS</button><button type="button" class="btn btn--ghost mono" data-homeskills="${esc(c)}" title="${esc(c)} skill tree and ${esc(HOME_SPEC[c] || "specialization")}">SKILLS</button></div>
+        </div></article>`).join("");
+    $h("home-news").innerHTML = HOME_NEWS.map(([d, xs]) => `<div class="home-news__item"><p class="home-news__d mono">${esc(d)}</p><ul>${xs.map(([t, href, tab]) => `<li><a href="${href}"${tab ? ` data-hometab="${tab}"` : ""}>${esc(t)}</a></li>`).join("")}</ul></div>`).join("");
+  }
+
   function render() {
     hideTooltip();
     const view = route();
@@ -4533,16 +4586,37 @@
       const n = nav.getBoundingClientRect(), c = cur.getBoundingClientRect();
       nav.scrollLeft += c.left - n.left - (n.width - c.width) / 2;
     }, 0);
-    els.viewCatalog.hidden = view === "sandbox" || view === "runes" || view === "skills";
+    els.viewHome.hidden = view !== "home";
+    els.viewCatalog.hidden = view === "home" || view === "sandbox" || view === "runes" || view === "skills";
     els.viewSandbox.hidden = view !== "sandbox";
     els.viewRunes.hidden = view !== "runes";
     els.viewSkills.hidden = view !== "skills";
-    if (view === "sandbox") renderSandbox(); else if (view === "runes") renderRunes(); else if (view === "skills") renderSkills(); else renderCatalog(view);
-    document.title = `${{ database: "Database", codex: "Aspect Codex", runes: "Runes & Recipes", sandbox: "Theorycraft Sandbox", skills: "Skills & Paragon" }[view]} · Onosendai's Tool`;
+    if (view === "home") renderHome(); else if (view === "sandbox") renderSandbox(); else if (view === "runes") renderRunes(); else if (view === "skills") renderSkills(); else renderCatalog(view);
+    document.title = `${{ home: "Diablo IV Database & Theorycraft", database: "Database", codex: "Aspect Codex", runes: "Runes & Recipes", sandbox: "Theorycraft Sandbox", skills: "Skills & Paragon" }[view]} · Onosendai's Tool`;
   }
 
   function bindEvents() {
     window.addEventListener("hashchange", render);
+    // Home: a class opens the Database for that class (the header search works from Home too).
+    document.getElementById("view-home").addEventListener("click", (e) => {
+      const setTab = (t) => { skTab = t; try { localStorage.setItem("onosendai.sktab", t); } catch { /* ignore */ } };
+      const b = e.target.closest("[data-homecls]");
+      if (b) { state.filters.cls = b.dataset.homecls; location.hash = "#/database"; return; }
+      // SKILLS: the Sandbox class follows (changing it clears other-class gear, with UNDO, as everywhere else).
+      const sk = e.target.closest("[data-homeskills]");
+      if (sk) {
+        if (sandboxClass() !== sk.dataset.homeskills) {
+          if (!els.sbClass.options.length) els.sbClass.innerHTML = `<option value="">Auto</option>` + Engine.codex.meta.classes.slice().sort().map((x) => `<option>${esc(x)}</option>`).join("");
+          els.sbClass.value = sk.dataset.homeskills;
+          els.sbClass.dispatchEvent(new Event("change"));
+        }
+        setTab("tree");
+        location.hash = "#/skills";
+        return;
+      }
+      const nt = e.target.closest("[data-hometab]");
+      if (nt) setTab(nt.dataset.hometab);
+    });
     // "(choose in Skills & Paragon)" under the Sandbox skill bar opens the specialization tab.
     document.addEventListener("click", (e) => { if (e.target.closest("[data-sp-open]")) { skTab = "spec"; try { localStorage.setItem("onosendai.sktab", skTab); } catch { /* ignore */ } } });
     bindRunes();
@@ -4553,7 +4627,7 @@
       state.filters.q = q;
       state.filters.tokens = q ? q.split(/\s+/) : [];
       const v = route();
-      if (v === "sandbox" || v === "skills") location.hash = "#/database"; else if (v === "runes") applyRuneFilters(); else applyFilters();
+      if (v === "home" || v === "sandbox" || v === "skills") location.hash = "#/database"; else if (v === "runes") applyRuneFilters(); else applyFilters();
     });
 
     document.addEventListener("keydown", (e) => {
