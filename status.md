@@ -1,6 +1,6 @@
 # Onosendai's Tool: Project Status
 
-_Last updated: 19 Nov 2026. Everything below is pushed and live._
+_Last updated: 20 Nov 2026. Everything below is pushed and live._
 
 ## Overview
 
@@ -24,7 +24,7 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 ```
 
 - **Run locally:** `python3 -m http.server`, then open http://localhost:8000.
-- **After replacing the `/data` folders or updating `data/sources/`:** run `python3 tools/build_index.py` again.
+- **After replacing the `/data` folders or updating `data/sources/`:** run `python3 tools/build_index.py` again. The build is deterministic (20 Nov): unchanged data rebuilds to identical files apart from `meta.generated`, so a real diff in `codex.json` / `skills.json` means the data changed.
 - **For GitHub Pages:** the site only needs `index.html`, `style.css`, `app.js`, `data/index/` and `data/icons/`. The raw folders (~575 MB) are only used by the Sandbox's "raw source files" viewer, which hides itself when they're missing.
 
 ## Deployment 🚀
