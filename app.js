@@ -2526,7 +2526,7 @@
           <img class="pd__fig" src="data/figures/${esc(figCls)}.svg" alt="${esc(cls || "Wanderer")} figure" draggable="false">`}
           ${photo && sigil ? `<img class="pd__badge" src="data/icons/${sigil}.webp" alt="" draggable="false">` : ""}
           ${pdSlots.map(cellHTML).join("")}</div>
-        <div class="pd__cls" id="sb-cls-spot"></div><!--TAL--></div>`;
+        <div class="pd__cls" id="sb-cls-spot"></div><!--SKB--><!--TAL--></div>`;
     })() : "";
     // Build-wide rune problems (old builds, links): a rune used twice, more than 2 runewords.
     function runeProblems() {
@@ -2613,8 +2613,9 @@
       ${pdHTML || `<h4 class="sb-build__sub mono">WEAPONS</h4><div class="sb-cells">${wCells}</div>
       <h4 class="sb-build__sub mono">ARMOR &amp; JEWELRY</h4><div class="sb-cells">${gCells}</div>`}
       ${overflow.length ? `<p class="sb-note mono">NOT EQUIPPED // ${overflow.map((k) => esc(state.byId.get(k).name)).join(", ")}: no free slot. Remove it, or press CHARM below to move it to the Talisman.</p>` : ""}
-      ${pdHTML ? socketsHTML() : ""}
     </section>`;
+    // Sockets: their own panel after the Talisman (on phones the Talisman matters more right under the build).
+    const socketsPanel = pdHTML ? `<section class="sb-build" id="sb-sockets">${socketsHTML()}</section>` : "";
 
     const nameOf = (k) => esc(state.byId.get(k).name);
     const [sealName, nSlots] = sealOf();
@@ -2884,8 +2885,11 @@
     if (clsField) clsField.remove(); // keep the element (and its listener) while the list is rebuilt
     // Wide screens: the Talisman sits beside the character sheet (in the room the old slot list used).
     const talSide = Boolean(pdHTML) && TAL_SIDE.matches;
-    const buildOut = talSide ? build.replace("<!--TAL-->", talisman.replace('<section class="sb-build" id="sb-talisman">', '<section class="sb-build sb-build--side" id="sb-talisman">')) : build;
-    els.sbList.innerHTML = limitNote + buildOut + skillBarHTML() + (talSide ? "" : talisman) + damage + aspects + (state.pins.length || legDetails ? details : "") + legDetails + state.pins.map((key) => {
+    // ...and the Skill Bar goes under the character sheet and Class picker.
+    const skbHTML = skillBarHTML();
+    const buildOut = talSide ? build.replace("<!--TAL-->", talisman.replace('<section class="sb-build" id="sb-talisman">', '<section class="sb-build sb-build--side" id="sb-talisman">'))
+      .replace("<!--SKB-->", skbHTML.replace('<section class="sb-build skb" id="sb-skillbar">', '<section class="sb-build skb skb--side" id="sb-skillbar">')) : build;
+    els.sbList.innerHTML = limitNote + buildOut + (talSide ? "" : skbHTML + talisman) + socketsPanel + damage + aspects + (state.pins.length || legDetails ? details : "") + legDetails + state.pins.map((key) => {
       const r0 = state.byId.get(key);
       if (!r0) return "";
       const asCharm = isCharm(key) && charmOf(r0);
@@ -3200,7 +3204,7 @@
   // Max points at max level with every seasonal Renown reward (user, 18 Nov): 83 skill points, 342 Paragon points.
   const SK_POINTS = 83, PG_POINTS = 342;
   // Skill bar: 6 skills you can cast (default keyboard: left / right mouse button, 1-4).
-  const SKBAR_SLOTS = 6, SKBAR_KEYS = ["LMB", "RMB", "1", "2", "3", "4"];
+  const SKBAR_SLOTS = 6, SKBAR_KEYS = ["A", "X", "Y", "RB", "LT", "RT"]; // Diablo IV default Xbox controller layout (B = evade, LB = potion)
   function loadSkills() {
     if (SK) return Promise.resolve(SK);
     if (!skLoading) skLoading = fetch("data/index/skills.json", { cache: "no-cache" }).then((r) => r.json()).then((d) => {
@@ -3925,7 +3929,7 @@
         .filter((x) => x.i === k || !s.bar.includes(x.i))
         .map((x) => `<option value="${x.i}"${x.i === k ? " selected" : ""}>${esc(SK.skills[x.n.p].n)}</option>`).join("");
       return `<div class="skb__slot${st ? " is-set" : ""}">
-          <span class="skb__key mono">${SKBAR_KEYS[j]}</span>
+          <span class="skb__key mono" data-btn="${SKBAR_KEYS[j]}">${SKBAR_KEYS[j]}</span>
           ${st ? `<span class="skb__ico" data-key="skill:${esc(cls)}:${k}" tabindex="0">${itemIcon(st.ic)}</span>`
             : `<a class="skb__ico skb__ico--go" href="#/skills" data-sktab-go="tree" title="Empty: open the Skill Tree to learn skills" aria-label="Empty slot ${SKBAR_KEYS[j]}: open the Skill Tree"><span aria-hidden="true">+</span></a>`}
           <span class="skb__name">${st ? esc(st.n) : ""}</span>
@@ -3935,7 +3939,7 @@
         </div>`;
     }).join("");
     const note = learned.length
-      ? `Skills with at least 1 point in Skills &amp; Paragon can go on the bar: 6 slots (default keyboard: left and right mouse button, 1–4). A newly learned skill fills the first empty slot. ${learned.length > SKBAR_SLOTS ? `${learned.length} skills are learned: ${learned.length - s.bar.filter((x) => x !== "").length} aren't on the bar.` : ""}`
+      ? `Skills with at least 1 point in Skills &amp; Paragon can go on the bar: 6 slots (Diablo IV's default controller buttons: A basic, X core, then Y, RB, LT, RT). A newly learned skill fills the first empty slot. ${learned.length > SKBAR_SLOTS ? `${learned.length} skills are learned: ${learned.length - s.bar.filter((x) => x !== "").length} aren't on the bar.` : ""}`
       : `No skills learned yet: spend points in the <a href="#/skills" data-sktab-go="tree">Skill Tree</a>, then put up to 6 of them on the bar.`;
     const spD = spDef(), spC = spD ? spChosen().filter((c) => c.o.p || c.o.d) : [];
     const spLine = spD ? `<p class="hint skb__spec"><span class="mono">${esc(spD.t.toUpperCase())}:</span> ${spC.length ? spC.map((c) => `<b data-key="spec:${esc(c.slot.id)}|${esc(c.o.id)}" tabindex="0">${esc(c.o.n)}</b>`).join(" · ") : "none chosen"} <a href="#/skills" data-sp-open>(${spC.length ? "change" : "choose"} in Skills &amp; Paragon)</a></p>` : "";
