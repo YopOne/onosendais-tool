@@ -138,7 +138,8 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 - **View:** tab named after the mechanic (SPECIALIZATIONS, WEAPON EXPERTISE, SPIRIT HALL…): a card per slot with option tiles (icon, name, unlock level), the chosen option's text below, tooltips on every tile. Rules: slot and option unlock levels follow the Skill Tree level; a dependent slot (Fragment, Upgrade / Sacrifice, Bonded Boon) lists the options of its parent's choice and is cleared when the parent changes; slots sharing a `uniq` key can't take the same option (Sorcerer enchantments, Druid Boons incl. the bonded one). **Spirit Hall:** both slots can hold the same Spirit (user, 20 Nov); **Loyalty's Mantle** ("While your Spirit Hall choices match: their bonuses are 100% more potent", Static Value 0) equipped or as a charm with matching choices sets `Spiritborn_Spirit_Bonus` = 1, which every Spirit Hall passive multiplies by (`1 + Spiritborn_Spirit_Bonus`): Jaguar secondary +1 → +2 Maximum Ferocity. `spMatchBonus()`; the tab says whether it's active. Barbarian also lists each weapon type's Expertise, marked when a Sandbox weapon of that type is equipped.
 - **Engine:** `world.attrs` (`Weapon_Expertise_Level` = 10, `Level` = the tree level, gear bonus attributes `Sorc_Enchantment_Potency`, `Spiritborn_Spirit_Bonus`, `Druid_SpiritBoon_Packleader_LuckyHitChance` = 0), `TechniqueSlotIsItemType()` and `GetItemTypeCountForPower()` (equipped weapons of a type).
 - **Links:** state `state.sandbox.spec` {cls, v: {slot: option}}, reset when the class changes; share link `sp=<slot>~<option>,…`; active options' text goes to the Sandbox DAMAGE panel (Barbarian: the Technique and the Expertise of equipped weapon types); Book of the Dead tags ("Skeleton Warrior is also a Bone Skill") are added to the skill's tags (✦) and so to "+N to Bone Skills" ranks; the Sandbox SKILL BAR panel shows the chosen ones with a link to the tab.
-- **Assumed:** Expertise rank 10 for every weapon; Paladin's `Paladin_Sub_Retribution` passive has no text and isn't shown.
+- **Weapon Expertise ranks (user, 20 Nov):** 0–10 per weapon, levelled by using the weapon (a few minutes in the training room or open world reaches 10), so the default is 10 but 0 is possible. Each weapon has a RANK input (+ ALL RANK 10 / ALL RANK 0); the formulas read `Weapon_Expertise_Level#<item type>` per weapon (engine: `world.attrs["<attr>#<ref>"]`), so numbers scale with the rank and the rank 10 bonus line only shows at 10. The Technique needs rank 1 or above (game text), otherwise it's INACTIVE and out of the DAMAGE panel; rank 0 equipped weapons are left out too. State `spec.rk` {expertise: rank}; share link `sp=…,rk~2HAxe:5.1HSword:0` (only ranks that aren't 10).
+- **Assumed:** Paladin's `Paladin_Sub_Retribution` passive has no text and isn't shown.
 - **Fix:** picking a class in Skills & Paragon on a page opened there (Sandbox never rendered) didn't take, because the Sandbox class list was still empty.
 
 **Theorycraft Sandbox** (`#/sandbox`)
@@ -154,7 +155,6 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 
 ## Suggested next steps
 
-0. Check Weapon Expertise ranks in game (assumed 10).
 0. Check one glyph in game (Might or another at a known level) against the GLYPHS panel numbers.
 1. ~~Seal affixes~~ done 18 Nov (set powers + regular affixes).
 2. ~~Aspect icons~~ done 18 Nov (cut from `2DUI/` sheets).

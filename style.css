@@ -1133,6 +1133,12 @@ select option:disabled { color: var(--faint); }
 .sp-exp li.is-on { border-color: var(--gold); }
 .sp-exp li .tt__power { width: 100%; font-size: 0.82rem; }
 .sp-exp__n { display: inline-flex; align-items: center; gap: 8px; }
+.sp-off { margin: 0; font-size: 0.7rem; color: var(--accent-2); }
+.sp-rank { display: inline-flex; align-items: center; gap: 6px; font-size: 0.68rem; color: var(--faint); }
+.sp-rank .input { width: 4.2em; padding: 2px 6px; }
+.sp-exp li.is-zero { opacity: 0.6; }
+.sp-tools { display: inline-flex; gap: 6px; margin-left: 10px; vertical-align: middle; }
+.sp-tools .btn { font-size: 0.64rem; padding: 2px 8px; }
 .sp-tag { font-size: 0.64rem; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 3px; color: #fff; }
 .sp-tag--eq { border-color: var(--gold); color: var(--gold); }
 .sp-match { margin: 0; padding: 8px 12px; border: 1px dashed var(--line); border-radius: 4px; }
