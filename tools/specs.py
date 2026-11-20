@@ -305,17 +305,22 @@ def game_ui(out, meta_dir, icons):
             for o in slot["o"]:
                 if o["n"] in DRUID_SPIRITS:
                     put(o, "ic", art("2DUI_DruidSpiritPanel_Icons", DRUID_SPIRITS[o["n"]][1], 142))
+    # Book of the Dead: a row per minion type on its banner (Warriors 11, Mages 16, Golems 15), the 3 specializations,
+    # then Upgrade A / Upgrade B (the fancy radio orbs) and Sacrifice (the skull diamond), chained as in the game.
     ui["Necromancer"] = {"frame": art("2DUI_NecromancerArmy", 8, 223), "tile": art("2DUI_NecromancerArmy", 12),
-                         "banner": art("2DUI_NecromancerArmy", 4, 398)}
+                         "banner": art("2DUI_NecromancerArmy", 4, 398), "rows": True,
+                         "rowBg": {"warrior": art("2DUI_NecromancerArmy", 11, 1200), "mage": art("2DUI_NecromancerArmy", 16, 1200),
+                                   "golem": art("2DUI_NecromancerArmy", 15, 1200)}}
     spec_ic = {}
     for slot in (out.get("Necromancer") or {}).get("slots", []):
         for o in slot["o"]:
             if slot.get("dep"):
-                if o["n"] == "Sacrifice" or "Sacrifice" in o["id"]:
+                if o["id"].endswith("_Sacrifice"):
                     put(o, "ic", art("2DUI_NecromancerArmy", 25, 208))
                     put(o, "ic0", art("2DUI_NecromancerArmy", 23, 208))
-                elif spec_ic.get(o.get("g")):
-                    o["ic"] = spec_ic[o["g"]]
+                else:  # Upgrade A / B: the game's fancy radio button (lit / dark)
+                    put(o, "ic", art("2DUI_RadioButtons_Fancy", 5, 194))
+                    put(o, "ic0", art("2DUI_RadioButtons_Fancy", 3, 194))
                 continue
             unit = "Golem" if slot["id"] == "golem" else "Mage" if slot["id"] == "mage" else ""
             i = NECRO_ICONS.get(f"{unit}:{o['n']}", NECRO_ICONS.get(o["n"]))
