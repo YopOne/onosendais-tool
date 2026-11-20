@@ -113,10 +113,11 @@ def extract_specs(meta_dir, stl_dir, skill_text, icons, skills):
             nm = names.get(spirits[si], spirits[si]) if si < len(spirits) else f"Spirit {si + 1}"
             if p:
                 opts.append(opt(nm, nm, p, ic=ic((sp.get("hSpiritIcon") or {}).get("hImageHandle"))))
-        slots.append({"id": sid, "n": label, "lv": (types[ti] if ti < len(types) else {}).get("nUnlockLevel"), "uniq": "spirit", "o": opts})
+        slots.append({"id": sid, "n": label, "lv": (types[ti] if ti < len(types) else {}).get("nUnlockLevel"), "o": opts})
     if slots and slots[0]["o"]:
         out["Spiritborn"] = {"t": names.get("ClassMechanicHeader", "Spirit Hall"),
-                             "note": "Pick a Spirit for each slot: the primary (level 15) and secondary (level 30) passives differ. The two slots take different Spirits (assumed).",
+                             "note": "Pick a Spirit for each slot: the primary (level 15) and secondary (level 30) passives differ. Both slots can hold the same Spirit (Loyalty's Mantle rewards matching choices).",
+                             "match": True,
                              "slots": slots}
 
     # ---- Druid: Spirit Boons ----

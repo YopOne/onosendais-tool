@@ -3956,12 +3956,27 @@
     }
     return out;
   }
+  /** Spirit Hall "choices match" bonus (Loyalty's Mantle: "While your Spirit Hall choices match: Their bonuses are
+   * 100% more potent", its Static Value 0): equipped (or as a charm) and both slots hold the same Spirit.
+   * { item: name or "", v: bonus (1 = +100%), match: both slots the same, on: counts } */
+  function spMatchBonus() {
+    const def = spDef(), out = { item: "", v: 0, match: false, on: false };
+    if (!def || !def.match) return out;
+    const v = spState().v, lv = spLv();
+    out.match = !!v.primary && v.primary === v.secondary && def.slots.every((sl) => !sl.lv || lv >= sl.lv);
+    for (const id of skEquippedAffixes()) {
+      const a = Engine.codex.affixes[id];
+      if (a && /Spirit Hall choices match/i.test(a.t || "")) { out.item = (codexItem(id) || {}).name || id; out.v = ((a.sv && a.sv[0]) || 0) / 100; break; }
+    }
+    out.on = out.match && out.v > 0;
+    return out;
+  }
   /** Formula world for specialization text: the build, the level, the expertise rank and the Technique slot. */
   function spWorld() {
     const def = spDef(), v = def ? spState().v : {};
     const tech = def && def.expertise && v.tech ? ((spSlot(def, "tech") || { o: [] }).o.find((o) => o.id === v.tech) || {}).it || [] : [];
-    const wt = spWeaponTypes();
-    return skWorld({ skillRank: 1, attrs: { Weapon_Expertise_Level: SP_EXPERTISE_RANK, Level: spLv(), ...SP_GEAR_BONUS0 }, technique: new Set(tech),
+    const wt = spWeaponTypes(), mm = spMatchBonus();
+    return skWorld({ skillRank: 1, attrs: { Weapon_Expertise_Level: SP_EXPERTISE_RANK, Level: spLv(), ...SP_GEAR_BONUS0, ...(mm.on ? { Spiritborn_Spirit_Bonus: mm.v } : {}) }, technique: new Set(tech),
       itemTypes: Object.fromEntries(Object.entries(wt).map(([k, a]) => [k, a.length])) });
   }
   /** An option's text: its power's description (formulas evaluated), or the data's own text. */
@@ -4036,11 +4051,14 @@
         return `<li class="${eq.length ? "is-on" : ""}"><span class="sp-exp__n" data-key="spec:tech|${esc(o.id)}" tabindex="0">${o.ic ? itemIcon(o.ic, "sp-opt__ic") : ""}<b>${esc(o.n)}</b></span>${v.tech === o.id ? ' <span class="sp-tag mono">TECHNIQUE</span>' : ""}${eq.length ? ` <span class="sp-tag sp-tag--eq mono">EQUIPPED: ${esc(eq.join(", "))}</span>` : ""}<p class="tt__power">${spText(o, W).html}</p></li>`;
       }).join("")}</ul><p class="hint">Expertise ranks (1–10, from using the weapon) are assumed at ${SP_EXPERTISE_RANK}. A weapon's Expertise works when a skill uses that weapon; the Technique applies to all your attacks. The Technique and the Expertise of equipped Sandbox weapons go to the Sandbox DAMAGE panel.</p></section>`;
     }
-    const chosen = spChosen();
+    const chosen = spChosen(), mm = spMatchBonus();
+    const mmNote = def.match ? `<p class="hint sp-match${mm.on ? " is-on" : ""}">${mm.item
+      ? (mm.on ? `<b>${esc(mm.item)}</b>: your Spirit Hall choices match, so their bonuses are <b>${fmtPct(mm.v)}% more potent</b> (shown in the numbers above).` : `<b>${esc(mm.item)}</b> is equipped: pick the same Spirit in both slots for its bonus (+${fmtPct(mm.v)}% potency${mm.match ? "" : ", not active now"}).`)
+      : `Picking the same Spirit in both slots pays off with <b>Loyalty's Mantle</b> (helm or charm): matching choices are more potent.`}</p>` : "";
     root.innerHTML = `${bar}
       <div class="sp">
         <div class="sp-head"><h3 class="sb-loadout__title mono">${esc(cls).toUpperCase()} // ${esc(def.t.toUpperCase())}</h3><p class="hint">${Engine.render(def.note, { world: {}, depth: 0 }).html} Click to choose, click again to clear. ${chosen.length ? `Active: <b>${chosen.filter((c) => c.o.p || c.o.d).map((c) => esc(c.o.n)).join(" · ") || "—"}</b>. Their numbers go to the Sandbox DAMAGE panel.` : ""}</p></div>
-        <div class="sp-grid">${cards}${extra}</div>
+        ${mmNote}<div class="sp-grid">${cards}${extra}</div>
       </div>`;
   }
 
