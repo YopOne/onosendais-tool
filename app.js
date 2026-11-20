@@ -3329,8 +3329,9 @@
   /* Skill ranks from the Sandbox build. Gear lines: "+N to <Skill>" (Skill_Rank_Bonus), "+N to <Category> Skills"
      (Skill_Rank_Skill_Tag_Bonus), "+N to All Skills" (Skill_Rank_All_Bonus), "+N to Marksman and Cutthroat Skills".
      They add to the points spent in the tree. Category names on gear that differ from the skills' own tags: */
-  const SK_CAT_ALIAS = { pyromancy: ["Fire"], frost: ["Cold"], shock: ["Lightning"], werebear: ["Bear"], werewolf: ["Wolf"],
-    earth: ["Nature Magic Earth"], storm: ["Nature Magic Storm"], darkness: ["Shadow"] };
+  // Skill tags use the names the game shows (SkillTags strings: Pyromancy, Frost, Darkness, Judicator, Jaguar...), so
+  // gear categories match them directly; this only maps names that still differ (none in the current data).
+  const SK_CAT_ALIAS = {};
   /** Every "+N to …" rank line in the Sandbox build: [{ n, target, src }] (target "Whirlwind", "Core Skills", "All Skills"). */
   function skRankLines() {
     if (!state.byId.size) return [];
@@ -3420,9 +3421,9 @@
       const label = v.free ? `${v.n} variant, free from ${v.free}` : `${v.n} variant`;
       const plain = Engine.render(v.d || "", { power, world: { t: 1, rank: 1, skillRank: 1 }, depth: 0 }).plain;
       // The variant's own tags: "Rampage becomes a Hellfire Mobility leap attack", "… becomes an Abyss Recast Skill",
-      // "… is now also a Summon Skill" (Summon = the Summoning tag).
+      // "… is now also a Summon Skill" (the game's Summon tag).
       for (const m of plain.matchAll(/\b(?:becomes|is now(?: also)?) an? (.+?)\s(?:Skill|attack)\b/gi)) {
-        const phrase = m[1].replace(/\bSummon\b/g, "Summoning");
+        const phrase = m[1];
         for (const t of skAllTags()) if (tagRe(t).test(phrase)) add(t, label);
       }
       // A tag naming what the variant creates: "shoots out smaller Lesser Demon Skulls" (Skull Splitter).
@@ -4001,6 +4002,21 @@
     if (o.d2) parts.push(Engine.render(o.d2, { world: w, depth: 0 }));
     return { html: parts.map((x) => x.html).join("<br><br>"), plain: parts.map((x) => x.plain).join(" ") };
   }
+  /** Skills of the class tree with a tag named like the option (Paladin Oath "Judicator" -> Judicator Skills,
+   * Spirit Hall "Jaguar" -> Jaguar Skills), learned ones first: [{ n, on }] */
+  function spTagSkills(o) {
+    const tree = skTree();
+    if (!tree) return [];
+    const s = skState(), t = o.n.toLowerCase(), seen = new Set(), out = [];
+    tree.nodes.forEach((n, i) => {
+      const st = n.k === "skill" && SK.skills[n.p];
+      if (!st || seen.has(st.n) || !(st.tg || []).some((x) => x.toLowerCase() === t)) return;
+      seen.add(st.n);
+      out.push({ n: st.n, on: s.pts[i] > 0 });
+    });
+    return out.sort((a, b) => b.on - a.on || a.n.localeCompare(b.n));
+  }
+  const spTagSkillsHTML = (o) => { const xs = spTagSkills(o); return xs.length ? `<p class="sp-detail__tag"><span class="mono">${esc(o.n.toUpperCase())} SKILLS:</span> ${xs.map((x) => (x.on ? `<b>${esc(x.n)}</b>` : esc(x.n))).join(", ")}${xs.some((x) => x.on) ? ' <span class="hint">(bold: learned)</span>' : ""}</p>` : ""; };
   const spTagsNote = (o) => (o.tags && o.tags.length && o.skill && SK.skills[o.skill] ? `${SK.skills[o.skill].n} is also a ${o.tags.join(" / ")} Skill` : "");
   function spTooltip(id) {
     const def = spDef();
@@ -4018,7 +4034,7 @@
       ["STATUS", on ? (why && !/^Already/.test(why) ? `Chosen, inactive: ${why}` : "Chosen") : why || "Click to choose"],
     ].filter(Boolean);
     return `<div class="tt__head">${o.ic ? `<span class="ico-well ico-well--tt ico-well--skill">${itemIcon(o.ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(o.n)}</p><p class="tt__type">${esc(sandboxClass())} · ${esc(def.t)} · ${esc(slot.n)}</p></div></div>
-      <div class="tt__body">${t.html ? `<p class="tt__power">${t.html}</p>` : `<p class="hint">Bond with the ${esc(o.n)} spirit: activate one more of its Boons.</p>`}${o.f ? `<div class="tt__sep"></div><p class="tt__flavor">"${esc(o.f)}"</p>` : ""}</div>
+      <div class="tt__body">${t.html ? `<p class="tt__power">${t.html}</p>` : `<p class="hint">Bond with the ${esc(o.n)} spirit: activate one more of its Boons.</p>`}${spTagSkillsHTML(o)}${o.f ? `<div class="tt__sep"></div><p class="tt__flavor">"${esc(o.f)}"</p>` : ""}</div>
       <dl class="tt__foot">${foot.map(([k, val]) => `<dt>${k}</dt><dd>${esc(val)}</dd>`).join("")}</dl>`;
   }
   function spPick(sid, oid) {
@@ -4053,7 +4069,7 @@
       const tiles = opts.length ? opts.map((o) => tile(slot, o, cur === o.id, spWhy(def, slot, o, v, lv))).join("") : `<p class="hint">Choose ${esc(spSlot(def, slot.dep).n)} first.</p>`;
       const t = curO && spText(curO, W), tags = curO && spTagsNote(curO);
       const off = curO && spWhy(def, slot, curO, v, lv), offNote = off && !/^Already/.test(off) ? `<p class="sp-off mono">INACTIVE: ${esc(off)}</p>` : "";
-      const detail = curO && (t.html || tags) ? `<div class="sp-detail">${t.html ? `<p class="tt__power">${t.html}</p>` : ""}${tags && !/is also an? /i.test(t.plain) ? `<p class="sp-detail__tag mono">✦ ${esc(tags)}</p>` : ""}${curO.f ? `<p class="tt__flavor">"${esc(curO.f)}"</p>` : ""}</div>` : "";
+      const detail = curO && (t.html || tags) ? `<div class="sp-detail">${t.html ? `<p class="tt__power">${t.html}</p>` : ""}${tags && !/is also an? /i.test(t.plain) ? `<p class="sp-detail__tag mono">✦ ${esc(tags)}</p>` : ""}${spTagSkillsHTML(curO)}${curO.f ? `<p class="tt__flavor">"${esc(curO.f)}"</p>` : ""}</div>` : "";
       return `<section class="sp-slot${locked ? " is-locked" : ""}${slot.dep ? " sp-slot--dep" : ""}"><h4 class="sp-slot__h mono">${esc(slot.n.toUpperCase())}${slot.lv ? ` <span class="sp-slot__lv">LEVEL ${slot.lv}${locked ? " · LOCKED" : ""}</span>` : ""}</h4><div class="sp-opts">${tiles}</div>${offNote}${detail}</section>`;
     }).join("");
     // Barbarian: every weapon type's Expertise, working when a skill uses that weapon (equipped ones count).

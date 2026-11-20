@@ -23,6 +23,18 @@ def _load(path):
         return json.load(f)
 
 
+def tag_display_names(stl_dir):
+    """Internal skill tag name -> the name the game shows (StringList/SkillTags: Skill_<X>_TagName or
+    Skill_Primary_<X>_TagName). Divine -> Judicator, Fire -> Pyromancy, Shadow -> Darkness, Spirit_Plains -> Jaguar ..."""
+    st = _strings(stl_dir, "SkillTags")
+    out = {}
+    for k, v in st.items():
+        m = re.match(r"Skill_(?:Primary_)?(.+)_TagName$", k)
+        if m and v.strip():
+            out.setdefault(m[1], v.strip())
+    return out
+
+
 def _strings(stl_dir, name):
     p = os.path.join(stl_dir, name + ".stl.json")
     if not os.path.exists(p):
@@ -210,6 +222,7 @@ def extract(meta_dir, stl_dir, power_dir, icons=None, stat_line=None, attr_desc=
     tables = [e.get("flValue") or [] for e in _load(os.path.join(meta_dir, "GameBalance", "PowerFormulaTables.gam.json"))["ptData"][0]["tEntries"]]
 
     powers, skills, pending = {}, {}, set()
+    tag_names = tag_display_names(stl_dir)
     pow_cache = {}
 
     def pow_json(name):
@@ -233,7 +246,9 @@ def extract(meta_dir, stl_dir, power_dir, icons=None, stat_line=None, attr_desc=
             nm = (t or {}).get("name") or ""
             if not nm.startswith("Skill_") or re.match(r"Skill_(Barbarian|Druid|Necro|Necromancer|Paladin|Rogue|Sorc|Sorcerer|Spiritborn|Warlock)_", nm):
                 continue
-            c = nm.replace("Skill_Primary_", "").replace("Skill_", "").replace("_", " ").strip()
+            key = nm.replace("Skill_Primary_", "").replace("Skill_", "")
+            # The name the game shows (Divine -> Judicator); the internal name when there's no string.
+            c = tag_names.get(key, key.replace("_", " ")).strip()
             if c and c.lower() != rec["n"].lower().replace(" ", "") and c.lower() != rec["n"].lower() and c not in cats:
                 cats.append(c)
         if cats:

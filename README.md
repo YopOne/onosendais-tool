@@ -20,6 +20,7 @@ Base stats come from the game's own balance tables, so values shown are the real
 
 **20 Nov 2026**
 - Class specializations in Skills & Paragon: Rogue Specializations (Combo Points, Inner Sight, Preparation), Barbarian Weapon Expertise and Technique, Spiritborn Spirit Hall, Druid Spirit Boons and Spirit Bonding, Necromancer Book of the Dead, Sorcerer Enchantments, Paladin Oaths and Warlock Soul Shards, with game text, unlock levels, share links and the DAMAGE panel.
+- Skill tags use the game's names (Judicator, Pyromancy, Darkness, Jaguar…), so "+N to Judicator Skills" and similar gear lines count; Oath and Spirit cards list their skills.
 - Fixes: choosing a class in Skills & Paragon works on a page opened there; the data build gives identical files when nothing changed.
 
 **19 Nov 2026**

@@ -48,6 +48,8 @@ TAG_NAMES = {"Skill_Bone": "Bone", "Skill_Blood": "Blood", "Skill_Shadow": "Shad
 
 
 def extract_specs(meta_dir, stl_dir, skill_text, icons, skills):
+    from skills_paragon import tag_display_names
+    tag_names = tag_display_names(stl_dir)  # Shadow -> Darkness, as the game shows it
     ic = (lambda h: icons.for_handle(h) if icons and h else None)
     out = {}
 
@@ -156,7 +158,7 @@ def extract_specs(meta_dir, stl_dir, skill_text, icons, skills):
         specs, ups = [], []
         for si, sp in enumerate(u.get("arSpecializations") or []):
             label = names.get(f"{key}Spec{si + 1}_Label") or _sno(sp.get("snoActor")) or f"Spec {si + 1}"
-            tags = [TAG_NAMES[t] for t in (_sno(g) for g in sp.get("arGainedSkillTags") or []) if t in TAG_NAMES]
+            tags = [tag_names.get(t[len("Skill_"):], TAG_NAMES[t]) for t in (_sno(g) for g in sp.get("arGainedSkillTags") or []) if t in TAG_NAMES]
             specs.append(opt(label, label, d=names.get(f"{key}Spec{si + 1}_Desc", ""), lv=_level(sp.get("tUnlockCondition")),
                              tags=tags, skill=skill))
             for ux, up in enumerate(sp.get("arUpgradeOptions") or []):
