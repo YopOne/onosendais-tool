@@ -189,7 +189,7 @@ def extract_specs(meta_dir, stl_dir, skill_text, icons, skills):
         p = f[: -len(".pow.json")]
         if not skill_text(p).get("d"):
             continue
-        sk = sorc_skills.get(norm(m[1]))
+        sk = sorc_skills.get(norm(m[1])) or sorc_skills.get(norm(m[1]) + "s")
         nm = skills[sk]["n"] if sk else re.sub(r"(?<=[a-z])(?=[A-Z])", " ", m[1])
         opts.append(opt(m[1], nm, p, skill=sk, ic=(skills.get(sk) or {}).get("ic")))
     opts.sort(key=lambda o: o["n"])
@@ -234,4 +234,110 @@ def extract_specs(meta_dir, stl_dir, skill_text, icons, skills):
                           "note": names.get("WarlockTutorial_ShardAndFragment", "Select a Shard and a Fragment."),
                           "slots": [{"id": "shard", "n": "Shard", "lv": d.get("nUnlockLevel"), "o": shards},
                                     {"id": "frag", "n": "Fragment", "lv": d.get("nFragmentUnlockLevel"), "dep": "shard", "o": frags}]}
+    if icons:
+        game_ui(out, meta_dir, icons)
     return out
+
+
+# ---- The game's own panel art (UI/<Panel>.ui.json -> 2DUI atlas frames), so the view looks like the game ----
+# Frame indexes were read from the UI layouts: RogueSpecializations, WeaponExpertise, SpiritbornMechanic,
+# DruidSpirit_Panel, NecromancerMechanic, PaladinMechanic, WarlockMechanic.
+# Per class "ui": {"frame", "frameOn": option frame (normal / chosen), "banner", "bg": panel art, "tile": tiled texture,
+#   "deco": {slot id: art}}; per option "ic" (lit icon), "ic0" (dim icon, not chosen), "bg" (panel art when chosen),
+#   "orn" (ornament).
+GAME_ICONS = {
+    "Rogue": ("2DUI_Rogue_Specializations", {"Combo Points": (1, 0), "Inner Sight": (3, 2), "Preparation": (5, 4)}),
+    "Barbarian": ("2DUI_WeaponExpertise", {"One-Handed Axe": 0, "Two-Handed Axe": 1, "One-Handed Mace": 2, "Two-Handed Mace": 3,
+                                           "Polearm": 4, "One-Handed Sword": 6, "Two-Handed Sword": 7}),
+    "Spiritborn": ("2DUI_SpiritbornMechanic", {"Jaguar": 3, "Eagle": 1, "Gorilla": 2, "Centipede": 0}),
+    "Paladin": ("2DUI_PaladinOaths_Icons", {"Zealot": (1, 7), "Juggernaut": (0, 11), "Judicator": (2, 15), "Disciple": (3, 19)}),
+    "Warlock": ("2DUI_Warlock", {"Legion": 8, "Vanguard": 9, "Mastermind": 10, "Ritualist": 11}),
+}
+NECRO_ICONS = {"Defenders": 0, "Reapers": 1, "Skirmishers": 2, "Golem:Bone": 3, "Blood": 4, "Iron": 5, "Cold": 6, "Mage:Bone": 7, "Shadow": 8}
+DRUID_SPIRITS = {"Deer": (4, 15), "Eagle": (5, 16), "Snake": (6, 17), "Wolf": (7, 18)}  # head art, glyph
+WARLOCK_FRAGMENTS = {"Legion": (25, 26, 27), "Mastermind": (22, 23, 24), "Ritualist": (19, 20, 21), "Vanguard": (16, 17, 18)}
+WARLOCK_BG = {"Legion": 1, "Vanguard": 2, "Mastermind": 3, "Ritualist": 4}
+PALADIN_BG = {"Zealot": "Zealot", "Juggernaut": "Juggernaut", "Judicator": "Judicator", "Disciple": "Arbiter"}
+SPIRIT_ORN = {"Jaguar": 12, "Eagle": 10, "Gorilla": 13, "Centipede": 14}
+
+
+def game_ui(out, meta_dir, icons):
+    cache = {}
+
+    def art(atlas, i, size=None):
+        if atlas not in cache:
+            p = os.path.join(meta_dir, "Texture", atlas + ".tex.json")
+            cache[atlas] = [f["hImageHandle"] for f in (_load(p).get("ptFrame") or [])] if os.path.exists(p) else []
+        fr = cache[atlas]
+        return icons.for_handle(fr[i], size) if i < len(fr) else None
+
+    def put(o, k, v):
+        if v:
+            o[k] = v
+
+    for cls, (atlas, m) in GAME_ICONS.items():
+        for slot in (out.get(cls) or {}).get("slots", []):
+            for o in slot["o"]:
+                v = m.get(o["n"])
+                if v is None:
+                    continue
+                lit, dim = v if isinstance(v, tuple) else (v, None)
+                put(o, "ic", art(atlas, lit, 160))
+                if dim is not None:
+                    put(o, "ic0", art(atlas, dim, 160))
+    ui = {}
+    ui["Rogue"] = {"frame": art("2DUI_Rogue_Specializations", 6, 180), "banner": art("2DUI_Rogue_Specializations", 7)}
+    ui["Barbarian"] = {"frame": art("2DUI_WeaponExpertise", 10, 190), "frameOn": art("2DUI_WeaponExpertise", 9, 190),
+                       "tech": art("2DUI_WeaponExpertise", 11, 240), "techOff": art("2DUI_WeaponExpertise", 12, 240),
+                       "sigil": art("2DUI_WeaponExpertise", 13, 320), "sigilOff": art("2DUI_WeaponExpertise", 14, 320)}
+    ui["Spiritborn"] = {"frame": art("2DUI_SpiritbornMechanic", 17, 200), "frameOn": art("2DUI_SpiritbornMechanic", 18, 200),
+                        "deco": {"primary": art("2DUI_SpiritbornMechanic", 5, 160), "secondary": art("2DUI_SpiritbornMechanic", 4, 160)},
+                        "banner": art("2DUI_SpiritbornMechanic", 20, 256)}
+    for o in ((out.get("Spiritborn") or {}).get("slots") or [{}])[0].get("o", []):
+        put(o, "orn", art("2DUI_SpiritbornMechanic", SPIRIT_ORN.get(o["n"], 99), 300))
+    ui["Druid"] = {"frame": art("2DUI_DruidSpiritPanel_Icons", 12, 150), "frameOn": art("2DUI_DruidSpiritPanel_Icons", 19, 150),
+                   "ring": art("2DUI_DruidSpiritPanel_Icons", 10, 180), "banner": art("2DUI_DruidSpirit_Panel", 4, 900), "deco": {}}
+    for slot in (out.get("Druid") or {}).get("slots", []):
+        sp = slot["n"].replace(" Spirit", "")
+        if sp in DRUID_SPIRITS:
+            ui["Druid"]["deco"][slot["id"]] = art("2DUI_DruidSpiritPanel_Icons", DRUID_SPIRITS[sp][0], 190)
+        if slot["id"] == "bond":
+            for o in slot["o"]:
+                if o["n"] in DRUID_SPIRITS:
+                    put(o, "ic", art("2DUI_DruidSpiritPanel_Icons", DRUID_SPIRITS[o["n"]][1], 142))
+    ui["Necromancer"] = {"frame": art("2DUI_NecromancerArmy", 8, 223), "tile": art("2DUI_NecromancerArmy", 12),
+                         "banner": art("2DUI_NecromancerArmy", 4, 398)}
+    spec_ic = {}
+    for slot in (out.get("Necromancer") or {}).get("slots", []):
+        for o in slot["o"]:
+            if slot.get("dep"):
+                if o["n"] == "Sacrifice" or "Sacrifice" in o["id"]:
+                    put(o, "ic", art("2DUI_NecromancerArmy", 25, 208))
+                    put(o, "ic0", art("2DUI_NecromancerArmy", 23, 208))
+                elif spec_ic.get(o.get("g")):
+                    o["ic"] = spec_ic[o["g"]]
+                continue
+            unit = "Golem" if slot["id"] == "golem" else "Mage" if slot["id"] == "mage" else ""
+            i = NECRO_ICONS.get(f"{unit}:{o['n']}", NECRO_ICONS.get(o["n"]))
+            if i is not None:
+                put(o, "ic", art("2DUI_NecromancerArmy_02", i, 177))
+                spec_ic[o["n"]] = o.get("ic")
+    ui["Paladin"] = {"frame": art("2DUI_PaladinOaths_Icons", 20, 330), "frameOn": art("2DUI_PaladinOaths_Icons", 21, 330),
+                     "bg": art("2DUI_PaladinOaths_GenericBG", 0, 720)}
+    for o in ((out.get("Paladin") or {}).get("slots") or [{}])[0].get("o", []):
+        put(o, "bg", art(f"2DUI_PaladinOaths_{PALADIN_BG.get(o['n'], 'Generic')}OathBG", 0, 720))
+    ui["Warlock"] = {"frame": art("2DUI_Warlock", 34, 200), "frameOn": art("2DUI_Warlock", 29, 200),
+                     "frag": art("2DUI_Warlock", 31, 128), "fragOn": art("2DUI_Warlock", 32, 128),
+                     "bg": art("2DUI_Warlock_Background", 0, 640)}
+    for slot in (out.get("Warlock") or {}).get("slots", []):
+        seen = {}
+        for o in slot["o"]:
+            if slot["id"] == "shard":
+                put(o, "bg", art("2DUI_Warlock_Background", WARLOCK_BG.get(o["n"], 0), 640))
+            elif o.get("g") in WARLOCK_FRAGMENTS:
+                k = seen[o["g"]] = seen.get(o["g"], -1) + 1
+                if k < 3:
+                    put(o, "ic", art("2DUI_Warlock", WARLOCK_FRAGMENTS[o["g"]][k], 120))
+    for cls, u in ui.items():
+        if cls in out:
+            out[cls]["ui"] = {k: v for k, v in u.items() if v}

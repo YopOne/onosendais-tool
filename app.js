@@ -4063,7 +4063,18 @@
       </div>`;
     if (!def) { root.innerHTML = `${bar}<p class="sb-empty">No specialization data for ${esc(cls)}.</p>`; return; }
     const W = spWorld();
-    const tile = (slot, o, on, why) => `<button type="button" class="sp-opt${on ? " is-on" : ""}${why && !on ? " is-locked" : ""}" data-spopt="${esc(slot.id)}|${esc(o.id)}" data-key="spec:${esc(slot.id)}|${esc(o.id)}" aria-pressed="${on}">${o.ic ? itemIcon(o.ic, "sp-opt__ic") : `<span class="sp-opt__ic sp-opt__ic--none mono" aria-hidden="true">${esc(o.n.replace(/^Upgrade /, "")[0])}</span>`}<span class="sp-opt__n">${esc(o.n)}</span>${o.lv ? `<span class="sp-opt__lv mono">L${o.lv}</span>` : ""}</button>`;
+    // The game's panel art (tools/specs.py game_ui): option frames (normal / chosen), lit and dim icons.
+    // Sorcerer has no panel of its own in the game: it uses the skill tree's diamond frames.
+    const ui = def.ui || (SK.ui && SK.ui.skill ? { frame: SK.ui.skill[0][1], frameOn: SK.ui.skill[0][0] } : {});
+    const img = (k, c) => (k ? `<img class="${c}" src="data/icons/${k}.webp" alt="" decoding="async" draggable="false">` : "");
+    const tile = (slot, o, on, why) => {
+      const small = slot.dep && cls === "Warlock", fr = small ? (on ? ui.fragOn : ui.frag) || ui.frame : (on && ui.frameOn) || ui.frame;
+      const ic = on ? o.ic : o.ic0 || o.ic;
+      const sub = /^Upgrade [A-Z]$/.test(o.n) ? o.n.slice(-1) : "";
+      return `<button type="button" class="sp-opt${on ? " is-on" : ""}${why && !on ? " is-locked" : ""}${o.ic0 ? " has-dim" : ""}" data-spopt="${esc(slot.id)}|${esc(o.id)}" data-key="spec:${esc(slot.id)}|${esc(o.id)}" aria-pressed="${on}">
+        <span class="sp-opt__art${small ? " sp-opt__art--sm" : ""}" aria-hidden="true">${img(fr, "sp-opt__fr")}${ic ? img(ic, "sp-opt__ic") : `<span class="sp-opt__ic sp-opt__ic--none">${esc(o.n.replace(/^Upgrade /, "")[0])}</span>`}${sub ? `<span class="sp-opt__sub">${sub}</span>` : ""}</span>
+        <span class="sp-opt__n">${esc(o.n)}</span>${o.lv ? `<span class="sp-opt__lv mono">LEVEL ${o.lv}</span>` : ""}</button>`;
+    };
     const cards = def.slots.map((slot) => {
       const opts = spOptions(def, slot, v), cur = v[slot.id], curO = cur && opts.find((o) => o.id === cur);
       const locked = slot.lv && lv < slot.lv;
@@ -4071,7 +4082,11 @@
       const t = curO && spText(curO, W), tags = curO && spTagsNote(curO);
       const off = curO && spWhy(def, slot, curO, v, lv), offNote = off && !/^Already/.test(off) ? `<p class="sp-off mono">INACTIVE: ${esc(off)}</p>` : "";
       const detail = curO && (t.html || tags) ? `<div class="sp-detail">${t.html ? `<p class="tt__power">${t.html}</p>` : ""}${tags && !/is also an? /i.test(t.plain) ? `<p class="sp-detail__tag mono">✦ ${esc(tags)}</p>` : ""}${spTagSkillsHTML(curO)}${curO.f ? `<p class="tt__flavor">"${esc(curO.f)}"</p>` : ""}</div>` : "";
-      return `<section class="sp-slot${locked ? " is-locked" : ""}${slot.dep ? " sp-slot--dep" : ""}"><h4 class="sp-slot__h mono">${esc(slot.n.toUpperCase())}${slot.lv ? ` <span class="sp-slot__lv">LEVEL ${slot.lv}${locked ? " · LOCKED" : ""}</span>` : ""}</h4><div class="sp-opts">${tiles}</div>${offNote}${detail}</section>`;
+      // Slot art: Druid spirit heads, Spiritborn sun / moon, the chosen Spirit's carving; Barbarian Technique sigil.
+      const deco = (ui.deco || {})[slot.id];
+      const orn = curO && curO.orn ? img(curO.orn, "sp-slot__orn") : "";
+      const sigil = def.expertise && slot.id === "tech" && ui.sigil ? `<div class="sp-sigil${curO && !off ? " is-on" : ""}" aria-hidden="true">${img(curO && !off ? ui.sigil : ui.sigilOff || ui.sigil, "sp-sigil__bg")}${img(curO && !off ? ui.tech : ui.techOff || ui.tech, "sp-sigil__fr")}${curO && curO.ic ? img(curO.ic, "sp-sigil__ic") : ""}</div>` : "";
+      return `<section class="sp-slot${locked ? " is-locked" : ""}${slot.dep ? " sp-slot--dep" : ""}${curO ? " has-pick" : ""}">${orn}<h4 class="sp-slot__h">${deco ? img(deco, "sp-slot__deco") : ""}<span><span class="sp-slot__name">${esc(slot.n)}</span>${slot.lv ? `<span class="sp-slot__lv mono">LEVEL ${slot.lv}${locked ? " · LOCKED" : ""}</span>` : ""}</span></h4>${sigil}<div class="sp-opts">${tiles}</div>${offNote}${detail}</section>`;
     }).join("");
     // Barbarian: every weapon type's Expertise, working when a skill uses that weapon (equipped ones count).
     let extra = "";
@@ -4080,16 +4095,20 @@
       const all = tech.map(spRank);
       extra = `<section class="sp-slot sp-slot--wide"><h4 class="sp-slot__h mono">EXPERTISE BY WEAPON <span class="sp-tools"><button type="button" class="btn btn--ghost mono" data-sprankall="10"${all.every((r) => r === 10) ? " disabled" : ""}>ALL RANK 10</button><button type="button" class="btn btn--ghost mono" data-sprankall="0"${all.every((r) => r === 0) ? " disabled" : ""}>ALL RANK 0</button></span></h4><ul class="sp-exp">${tech.map((o) => {
         const eq = (o.it || []).flatMap((t) => wt[t] || []), rk = spRank(o);
-        return `<li class="${eq.length ? "is-on" : ""}${rk ? "" : " is-zero"}"><span class="sp-exp__n" data-key="spec:tech|${esc(o.id)}" tabindex="0">${o.ic ? itemIcon(o.ic, "sp-opt__ic") : ""}<b>${esc(o.n)}</b></span><label class="sp-rank mono">RANK <input class="input mono" type="number" min="0" max="10" step="1" value="${rk}" data-sprank="${esc(o.id)}" aria-label="${esc(o.n)} Expertise rank"> / 10</label>${v.tech === o.id ? ' <span class="sp-tag mono">TECHNIQUE</span>' : ""}${eq.length ? ` <span class="sp-tag sp-tag--eq mono">EQUIPPED: ${esc(eq.join(", "))}</span>` : ""}<p class="tt__power">${spText(o, W).html}</p></li>`;
+        return `<li class="${eq.length ? "is-on" : ""}${rk ? "" : " is-zero"}"><span class="sp-exp__n" data-key="spec:tech|${esc(o.id)}" tabindex="0"><span class="sp-opt__art sp-opt__art--sm" aria-hidden="true">${img(eq.length && ui.frameOn ? ui.frameOn : ui.frame, "sp-opt__fr")}${o.ic ? img(o.ic, "sp-opt__ic") : ""}</span><b>${esc(o.n)}</b></span><label class="sp-rank mono">RANK <input class="input mono" type="number" min="0" max="10" step="1" value="${rk}" data-sprank="${esc(o.id)}" aria-label="${esc(o.n)} Expertise rank"> / 10</label>${v.tech === o.id ? ' <span class="sp-tag mono">TECHNIQUE</span>' : ""}${eq.length ? ` <span class="sp-tag sp-tag--eq mono">EQUIPPED: ${esc(eq.join(", "))}</span>` : ""}<p class="tt__power">${spText(o, W).html}</p></li>`;
       }).join("")}</ul><p class="hint">Each weapon's Expertise ranks 0–10 by using that weapon (a few minutes in the training room or open world takes it to 10, so 10 is the default); rank 10 adds its bonus line. A weapon's Expertise works when a skill uses that weapon; the Technique (rank 1 or above) applies to all your attacks. The Technique and the Expertise of equipped Sandbox weapons go to the Sandbox DAMAGE panel.</p></section>`;
     }
     const chosen = spChosen(), mm = spMatchBonus();
     const mmNote = def.match ? `<p class="hint sp-match${mm.on ? " is-on" : ""}">${mm.item
       ? (mm.on ? `<b>${esc(mm.item)}</b>: your Spirit Hall choices match, so their bonuses are <b>${fmtPct(mm.v)}% more potent</b> (shown in the numbers above).` : `<b>${esc(mm.item)}</b> is equipped: pick the same Spirit in both slots for its bonus (+${fmtPct(mm.v)}% potency${mm.match ? "" : ", not active now"}).`)
       : `Picking the same Spirit in both slots pays off with <b>Loyalty's Mantle</b> (helm or charm): matching choices are more potent.`}</p>` : "";
+    // Panel art: the chosen option's (Warlock shard, Paladin Oath) or the class's own; Necromancer's stone tile.
+    const pickBg = def.slots.map((sl) => v[sl.id] && sl.o.find((o) => o.id === v[sl.id] && o.bg)).find(Boolean);
+    const bgK = (pickBg && pickBg.bg) || ui.bg;
+    const style = [bgK ? `--sp-bg:url(data/icons/${bgK}.webp)` : "", ui.tile ? `--sp-tile:url(data/icons/${ui.tile}.webp)` : ""].filter(Boolean).join(";");
     root.innerHTML = `${bar}
-      <div class="sp">
-        <div class="sp-head"><h3 class="sb-loadout__title mono">${esc(cls).toUpperCase()} // ${esc(def.t.toUpperCase())}</h3><p class="hint">${Engine.render(def.note, { world: {}, depth: 0 }).html} Click to choose, click again to clear. ${chosen.length ? `Active: <b>${chosen.filter((c) => c.o.p || c.o.d).map((c) => esc(c.o.n)).join(" · ") || "—"}</b>. Their numbers go to the Sandbox DAMAGE panel.` : ""}</p></div>
+      <div class="sp sp--game${bgK ? " has-bg" : ""}${ui.tile ? " has-tile" : ""}" data-spcls="${esc(cls)}"${style ? ` style="${style}"` : ""}>
+        <div class="sp-head">${ui.banner ? img(ui.banner, "sp-head__banner") : ""}<p class="sp-head__cls mono">${esc(cls).toUpperCase()}</p><h3 class="sp-head__t">${esc(def.t)}</h3><p class="hint">${Engine.render(def.note, { world: {}, depth: 0 }).html} Click to choose, click again to clear. ${chosen.length ? `Active: <b>${chosen.filter((c) => c.o.p || c.o.d).map((c) => esc(c.o.n)).join(" · ") || "—"}</b>. Their numbers go to the Sandbox DAMAGE panel.` : ""}</p></div>
         ${mmNote}<div class="sp-grid">${cards}${extra}</div>
       </div>`;
   }
@@ -4522,7 +4541,7 @@
    * the eight classes (open the Database filtered to that class) and recent updates. */
   // [date, [[text, link], ...]]: each line opens the page it's about.
   const HOME_NEWS = [
-    ["20 Nov 2026", [["Class specializations: Rogue Specializations, Barbarian Weapon Expertise (ranks 0–10), Spiritborn Spirit Hall (Loyalty's Mantle), Druid Spirit Boons, Necromancer Book of the Dead, Sorcerer Enchantments, Paladin Oaths, Warlock Soul Shards.", "#/skills", "spec"],
+    ["20 Nov 2026", [["Specialization panels in the game's own art: Soul Shard crystals, Oath cards, Book of the Dead sigils, Spirit crests, Weapon Expertise disks.", "#/skills", "spec"], ["Class specializations: Rogue Specializations, Barbarian Weapon Expertise (ranks 0–10), Spiritborn Spirit Hall (Loyalty's Mantle), Druid Spirit Boons, Necromancer Book of the Dead, Sorcerer Enchantments, Paladin Oaths, Warlock Soul Shards.", "#/skills", "spec"],
       ["Skill tags use the game's names: Judicator, Pyromancy, Darkness, Jaguar… so \"+N to Judicator Skills\" gear counts.", "#/skills", "tree"]]],
     ["19 Nov 2026", [["Search finds skills, Paragon boards and glyphs; skill tooltips show tags, chosen upgrades and gear ranks.", "#/database"],
       ["Sandbox: 6-slot skill bar, crafted Mythic toggle on gear slots, Season 15 Soul Splinters, Leoric's Crown gem boost, masterwork as item quality.", "#/sandbox"]]],

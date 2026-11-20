@@ -1120,15 +1120,81 @@ select option:disabled { color: var(--faint); }
 .sp-slot__h { margin: 0; font-size: 0.78rem; letter-spacing: 0.12em; color: var(--text); }
 .sp-slot__lv { color: var(--faint); font-weight: 400; margin-left: 6px; }
 .sp-opts { display: flex; flex-wrap: wrap; gap: 6px; }
-.sp-opt { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 10px 4px 4px; border: 1px solid var(--line); border-radius: 4px; background: #0d0d10; color: var(--text); font: inherit; font-size: 0.85rem; cursor: pointer; text-align: left; max-width: 100%; }
-.sp-opt:hover { border-color: var(--accent-2); }
-.sp-opt.is-on { border-color: var(--accent); background: var(--accent-soft); color: #fff; box-shadow: 0 0 0 1px var(--accent-glow); }
-.sp-opt.is-locked { opacity: 0.45; }
-.sp-opt__ic { width: 32px; height: 32px; flex: none; border-radius: 4px; object-fit: contain; background: #050506; }
-.sp-opt__ic--none { display: inline-grid; place-items: center; color: var(--gold); font-size: 0.9rem; border: 1px solid var(--line); }
-.sp-opt__n { min-width: 0; overflow-wrap: anywhere; }
-.sp-opt__lv { font-size: 0.66rem; color: var(--faint); }
 .sp-detail { display: grid; gap: 6px; padding: 10px 12px; border-left: 2px solid var(--accent); background: rgba(0, 0, 0, 0.35); font-size: 0.86rem; }
+
+/* Game look: each class's own panel art from the game files (tools/specs.py game_ui). */
+.sp--game { position: relative; isolation: isolate; gap: 16px; padding: 22px 20px 24px; border: 1px solid #2c2620; border-radius: var(--radius); overflow: hidden;
+  background: radial-gradient(120% 80% at 50% 0%, rgba(70, 40, 28, 0.35), transparent 60%), linear-gradient(180deg, #0f0d0c, #070707);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.7), inset 0 0 80px rgba(0, 0, 0, 0.75); }
+.sp--game.has-tile { background: radial-gradient(120% 80% at 50% 0%, rgba(120, 20, 20, 0.22), transparent 60%), var(--sp-tile) repeat, #0b0b0b; background-size: auto, 151px, auto; }
+.sp--game.has-bg::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--sp-bg) right top / auto 100% no-repeat; opacity: 0.4;
+  -webkit-mask-image: linear-gradient(to left, #000 15%, transparent 75%); mask-image: linear-gradient(to left, #000 15%, transparent 75%); }
+.sp--game[data-spcls="Paladin"].has-bg::before { background-size: cover; background-position: center top; opacity: 0.28; -webkit-mask-image: linear-gradient(#000 30%, transparent 95%); mask-image: linear-gradient(#000 30%, transparent 95%); }
+.sp--game .sp-head { justify-items: center; text-align: center; gap: 4px; }
+.sp-head__banner { display: block; width: min(100%, 560px); max-height: 110px; object-fit: contain; margin-bottom: -6px; opacity: 0.9; }
+.sp--game[data-spcls="Rogue"] .sp-head__banner { max-height: 54px; }
+.sp--game[data-spcls="Spiritborn"] .sp-head__banner, .sp--game[data-spcls="Necromancer"] .sp-head__banner { max-height: 90px; opacity: 0.55; }
+.sp-head__cls { margin: 0; font-size: 0.7rem; letter-spacing: 0.3em; color: var(--accent); }
+.sp-head__t { margin: 0; font-family: "Cinzel", serif; font-weight: 700; font-size: clamp(1.4rem, 3vw, 2rem); letter-spacing: 0.04em; color: #eadfc8; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9); }
+.sp--game .sp-head .hint { max-width: 80ch; }
+.sp--game .sp-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap: 14px; }
+.sp--game .sp-slot { position: relative; overflow: hidden; gap: 12px; padding: 14px 16px 16px; border: 1px solid #3a322a; border-radius: 3px;
+  background: linear-gradient(180deg, rgba(20, 18, 16, 0.92), rgba(8, 8, 9, 0.92)); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 230, 190, 0.06), 0 8px 22px rgba(0, 0, 0, 0.55); }
+.sp--game .sp-slot.has-pick { border-color: #6b4a2c; }
+.sp--game .sp-slot--dep { border-style: solid; }
+.sp--game .sp-slot__h { position: relative; display: flex; align-items: center; gap: 12px; font-family: "Cinzel", serif; font-size: 1.05rem; letter-spacing: 0.03em; color: #e6dcc6; }
+.sp--game .sp-slot__h > span { display: grid; gap: 2px; }
+.sp--game .sp-slot__lv { margin: 0; font-size: 0.62rem; letter-spacing: 0.16em; }
+.sp-slot__deco { width: 52px; height: 52px; object-fit: contain; flex: none; filter: drop-shadow(0 2px 6px #000); }
+.sp--game[data-spcls="Spiritborn"] .sp-slot__deco { filter: brightness(2.6) sepia(0.4) drop-shadow(0 2px 6px #000); }
+.sp-slot__orn { position: absolute; right: -10px; top: 6px; width: 170px; opacity: 0.22; pointer-events: none; }
+.sp--game .sp-opts { gap: 8px 10px; position: relative; }
+.sp--game .sp-opt { position: relative; display: inline-flex; flex-direction: column; align-items: center; gap: 4px; width: 96px; min-height: 0; padding: 4px 2px 6px; border: 0; border-radius: 4px; background: none; box-shadow: none;
+  color: #a99f8e; font: inherit; font-size: 0.78rem; line-height: 1.2; text-align: center; cursor: pointer; }
+.sp--game .sp-opt:hover, .sp--game .sp-opt:focus-visible { color: #fff; background: rgba(255, 220, 170, 0.05); }
+.sp--game .sp-opt.is-on { color: #fff; background: none; }
+.sp--game .sp-opt.is-locked { opacity: 0.4; }
+.sp-opt__art { position: relative; display: grid; place-items: center; width: 76px; height: 76px; flex: none; transition: filter 0.15s; }
+.sp-opt__art--sm { width: 52px; height: 52px; }
+.sp-opt__fr { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; z-index: 0; }
+.sp--game .sp-opt__ic, .sp-exp .sp-opt__ic { position: relative; z-index: 1; width: 62%; height: 62%; object-fit: contain; border-radius: 0; background: none; }
+.sp--game .sp-opt__ic--none { display: grid; place-items: center; font-family: "Cinzel", serif; font-size: 1.3rem; color: #e6dcc6; border: 0; }
+.sp--game .sp-opt:not(.is-on):not(.has-dim) .sp-opt__ic { filter: grayscale(0.55) brightness(0.72); }
+.sp--game .sp-opt:not(.is-on):hover .sp-opt__ic { filter: none; }
+.sp--game .sp-opt.is-on .sp-opt__art { filter: drop-shadow(0 0 10px rgba(255, 90, 40, 0.55)); }
+.sp--game .sp-opt__n { min-width: 0; overflow-wrap: anywhere; }
+.sp--game .sp-opt__lv { font-size: 0.58rem; letter-spacing: 0.1em; color: var(--faint); }
+.sp-opt__sub { position: absolute; right: 6%; bottom: 4%; z-index: 3; min-width: 20px; padding: 1px 4px; border: 1px solid #8a6b3a; border-radius: 2px; background: #0b0908; font-family: "Cinzel", serif; font-size: 0.72rem; color: #eadfc8; }
+/* Frame on top of the icon (a ring or a carved frame), as in the game */
+.sp--game[data-spcls="Rogue"] .sp-opt__fr { z-index: 2; inset: -9%; width: 118%; height: 118%; }
+.sp--game[data-spcls="Rogue"] .sp-opt__ic { width: 88%; height: 88%; border-radius: 50%; }
+.sp--game[data-spcls="Necromancer"] .sp-opt__fr { z-index: 2; }
+.sp--game[data-spcls="Necromancer"] .sp-opt__ic { width: 66%; height: 60%; }
+.sp--game[data-spcls="Necromancer"] .sp-opt__art { background: radial-gradient(closest-side, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.6) 80%, transparent); }
+.sp--game[data-spcls="Paladin"] .sp-opt { width: 112px; }
+.sp--game[data-spcls="Paladin"] .sp-opt__art { width: 96px; height: 109px; }
+.sp--game[data-spcls="Paladin"] .sp-opt__ic { width: 74%; height: 74%; }
+.sp--game[data-spcls="Warlock"] .sp-opt__ic { width: 64%; height: 64%; }
+.sp--game[data-spcls="Warlock"] .sp-opt__art--sm .sp-opt__ic { width: 84%; height: 84%; }
+.sp--game[data-spcls="Barbarian"] .sp-opt__ic, .sp-exp .sp-opt__ic { width: 58%; height: 58%; }
+.sp--game[data-spcls="Druid"] .sp-opt__ic { width: 64%; height: 64%; border-radius: 50%; }
+.sp--game[data-spcls="Sorcerer"] .sp-opt__fr { z-index: 2; }
+.sp--game[data-spcls="Sorcerer"] .sp-opt__ic { width: 56%; height: 56%; }
+.sp--game .sp-detail { border-left-color: #8a6b3a; background: rgba(0, 0, 0, 0.55); }
+/* Barbarian Technique sigil */
+.sp-sigil { position: relative; display: grid; place-items: center; width: 150px; height: 150px; margin: 0 auto; }
+.sp-sigil__bg { position: absolute; inset: -12%; width: 124%; height: 124%; object-fit: contain; opacity: 0.55; }
+.sp-sigil.is-on .sp-sigil__bg { opacity: 0.9; }
+.sp-sigil__fr { position: absolute; inset: 8%; width: 84%; height: 84%; object-fit: contain; }
+.sp-sigil__ic { position: relative; width: 40%; height: 40%; object-fit: contain; }
+@media (max-width: 600px) {
+  .sp--game { padding: 16px 12px; }
+  .sp--game .sp-opt { width: 82px; }
+  .sp-opt__art { width: 64px; height: 64px; }
+  .sp--game[data-spcls="Paladin"] .sp-opt { width: 96px; }
+  .sp--game[data-spcls="Paladin"] .sp-opt__art { width: 80px; height: 91px; }
+  .sp-slot__orn { width: 120px; }
+}
 .sp-detail__tag { margin: 0; font-size: 0.72rem; color: var(--c-important); }
 .sp-exp { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 8px; }
 .sp-exp li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; font-size: 0.84rem; min-width: 0; }

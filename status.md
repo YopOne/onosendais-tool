@@ -1,6 +1,6 @@
 # Onosendai's Tool: Project Status
 
-_Last updated: 20 Nov 2026 (Home page). Everything below is pushed and live._
+_Last updated: 20 Nov 2026 (specialization panels in the game's art)._
 
 ## Overview
 
@@ -145,6 +145,7 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 - **Links:** state `state.sandbox.spec` {cls, v: {slot: option}}, reset when the class changes; share link `sp=<slot>~<option>,…`; active options' text goes to the Sandbox DAMAGE panel (Barbarian: the Technique and the Expertise of equipped weapon types); Book of the Dead tags ("Skeleton Warrior is also a Bone Skill") are added to the skill's tags (✦) and so to "+N to Bone Skills" ranks; the Sandbox SKILL BAR panel shows the chosen ones with a link to the tab.
 - **Weapon Expertise ranks (user, 20 Nov):** 0–10 per weapon, levelled by using the weapon (a few minutes in the training room or open world reaches 10), so the default is 10 but 0 is possible. Each weapon has a RANK input (+ ALL RANK 10 / ALL RANK 0); the formulas read `Weapon_Expertise_Level#<item type>` per weapon (engine: `world.attrs["<attr>#<ref>"]`), so numbers scale with the rank and the rank 10 bonus line only shows at 10. The Technique needs rank 1 or above (game text), otherwise it's INACTIVE and out of the DAMAGE panel; rank 0 equipped weapons are left out too. State `spec.rk` {expertise: rank}; share link `sp=…,rk~2HAxe:5.1HSword:0` (only ranks that aren't 10).
 - **Assumed:** Paladin's `Paladin_Sub_Retribution` passive has no text and isn't shown.
+- **Game look (20 Nov):** `game_ui()` in `tools/specs.py` gives each class's panel the game's own art, with frame indexes read from the UI layouts (`UI/RogueSpecializations`, `WeaponExpertise`, `SpiritbornMechanic`, `DruidSpirit_Panel`, `NecromancerMechanic`, `PaladinMechanic`, `WarlockMechanic`.ui.json → `2DUI_*` atlas frames): `spec[cls].ui` (option frame normal / chosen, banner, panel art, Necromancer stone tile, Druid spirit heads, Spiritborn sun / moon, Barbarian Technique sigil) and per option `ic` (lit) / `ic0` (dim) / `bg` (panel art when chosen: Warlock shard skulls, Paladin Oath paintings) / `orn` (Spiritborn animal carving). Icons now match the game: Rogue spec medallions, Barbarian weapon glyphs on the Expertise disks, Spiritborn spirit crests in diamonds, Paladin Oath cards, Warlock shard and fragment crystals, Necromancer minion sigils in the Book of the Dead frame (Sacrifice = the skull diamond), Druid bonding glyphs. Sorcerer has no panel art in the game, so it uses the skill tree's diamond frames. Fragment icons are matched to `arShardFragments` by order (Fragment0–2 in the layout); the Necromancer sigil for each specialization was picked by its picture (Defenders shield, Reapers scythe, Skirmishers axe + sword, Cold snowflake, Bone bones, Shadow flame; Golems: Bone skull, Blood, Iron).
 - **Fix:** picking a class in Skills & Paragon on a page opened there (Sandbox never rendered) didn't take, because the Sandbox class list was still empty.
 
 **Theorycraft Sandbox** (`#/sandbox`)
