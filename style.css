@@ -590,8 +590,9 @@ html[data-sb-ip="900"] .pd__slot--unique { --spark: var(--spark-anc); --spark-hi
   padding: 18px;
 }
 .panel__title { font: 600 0.82rem var(--font-ui); letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); margin-bottom: 14px; }
-.sandbox__controls { position: sticky; top: 108px; display: grid; gap: 16px; }
-@media (max-width: 880px) { .sandbox__controls { position: static; } }
+/* Sticky beside the build; if it's taller than the window it scrolls on its own. */
+.sandbox__controls { position: sticky; top: 108px; display: grid; gap: 16px; max-height: calc(100vh - 124px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+@media (max-width: 880px) { .sandbox__controls { position: static; max-height: none; overflow: visible; } }
 
 .field { display: grid; gap: 6px; }
 .field label { display: flex; justify-content: space-between; font-size: 0.84rem; color: var(--text); }
@@ -609,7 +610,7 @@ html[data-sb-ip="900"] .pd__slot--unique { --spark: var(--spark-anc); --spark-hi
 select { color-scheme: dark; }
 select option, select optgroup { background-color: var(--panel); color: var(--text); }
 select option:disabled { color: var(--faint); }
-.sandbox__actions { display: flex; gap: 8px; }
+.sandbox__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -4px; }
 
 .sandbox__list { display: grid; gap: 12px; }
 .sb-entry {
@@ -1483,3 +1484,12 @@ select option:disabled { color: var(--faint); }
 .ench-table td { padding: 6px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); vertical-align: middle; }
 .ench-table .ing { margin-right: 6px; }
 .mods__tag--ench { color: #c9a0ff; border-color: #8a5fd0; }
+
+/* Phones / narrow screens: the character sheet (BUILD) comes first, above PARAMETERS; the list's other panels follow. */
+@media (max-width: 880px) {
+  .sandbox__list { display: contents; }
+  .sb-build { order: -1; }
+}
+/* Touch on equipped items: tap = tooltip, tap again = change, hold = remove (app.js). No iOS image callout / selection on hold. */
+.pd__slot, .tal__sock { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.tt__touch { margin: 0; padding: 8px 16px 10px; border-top: 1px solid var(--line); color: var(--faint); font-size: 0.66rem; letter-spacing: 0.12em; text-align: center; }

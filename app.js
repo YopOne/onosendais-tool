@@ -4966,25 +4966,65 @@
     // open its tooltip, tap it again or anywhere else to close. A drag (scroll) doesn't count. The mouse / focus
     // events that follow a tap are then ignored for tooltips, so they can't reopen or double-toggle it.
     const TT_SKIP = "[data-pin], [data-pick], [data-pval], .sb-cell__clear, .sb-cell__toggle";
-    let tapWasOpen = false, touchDown = null, lastTouch = 0;
+    // Equipped Sandbox items (paperdoll slots, Talisman sockets) on touch: the first tap shows the tooltip, a tap on
+    // the same item while its tooltip is open opens the picker (to change it), and a long press removes it (UNDO).
+    const SLOT_FULL = ".pd__slot.is-full, .tal__sock.is-full", SLOT_PICK = ".pd__pick, .tal__pick";
+    let tapWasOpen = false, touchDown = null, lastTouch = 0, swallowClick = 0, pressTimer = null, pressFired = false;
     const fromTouch = () => Date.now() - lastTouch < 800;
+    const endPress = () => { clearTimeout(pressTimer); pressTimer = null; };
+    // A click the touch code already handled (tooltip shown instead of the picker, or a long-press removal).
+    document.addEventListener("click", (e) => {
+      if (Date.now() - swallowClick < 800) { swallowClick = 0; e.stopPropagation(); e.preventDefault(); }
+    }, true);
+    document.addEventListener("contextmenu", (e) => { if (e.target.closest(SLOT_FULL)) e.preventDefault(); });
     document.addEventListener("pointerdown", (e) => {
       const card = e.target.closest("[data-key]");
       tapWasOpen = Boolean(card && card === state.activeCard && !els.tooltip.hidden);
       touchDown = e.pointerType === "touch" ? { x: e.clientX, y: e.clientY } : null;
+      endPress(); pressFired = false;
+      const slot = touchDown && e.target.closest(SLOT_PICK) && e.target.closest(SLOT_FULL);
+      const clr = slot && slot.querySelector(".sb-cell__clear");
+      if (!clr) return;
+      pressTimer = setTimeout(() => {
+        pressTimer = null; pressFired = true;
+        const name = (clr.getAttribute("aria-label") || "").replace(/^Remove /, "") || "Item";
+        const pins = JSON.stringify(state.pins), sb = JSON.stringify(state.sandbox);
+        hideTooltip();
+        if (navigator.vibrate) navigator.vibrate(15);
+        clr.click();
+        toast(`${name} removed.`, ["UNDO", () => {
+          state.pins = JSON.parse(pins); state.sandbox = JSON.parse(sb);
+          savePins(); saveSandbox(); renderSandbox();
+        }]);
+      }, 550);
+    });
+    document.addEventListener("pointermove", (e) => {
+      if (pressTimer && touchDown && Math.hypot(e.clientX - touchDown.x, e.clientY - touchDown.y) > 10) endPress();
     });
     document.addEventListener("pointerup", (e) => {
+      endPress();
+      if (pressFired) { pressFired = false; touchDown = null; lastTouch = swallowClick = Date.now(); return; }
       if (e.pointerType !== "touch" || !touchDown) return;
       const moved = Math.hypot(e.clientX - touchDown.x, e.clientY - touchDown.y) > 10;
       touchDown = null;
       if (moved) return;
       lastTouch = Date.now();
+      const slot = e.target.closest(SLOT_PICK) && e.target.closest(SLOT_FULL);
+      if (slot) {
+        if (tapWasOpen && state.activeCard === slot) { hideTooltip(); return; } // second tap: the click opens the picker
+        showTooltip(slot);
+        if (els.tooltip.hidden) return; // no tooltip for it: let the tap open the picker
+        els.tooltip.insertAdjacentHTML("beforeend", '<p class="tt__touch mono">TAP AGAIN TO CHANGE · HOLD TO REMOVE</p>');
+        positionTooltip(slot);
+        swallowClick = Date.now();
+        return;
+      }
       if (e.target.closest(TT_SKIP)) return;
       if (e.target.closest("#tooltip")) { hideTooltip(); return; }
       const card = e.target.closest("[data-key]");
       if (!card || tapWasOpen) hideTooltip(); else showTooltip(card);
     });
-    document.addEventListener("pointercancel", () => { touchDown = null; });
+    document.addEventListener("pointercancel", () => { touchDown = null; endPress(); pressFired = false; });
     document.addEventListener("click", (e) => {
       if (fromTouch()) return; // handled on pointerup
       if (e.target.closest(TT_SKIP)) return;

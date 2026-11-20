@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Gemunu+Libre:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261120zb">
+  <link rel="stylesheet" href="style.css?v=20261120zd">
 </head>
 <body>
   <div class="scanlines" aria-hidden="true"></div>
@@ -176,15 +176,20 @@
       <div class="sandbox">
         <aside class="panel sandbox__controls">
           <h2 class="panel__title mono">PARAMETERS</h2>
+          <div class="sandbox__actions">
+            <button id="sb-share" class="btn mono" type="button">COPY LINK</button>
+            <button id="sb-share-dc" class="btn btn--ghost mono" type="button" title="A short link with the class and items as its text, for Discord">COPY FOR DISCORD</button>
+            <button id="sb-clear" class="btn btn--ghost mono" type="button">CLEAR</button>
+          </div>
           <div class="field">
             <label for="sb-class">Class</label>
             <select id="sb-class" class="input mono"></select>
-            <p class="hint">Sets the weapon rules and which weapon types fit (from the game data: e.g. only Druids use a totem; focus: Sorcerer, Necromancer, Warlock; shield: Necromancer, Paladin; Spiritborn: 2H only). Barbarian: 2H bludgeoning + 2H slashing + two 1H. Rogue: bow or crossbow + two daggers or swords.</p>
+            <p class="hint">Sets the weapon slots and which weapon types fit.</p>
           </div>
           <div class="field">
             <label for="sb-roll">Roll quality <output id="sb-roll-out" class="mono"></output></label>
             <input id="sb-roll" type="range" min="0" max="100" step="1" value="100">
-            <p class="hint">0% = minimum roll, 100% = perfect roll: the Horadric Cube's Affix Value Reroll and Unique Power Reroll are always available, so uniques can be maxed. Original Mythics always roll perfectly. Press <span class="mono">MYTHIC</span> on a unique to see its crafted Mythic version (made from the Ancestral 900 unique: affixes promoted to max, unique power keeps this roll +30% potency). Only 1 crafted Mythic can be equipped at a time.</p>
+            <p class="hint">100% = perfect roll (the Horadric Cube rerolls make it reachable). Original Mythics always roll perfectly.</p>
           </div>
           <div class="field">
             <label for="sb-rank">Aspect rank <output id="sb-rank-out" class="mono"></output></label>
@@ -194,18 +199,13 @@
           <div class="field">
             <label for="sb-ip">Item power <output id="sb-ip-out" class="mono"></output></label>
             <input id="sb-ip" type="range" min="590" max="900" step="10" value="850">
-            <p class="hint">Sets base stat values. At max level a unique is 850, an Ancestral one 900. Mythics (original and crafted) always use 900.</p>
+            <p class="hint">Max-level unique 850, Ancestral 900; Mythics always 900.</p>
           </div>
           <div class="field">
             <label for="sb-add">Quick add by name</label>
             <input id="sb-add" class="input mono" type="search" list="sb-options" placeholder="type a name…" autocomplete="off">
             <datalist id="sb-options"></datalist>
-            <p class="hint">Or click any slot in the build to choose from what fits it, or press <span class="mono">+</span> on a Database card.</p>
-          </div>
-          <div class="sandbox__actions">
-            <button id="sb-share" class="btn mono" type="button">COPY LINK</button>
-            <button id="sb-share-dc" class="btn btn--ghost mono" type="button" title="A short link with the class and items as its text, for Discord">COPY FOR DISCORD</button>
-            <button id="sb-clear" class="btn btn--ghost mono" type="button">CLEAR</button>
+            <p class="hint">Or tap a slot in the build, or <span class="mono">+</span> on a Database card.</p>
           </div>
         </aside>
         <div id="sb-list" class="sandbox__list"></div>
@@ -220,6 +220,6 @@
 
   <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
 
-  <script src="app.js?v=20261120zb"></script>
+  <script src="app.js?v=20261120zd"></script>
 </body>
 </html>
