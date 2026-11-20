@@ -680,6 +680,10 @@ select option:disabled { color: var(--faint); }
 .sb-build { padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-grad), var(--panel); display: grid; gap: 10px; }
 .sb-build__head { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
 .sb-build__head .hint { margin: 0; flex: 1 1 260px; }
+.sb-sknav { display: inline-flex; flex-wrap: wrap; gap: 6px; order: 3; flex: 1 1 100%; }
+.sb-sknav .btn { text-decoration: none; font-size: 0.7rem; padding: 4px 10px; color: var(--gold); border-color: rgba(199, 163, 90, 0.45); }
+.sb-sknav .btn:hover, .sb-sknav .btn:focus-visible { color: #fff; border-color: var(--gold); }
+#sb-talisman { scroll-margin-top: 16px; }
 .sb-build__sub { margin: 4px 0 0; font-size: 0.68rem; letter-spacing: 0.18em; color: var(--faint); font-weight: 600; }
 .sb-cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
 .sb-cell { --rarity: var(--r-unique); position: relative; display: flex; min-width: 0; border: 1px solid color-mix(in srgb, var(--rarity) 35%, var(--line)); border-radius: 4px; background: color-mix(in srgb, var(--rarity) 5%, rgba(255, 255, 255, 0.02)); transition: border-color .12s, background .12s; }
@@ -845,6 +849,9 @@ select option:disabled { color: var(--faint); }
 .tal__clear { top: 6%; right: 2%; width: 20px; height: 20px; font-size: 0.8rem; opacity: 0; transition: opacity .12s; }
 .tal__sock:hover .tal__clear, .tal__clear:focus-visible { opacity: 1; }
 @media (hover: none) { .tal__clear { opacity: 1; } }
+.tal__myth { top: 6%; left: 2%; right: auto; z-index: 3; }
+.tal__sock:hover .tal__myth { opacity: 1; }
+.tt__charmnote { margin: 6px 14px 10px; }
 .tal__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 0.86rem; }
 .tal__list li { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; color: var(--text); }
 .tal__list .mono { color: var(--faint); font-size: 0.72rem; min-width: 1ch; }
@@ -1065,6 +1072,8 @@ select option:disabled { color: var(--faint); }
 }
 .skb__slot.is-set .skb__ico { border: 1px solid color-mix(in srgb, #d8b46a 60%, transparent); box-shadow: 0 0 12px rgba(216, 180, 106, 0.25); cursor: help; }
 .skb__ico .ico { width: 56px; height: 56px; }
+.skb__ico--go { display: grid; place-items: center; text-decoration: none; color: var(--faint); font-size: 1.6rem; font-weight: 300; cursor: pointer; transition: color 0.15s, border-color 0.15s, box-shadow 0.15s; }
+.skb__ico--go:hover, .skb__ico--go:focus-visible { color: var(--gold); border-color: var(--gold); box-shadow: 0 0 10px rgba(199, 163, 90, 0.3); }
 .skb__name { font: 700 0.86rem var(--font-display); color: var(--text); min-height: 1.2em; overflow-wrap: anywhere; }
 .skb__rank { font-size: 0.72rem; color: var(--text-soft); min-height: 1em; }
 .skb__tags { font-size: 0.62rem; color: var(--faint); line-height: 1.35; }
@@ -1216,6 +1225,8 @@ select option:disabled { color: var(--faint); }
 
 /* ---------- Skills & Paragon: Paragon boards ---------- */
 .sk-tabs { display: inline-flex; gap: 4px; }
+.sk-tabs__sb { text-decoration: none; display: inline-flex; align-items: center; color: var(--gold); border-color: rgba(212, 175, 55, 0.45); }
+.sk-tabs__sb:hover, .sk-tabs__sb:focus-visible { color: #fff; border-color: var(--gold); }
 .sk-tabs [aria-selected="true"] { color: #fff; border-color: var(--accent); background: var(--accent-soft); }
 .pg-board rect { fill: rgba(255, 255, 255, 0.015); stroke: #2c2a26; stroke-width: 10; }
 .pg-board text { font: 700 120px var(--font-display); fill: rgba(220, 200, 160, 0.10); letter-spacing: 8px; pointer-events: none; }
@@ -1438,3 +1449,10 @@ select option:disabled { color: var(--faint); }
 .sp--game[data-spcls="Necromancer"] .sp-chain .sp-opt:not(.is-on) .sp-opt__ic { filter: none; }
 .sp-row__details { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 10px; }
 @media (max-width: 600px) { .sp-row { padding: 14px 10px; } .sp-row__body { gap: 12px; } }
+
+/* Seal tooltip */
+.tt__sub { margin: 8px 0 2px; font-size: 0.62rem; letter-spacing: 0.14em; color: var(--gold); }
+.tt__off { opacity: 0.55; }
+.tt__lines .tt__badge { background: rgba(199, 163, 90, 0.18); color: var(--gold); }
+.tal__seal { cursor: help; }
+.tal__seal:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 50%; }

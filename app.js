@@ -1041,14 +1041,14 @@
       r.kind === "item" ? ["SOURCE", r.drop ? r.drop.text : "Unknown: not in the boss loot table or any recipe"] : null,
       r.maxRank ? ["RANKS", `1–${r.maxRank}`] : null,
       r.kind === "item" && bonusSlot(r.raw) && r.raw.power && (rendered.crafted || r.rarity === "Mythic")
-        ? ["SLOT BONUS", `Mythic ${bonusSlot(r.raw) === "2h" ? "2H weapon: unique power ×2" : "amulet: unique power ×1.5"}, included above`] : null,
+        ? ["SLOT BONUS", r.type && /^Charm/.test(r.type) ? `none as a charm (it gets ${bonusSlot(r.raw) === "2h" ? "×2 only on a 2H weapon" : "×1.5 only on an amulet"})` : `Mythic ${bonusSlot(r.raw) === "2h" ? "2H weapon: unique power ×2" : "amulet: unique power ×1.5"}, included above`] : null,
       r.kind === "aspect" && (r.aslots || []).length ? ["SLOTS", r.aslots.join(", ") + (r.aslots.includes("Weapon") ? " (2H weapon ×2)" : "") + (r.aslots.includes("Amulet") ? " · amulet ×1.5" : "")] : null,
       r.kind === "aspect" ? ["IMPRINT", "On a rare item in an allowed slot via the Codex of Power (salvage a legendary at the Blacksmith to save it), or over the aspect of a legendary in that slot"] : null,
       rendered.mods && rendered.mods.temper ? ["TEMPERED", (temperManual(rendered.mods.temper.m) || {}).name ? `${temperManual(rendered.mods.temper.m).name} (Tier ${temperManual(rendered.mods.temper.m).tier}, Blacksmith)` : "Blacksmith"] : null,
       rendered.mods && rendered.mods.mw ? ["MASTERWORK", `${rendered.mods.mw} / ${MW_CAP()}: item quality ${rendered.quality || rendered.mods.mw}${(rendered.quality || 0) > rendered.mods.mw ? ` (+${rendered.quality - rendered.mods.mw} from Transfiguration)` : ""}, every affix incl. temper and Transfiguration ×${(1 + (rendered.quality || rendered.mods.mw) / 100).toFixed(2)}`] : null,
       rendered.mods && (rendered.mods.tf || []).length ? ["TRANSFIGURED", `${rendered.mods.tf.length} stat${rendered.mods.tf.length > 1 ? "s" : ""} from the Horadric Cube`] : null,
       rendered.mods && rendered.mods.lock ? ["LOCKED", "Transfigured: nothing on this item can be changed any more"] : null,
-      rendered.crafted ? ["MYTHIC", "Crafted: base stats at max, unique power +Unique Potency. Only 1 crafted Mythic can be equipped at a time"] : null,
+      rendered.crafted ? ["MYTHIC", r.charmMythic ? "Mythic quality charm: unique power at max +Unique Potency, no slot bonus. Doesn't count toward the 1 crafted Mythic limit (assumed)" : "Crafted: base stats at max, unique power +Unique Potency. Only 1 crafted Mythic can be equipped at a time"] : null,
       r.kind === "item" && r.rarity === "Mythic" ? ["EQUIP", "Doesn't count toward the 1 crafted Mythic limit (dropped Iconic Mythics and random Mythics from the Blacksmith or Jeweler don't)"] : null,
       ["ID", r.id],
     ].filter(Boolean);
@@ -1106,6 +1106,7 @@
     if (kind === "spec") { const h = SK && spTooltip(id); return h && { html: h, rarity: "skill" }; }
     if (kind === "pgdef") { const h = SK && pgDefTooltip(id); return h && { html: h, rarity: "skill" }; }
     if (kind === "sks" || kind === "skb" || kind === "skn" || kind === "skg") { const h = SK && skxTooltip(kind, id); return h && { html: h, rarity: kind === "skb" ? "legendary" : kind === "sks" ? "skill" : "rare" }; }
+    if (kind === "seal") { const h = sealTooltip(); return h && { html: h, rarity: /^(annihilus|mythic)/.test(sealKeyNow()) ? "mythic" : sealKeyNow().replace(/\d+$/, "") }; }
     if (kind === "torch") {
       const it = codexItem(TORCH_ID);
       if (!it) return null;
@@ -1115,8 +1116,9 @@
     if (kind === "charm") {
       const r0 = state.byId.get(id), ch = r0 && charmOf(r0);
       if (!ch) return null;
-      const r = { ...r0, type: "Charm", slot: "Talisman (charm: unique power only)" };
-      return { html: tooltipInner(r, renderItem(ch, world, false)), rarity: rarityClass(r0.rarity) };
+      const my = charmMythic(id);
+      const r = { ...r0, type: my ? "Charm · Mythic quality" : "Charm", slot: "Talisman (charm: unique power only)", charmMythic: my };
+      return { html: tooltipInner(r, renderCharm(ch, world, my)), rarity: my ? "mythic" : rarityClass(r0.rarity) };
     }
     if (kind === "splinter") { const [sid, tier, spec, idx] = id.split("|"); const h = splinterTooltip(splinterById(sid), +tier, spec, idx); return h && { html: h, rarity: "seasonal" }; }
     const r = state.byId.get(key);
@@ -1549,6 +1551,31 @@
     const af = m.a.slice(0, sealAffSlots()).filter((id) => (T.sealPool || []).includes(id)).map((id) => ({ id, on: true, r: Engine.renderAffix(id, W)[0] }));
     return { pw, af };
   }
+  /** The slotted seal's tooltip: its slots and unique-charm limit, fixed lines (Annihilus / Mythic seals), the chosen
+   * set powers (ACTIVE or which set charm they need) and affixes. */
+  function sealTooltip() {
+    const [name, slots, info] = sealOf(), T = Engine.codex.talisman || {};
+    const item = info.item && codexItem(info.item), ic = (item && item.ic) || (T.seals || {})[info.icon];
+    const setsById = new Map((T.sets || []).map((x) => [x.id, x]));
+    const fixed = item ? (() => { const r = renderItem(item, { t: state.sandbox.t, rank: 1, ip: 900 }, false); return [r.power, ...r.imp, ...r.stats].filter(Boolean); })() : [];
+    const L = sealModLines(), nP = sealPowSlots(), nA = sealAffSlots();
+    const pw = L.pw.map((x) => `<li class="${x.on ? "" : "tt__off"}">${x.r ? x.r.html : esc(x.id)} <span class="tt__badge">${x.on ? "ACTIVE" : "NEEDS A " + esc(((setsById.get(x.set) || {}).name || "SET").toUpperCase()) + " CHARM"}</span></li>`);
+    const af = L.af.map((x) => `<li>${x.r ? x.r.html : esc(x.id)}</li>`);
+    const empty = Math.max(0, nP - L.pw.length) + Math.max(0, nA - L.af.length);
+    const foot = [
+      ["CHARM SLOTS", String(slots)],
+      ["UNIQUE CHARMS", `${uniqueCount()} / ${uniqueLimit()}`],
+      info.setReduce ? ["SET BONUSES", `need ${info.setReduce} charm less (min 2)`] : null,
+      ["ROLLS", nP || nA ? `${nA ? `${nA} affix${nA > 1 ? "es" : ""}` : "fixed affixes"}${nP ? ` + ${nP} set power${nP > 1 ? "s" : ""}` : ""}` : "fixed affixes"],
+    ].filter(Boolean);
+    return `<div class="tt__head">${ic ? `<span class="ico-well ico-well--tt">${itemIcon(ic)}</span>` : ""}<div class="tt__title"><p class="tt__name">${esc(name)}</p><p class="tt__type">Talisman seal · ${slots} charm slots</p></div></div>
+      <div class="tt__body">${fixed.length ? `<ul class="tt__lines">${fixed.map((l) => `<li>${l.html}</li>`).join("")}</ul>` : ""}
+        ${pw.length ? `<p class="tt__sub mono">SET POWER${pw.length > 1 ? "S" : ""}</p><ul class="tt__lines">${pw.join("")}</ul>` : ""}
+        ${af.length ? `<p class="tt__sub mono">AFFIX${af.length > 1 ? "ES" : ""}</p><ul class="tt__lines">${af.join("")}</ul>` : ""}
+        ${empty ? `<p class="hint">${empty} roll${empty > 1 ? "s" : ""} not chosen yet: pick ${empty > 1 ? "them" : "it"} under SEAL in the Talisman panel.</p>` : ""}
+        ${!fixed.length && !pw.length && !af.length && !empty ? '<p class="hint">No affixes.</p>' : ""}</div>
+      <dl class="tt__foot">${foot.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`;
+  }
   // Hellfire Torch (S15 Mythic charm): a unique charm that also grants +1 Unique Charm (Unique_Charm_Count_Bonus).
   const TORCH_ID = "S15_Charm_Unique_HellfireTorch";
   const codexItem = (id) => Engine.codex.items.find((x) => x.id === id);
@@ -1568,6 +1595,13 @@
     return r && r.kind === "item" ? charmIdx.get(r.name) || null : null;
   }
   const isCharm = (k) => state.sandbox.charms.includes(k);
+  /** A unique charm at crafted Mythic quality (M on its Talisman socket, same state.sandbox.mythic list as gear):
+   * its power at max roll with +30% Unique Potency, but no amulet x1.5 / 2H x2 slot bonus: a charm isn't in that
+   * slot (the charm item's type is Charm). Charms don't count toward the 1 crafted Mythic limit (assumed). */
+  const charmMythic = (k) => state.sandbox.mythic.includes(k);
+  /** A charm renders its unique power only: at Mythic quality the power is maxed with +30% potency, but the gear
+   * Mythic's bonus lines (Cooldown Reduction, All Skills, Unique Potency) aren't on it. */
+  const renderCharm = (ch, world, mythic) => ({ ...renderItem(ch, world, mythic), mythicLines: [] });
   /** Charm slots in use: unique charms + set charms. */
   const talismanUsed = () => state.sandbox.charms.length + state.sandbox.sets.length + (state.sandbox.torch ? 1 : 0);
 
@@ -2289,7 +2323,7 @@
       const slotBonus = aspectSlotBonus(state.sandbox.slot[r.key]);
       return { power: Engine.renderAffix(r.id, { ...world, slotBonus })[0] || null, imp: [], stats: [], mythicLines: [], crafted: false };
     }
-    if (isCharm(r.key) && charmOf(r)) return renderItem(charmOf(r), world, false); // charm: unique power only
+    if (isCharm(r.key) && charmOf(r)) return renderCharm(charmOf(r), world, charmMythic(r.key)); // charm: unique power only
     return renderItem(r.raw, world, state.sandbox.mythic.includes(r.key) && canCraftMythic(r), modsOf(r.key));
   }
 
@@ -2518,6 +2552,7 @@
     }
     const build = `<section class="sb-build">
       <div class="sb-build__head"><h3 class="sb-loadout__title mono">BUILD // ${esc(cls || "any class")}</h3>
+        <nav class="sb-sknav" aria-label="Talisman, Skills &amp; Paragon"><button type="button" class="btn btn--ghost mono" data-sb-jump="sb-skillbar" title="Scroll down to the Skill Bar">SKILL BAR ↓</button><button type="button" class="btn btn--ghost mono" data-sb-jump="sb-talisman" title="Scroll down to the Talisman (seal and charms)">TALISMAN ↓</button>${[["tree", "SKILL TREE"], ["paragon", "PARAGON"], ["spec", (HOME_SPEC[cls] || "Specialization").toUpperCase()]].map(([k, l]) => `<a class="btn btn--ghost mono" href="#/skills" data-sktab-go="${k}" title="${esc(cls || "This build")}: ${esc(l.toLowerCase())} in Skills &amp; Paragon">${esc(l)} →</a>`).join("")}</nav>
         <span class="hint">${esc(rule.text.replace(/^[a-z]/, (c) => c.toUpperCase()))}.${state.sandbox.cls ? "" : cls ? " Class taken from your items." : " Set a class to use its weapon rules."}</span></div>
       ${pdHTML || `<h4 class="sb-build__sub mono">WEAPONS</h4><div class="sb-cells">${wCells}</div>
       <h4 class="sb-build__sub mono">ARMOR &amp; JEWELRY</h4><div class="sb-cells">${gCells}</div>`}
@@ -2611,7 +2646,7 @@
       if (i >= nSlots) return { locked: true };
       if (o && o.torch) { const t = codexItem(TORCH_ID); return { key: "torch", ic: t && t.ic, name: "Hellfire Torch", sub: "Mythic charm", rar: "mythic", clear: "data-torchremove" }; }
       if (o && o.x) return { key: "set:" + o.x.i, ic: o.x.piece.ic, name: o.x.piece.name, sub: o.x.piece.type + " · " + o.x.piece.set.name, rar: "set", clear: `data-setremove="${o.x.i}"` };
-      if (o && o.k) { const r = state.byId.get(o.k); if (r) return { key: "charm:" + o.k, ic: (charmOf(r) || {}).ic || r.icon, name: r.name, sub: "Unique charm", rar: rarityClass(shownRarity(r, {})), clear: `data-unpin="${esc(o.k)}"` }; }
+      if (o && o.k) { const r = state.byId.get(o.k); if (r) { const my = charmMythic(o.k) && canCraftMythic(r); return { key: "charm:" + o.k, ic: (charmOf(r) || {}).ic || r.icon, name: r.name, sub: my ? "Unique charm · Mythic quality" : "Unique charm", rar: my ? "mythic" : rarityClass(shownRarity(r, {})), clear: `data-unpin="${esc(o.k)}"`, myth: canCraftMythic(r) ? o.k : "", myOn: my }; } }
       return {};
     };
     const sockets = HEX.map(([x, y], i) => {
@@ -2620,14 +2655,13 @@
       if (k.locked) return `<div class="tal__sock is-locked" style="${pos}" title="Charm ${i + 1}: locked by the ${esc(sealName)}">${itemIcon(frame, "tal__frame")}</div>`;
       return `<div class="tal__sock${k.name ? " is-full tal__sock--" + k.rar : ""}" style="${pos}"${k.key ? ` data-key="${esc(k.key)}"` : ""}>
         <button type="button" class="tal__pick" data-pick="c:${i}" aria-label="${k.name ? `Charm ${i + 1}: ${esc(k.name)}. Change` : `Charm ${i + 1}: empty. Choose a charm`}">${itemIcon(frame, "tal__frame")}${k.ic ? itemIcon(k.ic, "tal__item") : k.name ? "" : '<span class="tal__plus" aria-hidden="true">+</span>'}</button>
-        ${k.name ? `<button type="button" class="sb-cell__clear tal__clear" ${k.clear} aria-label="Remove ${esc(k.name)}" title="Remove">×</button>` : ""}</div>`;
+        ${k.name ? `<button type="button" class="sb-cell__clear tal__clear" ${k.clear} aria-label="Remove ${esc(k.name)}" title="Remove">×</button>` : ""}${k.myth ? `<button type="button" class="pd__myth tal__myth mono${k.myOn ? " is-on" : ""}" data-mythic="${esc(k.myth)}" aria-pressed="${k.myOn}" aria-label="${k.myOn ? "Back to unique quality" : "Mythic quality"}: ${esc(k.name)} charm" title="${k.myOn ? "Mythic quality charm: click for unique" : "Mythic quality: max roll, +30% potency (no amulet / 2H slot bonus as a charm)"}">M</button>` : ""}</div>`;
     }).join("");
-    const sealKey = sealItem && state.byId.has(sealItem.id) ? sealItem.id : "";
     const hexPanel = TUI.bg && TUI.socket ? `<div class="tal" style="background-image:url('data/icons/${TUI.bg}.webp')">
-        <div class="tal__seal" style="left:${pct(0)};top:${pct(4)}"${sealKey ? ` data-key="${esc(sealKey)}"` : ""} title="${esc(sealName)}">${itemIcon(TUI.seal, "tal__frame")}${sealIc ? itemIcon(sealIc, "tal__item") : ""}${TUI.sealActive ? itemIcon(TUI.sealActive, "tal__frame") : ""}</div>
+        <div class="tal__seal" style="left:${pct(0)};top:${pct(4)}" data-key="seal" tabindex="0" aria-label="${esc(sealName)}">${itemIcon(TUI.seal, "tal__frame")}${sealIc ? itemIcon(sealIc, "tal__item") : ""}${TUI.sealActive ? itemIcon(TUI.sealActive, "tal__frame") : ""}</div>
         ${sockets}</div>
       <ol class="tal__list">${HEX.map((_, i) => { const k = socketOf(i); return `<li class="${k.locked ? "is-locked" : k.name ? "tal__li--" + k.rar : "is-empty"}"><span class="mono">${i + 1}</span> ${k.locked ? "locked" : k.name ? esc(k.name) + ` <span class="tal__sub">${esc(k.sub)}</span>` : "empty"}</li>`; }).join("")}</ol>` : "";
-    const talisman = `<section class="sb-build">
+    const talisman = `<section class="sb-build" id="sb-talisman">
       <div class="sb-build__head"><h3 class="sb-loadout__title mono">TALISMAN // ${talismanUsed()} / ${nSlots} CHARMS</h3>
         <label class="sb-seal"><span class="mono">SEAL</span>${sealIc && !hexPanel ? `<span class="ico-well sb-seal__ico">${itemIcon(sealIc)}</span>` : ""}<select class="input mono" data-seal aria-label="Talisman seal">${sealOpts}</select></label></div>
       ${sealPowers}${sealModsHTML()}
@@ -2658,7 +2692,7 @@
         const r = state.byId.get(e.a);
         if (free && r) add("leg:" + sp, `${r.name} (${slotNameOf(sp)})`, renderLegAspect(r.key, sp));
       }
-      for (const k of state.sandbox.charms) { const r = state.byId.get(k), ch = r && charmOf(r); if (ch) add("charm:" + k, r.name + " (charm)", renderItem(ch, W, false)); }
+      for (const k of state.sandbox.charms) { const r = state.byId.get(k), ch = r && charmOf(r); if (ch) add("charm:" + k, r.name + " (charm)", renderCharm(ch, W, charmMythic(k))); }
       if (state.sandbox.torch && codexItem(TORCH_ID)) add("torch", "Hellfire Torch", renderItem(codexItem(TORCH_ID), { ...W, ip: 900 }, false));
       if (sealItem) add("seal", sealName, renderItem(sealItem, { ...W, ip: 900 }, false));
       { const SL = sealModLines(); [...SL.pw.filter((x) => x.on), ...SL.af].forEach((x, j) => { if (x.r) src.push({ id: `sealmod:${x.id}:${j}`, name: `${sealName} (${x.set ? "set power" : "affix"})`, lines: [x.r.plain.replace(/^[^:]*:\s*/, "")] }); }); }
@@ -3364,7 +3398,7 @@
     const L = sbLayout();
     for (const k of new Set([...Object.values(L.weapons), ...Object.values(L.gear).flat()].filter(Boolean))) { const r = state.byId.get(k); if (r) take(r.name, rdLines(renderedAt(r, W))); }
     for (const [sp, e] of Object.entries(state.sandbox.leg || {})) { const r = state.byId.get(e.a); if (r) take(`${r.name} (${slotNameOf(sp)})`, rdLines(renderLegAspect(r.key, sp))); }
-    for (const k of state.sandbox.charms || []) { const r = state.byId.get(k), ch = r && charmOf(r); if (ch) take(r.name + " (charm)", rdLines(renderItem(ch, W, false))); }
+    for (const k of state.sandbox.charms || []) { const r = state.byId.get(k), ch = r && charmOf(r); if (ch) take(r.name + " (charm)", rdLines(renderCharm(ch, W, charmMythic(k)))); }
     if (state.sandbox.torch && codexItem(TORCH_ID)) take("Hellfire Torch", rdLines(renderItem(codexItem(TORCH_ID), W900, false)));
     const seal = sealOf()[2], sealIt = seal.item && codexItem(seal.item), sealName = (sealIt && sealIt.name) || "Seal";
     if (sealIt) take(sealName, rdLines(renderItem(sealIt, W900, false)));
@@ -3411,7 +3445,7 @@
     const keys = new Set([...Object.values(L.weapons), ...Object.values(L.gear).flat()].filter(Boolean));
     for (const k of keys) { const r = state.byId.get(k), rd = r && renderedAt(r, W); if (rd && rd.power) out.push({ name: r.name, html: rd.power.html, plain: rd.power.plain }); }
     for (const [sp, e] of Object.entries(state.sandbox.leg || {})) { const r = state.byId.get(e.a), rd = r && renderLegAspect(r.key, sp); if (rd && rd.power) out.push({ name: r.name, html: rd.power.html, plain: rd.power.plain }); }
-    for (const k of state.sandbox.charms || []) { const r = state.byId.get(k), ch = r && charmOf(r), rd = ch && renderItem(ch, W, false); if (rd && rd.power) out.push({ name: r.name + " (charm)", html: rd.power.html, plain: rd.power.plain }); }
+    for (const k of state.sandbox.charms || []) { const r = state.byId.get(k), ch = r && charmOf(r), rd = ch && renderCharm(ch, W, charmMythic(k)); if (rd && rd.power) out.push({ name: r.name + " (charm)", html: rd.power.html, plain: rd.power.plain }); }
     return out;
   }
   /** A skill's tags as the game lists them under its name (Core, Hellfire, Demonology, Greater Demon…), plus tags its
@@ -3777,7 +3811,7 @@
   /** Sandbox SKILL BAR: 6 slots for skills with at least 1 point in the tree (rank = points + gear ranks). */
   function skillBarHTML() {
     const cls = sandboxClass();
-    const wrap = (inner) => `<section class="sb-build skb"><div class="sb-build__head"><h3 class="sb-loadout__title mono">SKILL BAR${inner.count != null ? ` // ${inner.count} / ${SKBAR_SLOTS}` : ""}</h3></div>${inner.html}</section>`;
+    const wrap = (inner) => `<section class="sb-build skb" id="sb-skillbar"><div class="sb-build__head"><h3 class="sb-loadout__title mono">SKILL BAR${inner.count != null ? ` // ${inner.count} / ${SKBAR_SLOTS}` : ""}</h3></div>${inner.html}</section>`;
     if (!cls) return wrap({ html: '<p class="hint">Choose a class to set up the skill bar.</p>' });
     if (!SK) {
       loadSkills().then(() => { if (route() === "sandbox") renderSandbox(); }).catch(() => {});
@@ -3796,7 +3830,8 @@
         .map((x) => `<option value="${x.i}"${x.i === k ? " selected" : ""}>${esc(SK.skills[x.n.p].n)}</option>`).join("");
       return `<div class="skb__slot${st ? " is-set" : ""}">
           <span class="skb__key mono">${SKBAR_KEYS[j]}</span>
-          <span class="skb__ico"${st ? ` data-key="skill:${esc(cls)}:${k}" tabindex="0"` : ""}>${st ? itemIcon(st.ic) : ""}</span>
+          ${st ? `<span class="skb__ico" data-key="skill:${esc(cls)}:${k}" tabindex="0">${itemIcon(st.ic)}</span>`
+            : `<a class="skb__ico skb__ico--go" href="#/skills" data-sktab-go="tree" title="Empty: open the Skill Tree to learn skills" aria-label="Empty slot ${SKBAR_KEYS[j]}: open the Skill Tree"><span aria-hidden="true">+</span></a>`}
           <span class="skb__name">${st ? esc(st.n) : ""}</span>
           <span class="skb__rank mono">${st ? `RANK ${rank}${gr[st.n.toLowerCase()] ? ` <span class="hint">(${s.pts[k]}+${gr[st.n.toLowerCase()]})</span>` : ""}` : ""}</span>
           ${st && tg.base.length ? `<span class="skb__tags mono">${esc(tg.base.slice(0, 3).join(" · "))}${tg.added.length ? ` · <b>✦ ${esc(tg.added.map((a) => a.t).join(" · "))}</b>` : ""}</span>` : ""}
@@ -3805,7 +3840,7 @@
     }).join("");
     const note = learned.length
       ? `Skills with at least 1 point in Skills &amp; Paragon can go on the bar: 6 slots (default keyboard: left and right mouse button, 1–4). A newly learned skill fills the first empty slot. ${learned.length > SKBAR_SLOTS ? `${learned.length} skills are learned: ${learned.length - s.bar.filter((x) => x !== "").length} aren't on the bar.` : ""}`
-      : `No skills learned yet: spend points in <a href="#/skills">Skills &amp; Paragon</a>, then put up to 6 of them on the bar.`;
+      : `No skills learned yet: spend points in the <a href="#/skills" data-sktab-go="tree">Skill Tree</a>, then put up to 6 of them on the bar.`;
     const spD = spDef(), spC = spD ? spChosen().filter((c) => c.o.p || c.o.d) : [];
     const spLine = spD ? `<p class="hint skb__spec"><span class="mono">${esc(spD.t.toUpperCase())}:</span> ${spC.length ? spC.map((c) => `<b data-key="spec:${esc(c.slot.id)}|${esc(c.o.id)}" tabindex="0">${esc(c.o.n)}</b>`).join(" · ") : "none chosen"} <a href="#/skills" data-sp-open>(${spC.length ? "change" : "choose"} in Skills &amp; Paragon)</a></p>` : "";
     return wrap({ count: s.bar.filter((x) => x !== "").length, html: `<div class="skb__slots">${slots}</div>${spLine}<p class="hint">${note}</p>` });
@@ -4214,7 +4249,7 @@
    * A new board attaches at a free gate: its own gate on the facing edge sits next to it (rotation chosen by the player). */
   let skTab = (() => { try { return localStorage.getItem("onosendai.sktab") || "tree"; } catch { return "tree"; } })();
   const PG_MAX_BOARDS = 5; // start board + 4 (assumed; see status.md)
-  const skTabs = () => `<span class="sk-tabs" role="tablist">${[["tree", "SKILL TREE"], ["paragon", "PARAGON"], ["spec", ((spDef() || {}).t || "Specialization").toUpperCase()]].map(([k, l]) => `<button type="button" class="btn btn--ghost mono" role="tab" data-sktab="${k}" aria-selected="${skTab === k}">${l}</button>`).join("")}</span>`;
+  const skTabs = () => `<span class="sk-tabs" role="tablist">${[["tree", "SKILL TREE"], ["paragon", "PARAGON"], ["spec", ((spDef() || {}).t || "Specialization").toUpperCase()]].map(([k, l]) => `<button type="button" class="btn btn--ghost mono" role="tab" data-sktab="${k}" aria-selected="${skTab === k}">${l}</button>`).join("")}</span><a class="btn btn--ghost mono sk-tabs__sb" href="#/sandbox" title="Back to the Theorycraft Sandbox (same build)">← SANDBOX</a>`;
   const PG = () => (SK && SK.paragon) || {};
   const pgBoardDefs = (cls) => (PG().boards || {})[cls] || [];
   const pgDef = (cls, id) => pgBoardDefs(cls).find((b) => b.id === id);
@@ -4736,7 +4771,18 @@
       if (nt) setTab(nt.dataset.hometab);
     });
     // "(choose in Skills & Paragon)" under the Sandbox skill bar opens the specialization tab.
-    document.addEventListener("click", (e) => { if (e.target.closest("[data-sp-open]")) { skTab = "spec"; try { localStorage.setItem("onosendai.sktab", skTab); } catch { /* ignore */ } } });
+    // Links into Skills & Paragon open a given tab: "(choose in Skills & Paragon)" under the skill bar (spec) and the
+    // Sandbox's SKILL TREE / PARAGON / <specialization> buttons (data-sktab-go).
+    document.addEventListener("click", (e) => {
+      const jump = e.target.closest("[data-sb-jump]"), to = jump && document.getElementById(jump.dataset.sbJump);
+      if (to) { // below the sticky HUD
+        const hud = document.querySelector(".hud"), top = to.getBoundingClientRect().top + window.scrollY - (hud && getComputedStyle(hud).position !== "static" ? hud.offsetHeight : 0) - 12;
+        window.scrollTo({ top, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+        return;
+      }
+      const go = e.target.closest("[data-sktab-go]"), t = go ? go.dataset.sktabGo : e.target.closest("[data-sp-open]") ? "spec" : "";
+      if (t) { skTab = t; try { localStorage.setItem("onosendai.sktab", skTab); } catch { /* ignore */ } }
+    });
     bindRunes();
     bindSkills();
 
