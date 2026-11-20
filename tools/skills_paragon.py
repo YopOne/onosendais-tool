@@ -11,8 +11,11 @@ Called by build_index.py. Sources (d4data json/base/meta + data/):
 """
 import json
 import os
+from collections import Counter
 import re
 
+# Class order of per-class arrays in the data (ItemType fUsableByClass, SkillTags arSkillTreeIcons).
+CLASS_ORDER = ["Sorcerer", "Druid", "Barbarian", "Rogue", "Necromancer", "Spiritborn", "Paladin", "Warlock"]
 TREE_FILES = {"Barbarian": "Barbarian", "Druid": "Druid", "Necromancer": "Necromancer", "Paladin": "Paladin_NEW",
               "Rogue": "Rogue", "Sorcerer": "Sorcerer", "Spiritborn": "Spiritborn", "Warlock": "Warlock"}
 POWERTAG_RE = re.compile(r'PowerTag\.([A-Za-z0-9_]+)\.')
@@ -271,6 +274,14 @@ def extract(meta_dir, stl_dir, power_dir, icons=None, stat_line=None, attr_desc=
             pending.update(POWERTAG_RE.findall(text))
         return rec
 
+    # Skill tag -> per-class skill tree icon handles (class order as in item fUsableByClass).
+    tree_icons = {}
+    st_path = os.path.join(meta_dir, "GameBalance", "SkillTags.gam.json")
+    if os.path.exists(st_path):
+        for e in (_load(st_path).get("ptData") or [{}])[0].get("tEntries") or []:
+            hs = [x.get("hImageHandle") or 0 for x in e.get("arSkillTreeIcons") or []]
+            if any(hs):
+                tree_icons[(e.get("tHeader") or {}).get("szName")] = hs
     trees = {}
     for cls, fname in TREE_FILES.items():
         p = os.path.join(meta_dir, "SkillKit", fname + ".skl.json")
@@ -313,6 +324,22 @@ def extract(meta_dir, stl_dir, power_dir, icons=None, stat_line=None, attr_desc=
                             node["m"] = str(mid)
                         node["rw"] = rn
             nodes.append(node)
+        # Cluster emblem (eye = Basic, star = Core, sword in shield = Defensive...): the primary skill tag its skills
+        # share, whose GameBalance/SkillTags arSkillTreeIcons[class] points into 2DUI_SkillCategoryIcon.
+        if icons:
+            ci = CLASS_ORDER.index(cls) if cls in CLASS_ORDER else -1
+            for node in nodes:
+                if node.get("k") != "root" or ci < 0:
+                    continue
+                prim = Counter((((pow_json(nodes[j]["p"]) or {}).get("tPrimaryTag") or {}).get("gbidSkillTag") or {}).get("name")
+                               for j in node["c"] if j < len(nodes) and nodes[j].get("k") == "skill")
+                prim.pop(None, None)
+                for tag, _ in prim.most_common():
+                    hs = tree_icons.get(tag) or []
+                    ic = ci < len(hs) and icons.for_handle(hs[ci])
+                    if ic:
+                        node["ic"] = ic
+                        break
         # Default skill (always unlocked): the class's basic loadout.
         default = [(x or {}).get("name") for x in k.get("arDefaultSkillLoadout") or []]
         trees[cls] = {"nodes": nodes, "default": [d for d in default if d]}

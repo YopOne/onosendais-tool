@@ -1092,20 +1092,33 @@ select option:disabled { color: var(--faint); }
   background: radial-gradient(ellipse at 50% 40%, rgba(255, 49, 49, 0.06), transparent 70%), #08080a; border: 1px solid var(--line); border-radius: var(--radius); }
 .sk-svg:active { cursor: grabbing; }
 .sk-bgimg { opacity: 0.9; pointer-events: none; }
-.sk-link { stroke: #2d2924; stroke-width: 46; stroke-linecap: round; }
-.sk-link.is-on { stroke: #c4161c; stroke-width: 58; filter: drop-shadow(0 0 50px rgba(220, 30, 30, 0.75)); }
+.sk-trunk { fill: none; stroke: #0a0909; stroke-width: 190; stroke-linecap: round; stroke-linejoin: round; }
+.sk-trunk__core { fill: none; stroke: #9c1218; stroke-width: 110; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 40px rgba(220, 30, 30, 0.55)); }
+.sk-link { fill: none; stroke: #3a3632; stroke-width: 34; stroke-linecap: round; stroke-linejoin: round; paint-order: stroke; }
+.sk-link.is-on { stroke: #c4161c; stroke-width: 42; filter: drop-shadow(0 0 30px rgba(220, 30, 30, 0.6)); }
 .sk-node image { pointer-events: none; }
-.sk-lv { font: 700 210px var(--font-mono); fill: #fff; pointer-events: none; paint-order: stroke; stroke: #000; stroke-width: 24px; }
-.sk-lv--hub { font-size: 160px; fill: #b9b2a3; }
+.sk-lv { font: 700 170px var(--font-mono); letter-spacing: 10px; fill: #9a948a; pointer-events: none; paint-order: stroke; stroke: #000; stroke-width: 24px; }
 .sk-node[data-sknode] { cursor: pointer; outline: none; }
+.sk-emblem { filter: drop-shadow(0 0 18px rgba(0, 0, 0, 0.9)); }
+.sk-node--root:not(.is-on) .sk-emblem { opacity: 0.45; }
 .sk-bg { fill: #0d0c0e; }
 .sk-node.is-locked image { filter: grayscale(0.85) brightness(0.55); }
 .sk-node.is-open:hover image, .sk-node:focus-visible image { filter: brightness(1.35); }
 .sk-node.is-taken image { filter: drop-shadow(0 0 40px rgba(220, 40, 40, 0.65)); }
-.sk-modic { opacity: 0.95; }
-.sk-name { font: 600 190px var(--font-ui); letter-spacing: 8px; fill: #e6dfcf; pointer-events: none; text-transform: uppercase; paint-order: stroke; stroke: #050506; stroke-width: 44px; }
-.sk-badge rect { fill: #0b0b0e; stroke: #c4161c; stroke-width: 14; }
-.sk-badge text { font: 700 150px var(--font-mono); fill: #ffd9a8; }
+/* Upgrades: small round stone sockets with a muted icon; red rim and full colour once taken. */
+.sk-up-bg { fill: #1a1816; stroke: #050505; stroke-width: 22; }
+.sk-up-rim { fill: none; stroke: #5d5750; stroke-width: 22; }
+.sk-node--mod.is-upgrade .sk-modic { filter: grayscale(1) brightness(0.75) sepia(0.25); }
+.sk-node--mod.is-upgrade.is-locked .sk-modic { filter: grayscale(1) brightness(0.45); }
+.sk-node--mod.is-upgrade.is-open:hover .sk-modic, .sk-node--mod.is-upgrade:focus-visible .sk-modic { filter: grayscale(0.4) brightness(1.1); }
+.sk-node--mod.is-upgrade.is-open .sk-up-rim { stroke: #b9b2a3; }
+.sk-node--mod.is-upgrade.is-taken .sk-up-rim { stroke: #d01f24; }
+.sk-node--mod.is-upgrade.is-taken .sk-modic { filter: sepia(0.5) saturate(1.6) hue-rotate(-20deg) brightness(1.05); }
+.sk-node--mod.is-upgrade.is-taken { filter: drop-shadow(0 0 30px rgba(220, 40, 40, 0.6)); }
+/* Rank counter under a skill: "0/15 +3" (gear ranks in blue). */
+.sk-count { font: 700 150px var(--font-mono); fill: #e9e4da; pointer-events: none; paint-order: stroke; stroke: #000; stroke-width: 34px; letter-spacing: 6px; }
+.sk-count__g { fill: #8f95ff; }
+.sk-node--skill.is-locked .sk-count { fill: #8a857c; }
 .sk-side { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(255, 255, 255, 0.02); max-height: min(78vh, 900px); overflow-y: auto; }
 .sk-side .hint { margin: 0; font-size: 0.78rem; }
 .sk-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }

@@ -20,6 +20,7 @@ Base stats come from the game's own balance tables, so values shown are the real
 ## Updates
 
 **20 Nov 2026**
+- Skill tree drawn like the game: square skill icons in round sockets with a `0/15 +N` rank counter (gear ranks in blue) instead of names, round upgrade nodes, diamond variant nodes, small junctions, connectors in straight runs and 45° forks that turn red as you buy, a red trunk joining the clusters one by one down to the Ultimate, and each cluster root shows its category emblem from the game (eye = Basic, star = Core…). Laid out with the game's proportions, so nothing overlaps.
 - Specialization tooltips follow your gear: Loyalty's Mantle with matching Spirit Hall choices, Spirit Potency tempers, The Hemat Stone on the Ritualist shard and similar boosts are in the numbers and listed; gear that mentions an Oath, Shard, Enchantment, etc. is shown with it.
 - Shorter Sandbox share links, plus COPY FOR DISCORD: a tidy named link ("Onosendai build: Barbarian · …") instead of a long URL.
 - Sandbox keeps one build per class in your browser: switch class and your build for that class comes back. Home class pictures open the Sandbox as that class.

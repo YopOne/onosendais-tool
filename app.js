@@ -3693,6 +3693,9 @@
   }
   /** Spread-out layout (data positions are tight): clusters a bit further apart, each skill further from its root,
    * each upgrade branch further from its skill. Returns [[x, y], ...] per node; cached on the tree. */
+  // The game draws the tree from the SkillKit positions with the y axis stretched ~1.88× (measured against an
+  // in-game screenshot: x matches the data, y doesn't). With that, no two nodes overlap in any class.
+  const SK_Y = 1.88;
   function skLayout(tree) {
     if (tree._lay) return tree._lay;
     const N = tree.nodes, owner = new Array(N.length).fill(-1), rootOf = new Array(N.length).fill(-1);
@@ -3709,18 +3712,7 @@
         }
       }
     });
-    const roots = N.map((n, i) => i).filter((i) => N[i].k === "root");
-    const cx = roots.reduce((a, i) => a + N[i].x, 0) / (roots.length || 1), cy = roots.reduce((a, i) => a + N[i].y, 0) / (roots.length || 1);
-    const RP = new Map(roots.map((i) => [i, [cx + (N[i].x - cx) * 1.25, cy + (N[i].y - cy) * 1.7]]));
-    const pos = N.map((n, i) => {
-      const r = rootOf[i];
-      if (r < 0) return [cx + (n.x - cx) * 1.3, cy + (n.y - cy) * 1.45];
-      const [rx, ry] = RP.get(r);
-      if (i === r) return [rx, ry];
-      const sk = N[owner[i]] || n;
-      const sx = rx + (sk.x - N[r].x) * 1.85, sy = ry + (sk.y - N[r].y) * 1.85;
-      return owner[i] === i ? [sx, sy] : [sx + (n.x - sk.x) * 1.8, sy + (n.y - sk.y) * 1.8];
-    });
+    const pos = N.map((n) => [n.x, n.y * SK_Y]);
     tree._lay = pos;
     tree._root = rootOf;
     return pos;
@@ -3753,56 +3745,87 @@
     // First view: the full width, from the top (the first clusters) at a readable zoom; FIT shows everything.
     let fitTop = false;
     if (!skView.vb || skView.cls !== "tree:" + cls) { skView.vb = [full[0], full[1], full[2], Math.min(full[3], full[2] * 0.62)]; skView.cls = "tree:" + cls; fitTop = true; }
-    // Game frames (data units): skill diamond, cluster root, upgrade square, hub diamond.
-    const SZ = { skill: 900, mod: 470, hub: 230, root: 900 };
+    // Game sizes (data units): skill socket, cluster root, upgrade (variants are drawn 1.35× larger), hub junction.
+    const SZ = { skill: 660, mod: 300, hub: 110, root: 1400 };
     const ultLv = Math.max(...N.filter((n) => n.k === "root").map((n) => n.lv || 0));
     const img = (ic, cx, cy, sz, extra = "") => ic ? `<image href="data/icons/${ic}.webp" x="${cx - sz / 2}" y="${cy - sz / 2}" width="${sz}" height="${sz}"${extra}/>` : "";
     const bg = (UI.bg || {})[cls];
     const bgH = (y1 - y0 + 2 * pad) * 1.04, bgW = Math.max(bgH * (2765 / 5120), (x1 - x0 + 2 * pad) * 1.02), bcx = (x0 + x1) / 2, bcy = (y0 + y1) / 2;
     const back = bg ? `<image class="sk-bgimg" href="${esc(bg)}" x="${bcx - bgW / 2}" y="${bcy - bgH / 2}" width="${bgW}" height="${bgH}" preserveAspectRatio="none"/>` : "";
-    const lines = [], seen = new Set();
+    // Links go red once both ends are bought; a thick trunk joins the cluster roots.
+    const lines = [], trunks = [], seen = new Set();
+    const isOn = (i) => act.active.has(i) && (N[i].k === "root" || N[i].k === "hub" || (s.pts[i] || 0) > 0);
+    // Connectors as in the game: straight runs and 45° diagonals, diagonal leg first. A skill's lines to its
+    // junctions share one diagonal trunk and peel off it; a junction forks diagonally, then runs straight into each
+    // upgrade / variant (a variant fan is one straight and two 45° spokes, as in game). Root to skill: straight.
+    const octo = (a, b, straightFirst) => {
+      const [ax, ay] = P[a], [bx, by] = P[b], dx = bx - ax, dy = by - ay, ad = Math.min(Math.abs(dx), Math.abs(dy));
+      if (ad < 40 || Math.abs(Math.abs(dx) - Math.abs(dy)) < 40) return `M${ax} ${ay}L${bx} ${by}`;
+      const diag = [Math.sign(dx) * ad, Math.sign(dy) * ad];
+      const k = straightFirst ? [ax + dx - diag[0], ay + dy - diag[1]] : [ax + diag[0], ay + diag[1]];
+      return `M${ax} ${ay}L${k[0]} ${k[1]}L${bx} ${by}`;
+    };
+    // The data doesn't link cluster roots; a red trunk joins them one by one in unlock order and stops at the Ultimate.
+    const rootSeq = N.map((n, i) => i).filter((i) => N[i].k === "root").sort((a, b) => (N[a].lv || 0) - (N[b].lv || 0));
+    if (rootSeq.length > 1) {
+      const pts = rootSeq.map((i) => P[i].join(",")).join(" ");
+      trunks.push(`<polyline class="sk-trunk" points="${pts}"/><polyline class="sk-trunk__core" points="${pts}"/>`);
+    }
+    // Lines are drawn from the end nearer the skill (steps from it through junctions and upgrades): an upgrade can
+    // itself be the junction of a variant fan (Druid Wolf Pack: Versatile), and a form choice can merge again
+    // into one junction (Druid Wind Shear: Human / Werewolf / Werebear).
+    const depth = N.map((n) => n.k === "root" ? -1 : n.k === "skill" ? 0 : Infinity);
+    N.forEach((n, i) => { if (n.k !== "skill") return; const q = [i]; while (q.length) { const k = q.shift(); for (const j of N[k].c) if (N[j] && N[j].k !== "root" && N[j].k !== "skill" && depth[j] > depth[k] + 1) { depth[j] = depth[k] + 1; q.push(j); } } });
     N.forEach((n, i) => n.c.forEach((j) => {
       const key = i < j ? i + "-" + j : j + "-" + i;
       if (seen.has(key) || !N[j]) return;
       seen.add(key);
-      const bought = act.active.has(i) && act.active.has(j) && (N[i].k === "root" || N[i].k === "hub" || (s.pts[i] || 0) > 0) && (N[j].k === "root" || N[j].k === "hub" || (s.pts[j] || 0) > 0);
-      lines.push(`<line class="sk-link${bought ? " is-on" : ""}" x1="${P[i][0]}" y1="${P[i][1]}" x2="${P[j][0]}" y2="${P[j][1]}"/>`);
+      const on = isOn(i) && isOn(j);
+      const [a, b] = depth[i] <= depth[j] ? [i, j] : [j, i];
+      const d = N[a].k === "root" ? `M${P[a][0]} ${P[a][1]}L${P[b][0]} ${P[b][1]}` : octo(a, b, false);
+      lines.push(`<path class="sk-link${on ? " is-on" : ""}" d="${d}"/>`);
     }));
+    // Variants (pick 1 of 3+) are diamonds with the variant's art, upgrades (pick 1 of 2) small round sockets.
+    const exSize = new Map();
+    for (const n of N) if (n.k === "mod" && n.ex != null) exSize.set(n.ex, (exSize.get(n.ex) || 0) + 1);
     const dots = N.map((n, i) => {
       const [x, y] = P[i], pts = s.pts[i] || 0, sz = SZ[n.k] || 200;
       if (n.k === "root") {
         const on = act.active.has(i);
-        return `<g class="sk-node sk-node--root${on ? " is-on" : ""}">${img(on ? UI.rootOn : UI.rootOff, x, y, sz)}<text class="sk-lv" x="${x}" y="${y + 75}" text-anchor="middle">${n.lv ? "L" + n.lv : "★"}</text></g>`;
+        // The cluster's emblem (eye = Basic, star = Core, sword in shield = Defensive…) from the game's category icons.
+        return `<g class="sk-node sk-node--root${on ? " is-on" : ""}"><title>${on ? "" : `Opens at level ${n.lv || 0}`}</title>${img(on ? UI.rootOn : UI.rootOff, x, y, sz)}${img(n.ic, x, y, sz * 0.4, ' class="sk-emblem"')}${on ? "" : `<text class="sk-lv" x="${x}" y="${y + sz / 2 + 180}" text-anchor="middle">LEVEL ${n.lv || 0}</text>`}</g>`;
       }
       if (n.k === "hub") {
         const on = act.active.has(i);
         const lit = on && n.c.some((j) => N[j] && (s.pts[j] || 0) > 0 && N[j].k !== "mod");
-        return `<g class="sk-node sk-node--hub">${img(lit ? UI.hubOn : on ? UI.hubOpen : UI.hubOff, x, y, sz)}${n.lv && !on ? `<text class="sk-lv sk-lv--hub" x="${x}" y="${y - sz / 2 - 60}" text-anchor="middle">L${n.lv}</text>` : ""}</g>`;
+        return `<g class="sk-node sk-node--hub"><title>${n.lv && !on ? `Opens at level ${n.lv}` : ""}</title>${img(lit ? UI.hubOn : on ? UI.hubOpen : UI.hubOff, x, y, sz)}</g>`;
       }
       const st = SK.skills[n.p] || {}, ic = n.k === "mod" ? ((st.m || {})[n.m] || {}).ic || st.ic : st.ic;
       const can = !skCanAdd(tree, s, i, act), state = pts > 0 ? 0 : can ? 1 : 2;
       const gfx = skGearFor(n.p, n.k === "mod" ? ((st.m || {})[n.m] || {}).n : null);
-      const cl = (pts > 0 ? " is-taken" : can ? " is-open" : " is-locked") + (n.k === "mod" ? (gfx.free ? " is-free" : "") : gfx.hits.length ? " has-gear" : "");
+      const variant = n.k === "mod" && (exSize.get(n.ex) || 0) >= 3;
+      const cl = (pts > 0 ? " is-taken" : can ? " is-open" : " is-locked") + (n.k === "mod" ? (gfx.free ? " is-free" : "") + (variant ? " is-variant" : " is-upgrade") : gfx.hits.length ? " has-gear" : "");
       const g = n.k === "skill" ? gear[(st.n || "").toLowerCase()] || 0 : 0;
-      let art;
+      let art, counter = "", gearMark = "";
       if (n.k === "skill") {
-        const row = (UI.skill || [])[skClusterLv(tree, i) === ultLv ? 1 : 0] || [];
-        const frame = row[[1, 0, 2][state]];
-        const r = sz * 0.36;
+        // The game's skill socket: a square icon in a round stone socket, red-rimmed when taken, cream when open.
+        const frame = [UI.modOn, UI.modOpen, UI.modOff][state], q = sz * 0.5;
+        art = `<circle class="sk-hit" cx="${x}" cy="${y}" r="${sz / 2}"/><rect class="sk-bg" x="${x - q / 2}" y="${y - q / 2}" width="${q}" height="${q}"/>${img(frame, x, y, sz)}${img(ic, x, y, q, ` preserveAspectRatio="xMidYMid slice"`)}`;
+        // Rank counter under the socket: points / max, then +gear ranks (blue), like "0/15 +3".
+        counter = `<text class="sk-count" x="${x}" y="${y + sz / 2 + 150}" text-anchor="middle">${pts}/${n.max}${g ? `<tspan class="sk-count__g"> +${g}</tspan>` : ""}</text>`;
+        if (gfx.hits.length) gearMark = `<g class="sk-gear"><circle cx="${x + sz * 0.36}" cy="${y - sz * 0.36}" r="95"/><text x="${x + sz * 0.36}" y="${y - sz * 0.36 + 42}" text-anchor="middle">✦</text></g>`;
+      } else if (variant) {
+        const row = (UI.skill || [])[0] || [], frame = row[[1, 0, 2][state]], vs = sz * 1.35, r = vs * 0.36;
         art = `<clipPath id="skc${i}"><polygon points="${x},${y - r} ${x + r},${y} ${x},${y + r} ${x - r},${y}"/></clipPath>
           <polygon class="sk-bg" points="${x},${y - r} ${x + r},${y} ${x},${y + r} ${x - r},${y}"/>
-          ${img(ic, x, y, r * 1.5, ` clip-path="url(#skc${i})" preserveAspectRatio="xMidYMid slice"`)}${img(frame, x, y, sz)}`;
+          ${img(ic, x, y, r * 1.5, ` clip-path="url(#skc${i})" preserveAspectRatio="xMidYMid slice"`)}${img(frame, x, y, vs)}`;
       } else {
-        const frame = [UI.modOn, UI.modOpen, UI.modOff][state];
-        art = `<rect class="sk-hit" x="${x - sz / 2}" y="${y - sz / 2}" width="${sz}" height="${sz}" rx="${sz * 0.12}"/>${img(frame, x, y, sz)}${img(ic, x, y, sz * 0.5, ' class="sk-modic"')}`;
+        const r = sz / 2;
+        art = `<clipPath id="skc${i}"><circle cx="${x}" cy="${y}" r="${r * 0.78}"/></clipPath><circle class="sk-up-bg" cx="${x}" cy="${y}" r="${r}"/>
+          ${img(ic, x, y, r * 1.7, ` class="sk-modic" clip-path="url(#skc${i})" preserveAspectRatio="xMidYMid slice"`)}<circle class="sk-up-rim" cx="${x}" cy="${y}" r="${r * 0.86}"/>`;
       }
-      // Label under the skill, or above it when another skill sits right below (data positions can be close).
-      const crowded = n.k === "skill" && N.some((m, j) => j !== i && m.k === "skill" && Math.abs(P[j][0] - x) < 900 && P[j][1] - y > 0 && P[j][1] - y < 1300);
-      const label = n.k === "skill" ? `<text class="sk-name" x="${x}" y="${crowded ? y - sz / 2 - 60 : y + sz / 2 + 150}" text-anchor="middle">${esc(st.n || "")}</text>` : "";
-      const bx = x + sz * 0.2, by = y + sz * 0.2;
-      const badge = pts > 0 || g ? `<g class="sk-badge"><rect x="${bx}" y="${by}" width="${g ? 460 : 280}" height="210" rx="56"/><text x="${bx + (g ? 230 : 140)}" y="${by + 158}" text-anchor="middle">${pts}${g ? "+" + g : ""}</text></g>` : "";
-      const gearMark = n.k === "skill" && gfx.hits.length ? `<g class="sk-gear"><circle cx="${x - sz * 0.3}" cy="${y - sz * 0.3}" r="160"/><text x="${x - sz * 0.3}" y="${y - sz * 0.3 + 70}" text-anchor="middle">✦</text></g>` : n.k === "mod" && gfx.free ? `<g class="sk-gear"><circle cx="${x - sz * 0.38}" cy="${y - sz * 0.38}" r="120"/><text x="${x - sz * 0.38}" y="${y - sz * 0.38 + 56}" text-anchor="middle">✓</text></g>` : "";
-      return `<g class="sk-node sk-node--${n.k}${cl}" data-sknode="${i}" data-key="skill:${esc(cls)}:${i}" tabindex="0" role="button" aria-label="${esc(skNodeName(n))}: ${pts} of ${n.max}">${art}${badge}${gearMark}${label}</g>`;
+      if (n.k === "mod" && gfx.free) gearMark = `<g class="sk-gear"><circle cx="${x + sz * 0.42}" cy="${y - sz * 0.42}" r="80"/><text x="${x + sz * 0.42}" y="${y - sz * 0.42 + 36}" text-anchor="middle">✓</text></g>`;
+      return `<g class="sk-node sk-node--${n.k}${cl}" data-sknode="${i}" data-key="skill:${esc(cls)}:${i}" tabindex="0" role="button" aria-label="${esc(skNodeName(n))}: ${pts} of ${n.max}">${art}${counter}${gearMark}</g>`;
     }).join("");
     // Allocated list, grouped by skill.
     const taken = N.map((n, i) => ({ n, i, p: s.pts[i] || 0 })).filter((x) => x.p > 0);
@@ -3821,7 +3844,7 @@
         <span class="sk-tools"><button type="button" class="btn btn--ghost mono" data-skzoom="1" aria-label="Zoom in">+</button><button type="button" class="btn btn--ghost mono" data-skzoom="-1" aria-label="Zoom out">−</button><button type="button" class="btn btn--ghost mono" data-skfit>FIT</button><button type="button" class="btn btn--ghost mono" data-skreset${taken.length ? "" : " disabled"}>RESET TREE</button></span>
       </div>
       <div class="sk-wrap">
-        <svg class="sk-svg" viewBox="${skView.vb.join(" ")}" data-skfull="${full.join(" ")}" role="group" aria-label="${esc(cls)} skill tree">${back}${lines.join("")}${dots}</svg>
+        <svg class="sk-svg" viewBox="${skView.vb.join(" ")}" data-skfull="${full.join(" ")}" role="group" aria-label="${esc(cls)} skill tree">${back}${trunks.join("")}${lines.join("")}${dots}</svg>
         <aside class="sk-side"><h3 class="sb-loadout__title mono">${esc(cls).toUpperCase()} // SKILLS</h3>
           ${list ? `<ul class="sk-list">${list}</ul>` : `<p class="hint">Click a skill in a cluster to take it, then its upgrades. Clusters open at levels ${[...new Set(N.filter((n) => n.k === "root").map((n) => n.lv || 0))].sort((a, b) => a - b).join(", ")}.</p>`}
           <p class="hint">Click adds a point, right-click (or long-press) removes one. Drag to move, wheel or pinch to zoom, FIT shows the whole tree. In each branch you pick one upgrade per group. Skills go to rank ${Math.max(...N.filter((n) => n.k === "skill").map((n) => n.max))}; an upgrade or variant takes 1 point. "+N to Skill", "+N to Core Skills" (any category) and "+N to All Skills" lines on your Sandbox gear add ranks (shown as 5+2). Damage numbers from your upgrades go to the Sandbox DAMAGE panel.</p>
@@ -4717,7 +4740,7 @@
    * the eight classes (open the Database filtered to that class) and recent updates. */
   // [date, [[text, link], ...]]: each line opens the page it's about.
   const HOME_NEWS = [
-    ["20 Nov 2026", [["Specialization tooltips follow your gear: Loyalty's Mantle (matching Spirit Hall), Spirit Potency tempers, The Hemat Stone and more, in the numbers and listed.", "#/skills", "spec"], ["Shorter share links, and COPY FOR DISCORD in the Sandbox: posts as a tidy named link instead of a long URL.", "#/sandbox"], ["Sandbox: one build per class, saved in your browser. Switch class and that class's build comes back; click a class picture below to jump in.", "#/sandbox"], ["Specialization panels in the game's own art: Soul Shard crystals, Oath cards, Book of the Dead sigils, Spirit crests, Weapon Expertise disks.", "#/skills", "spec"], ["Class specializations: Rogue Specializations, Barbarian Weapon Expertise (ranks 0–10), Spiritborn Spirit Hall (Loyalty's Mantle), Druid Spirit Boons, Necromancer Book of the Dead, Sorcerer Enchantments, Paladin Oaths, Warlock Soul Shards.", "#/skills", "spec"],
+    ["20 Nov 2026", [["Skill tree drawn like the game: square skills in round sockets with a 0/15 +N rank counter, round upgrades, variant diamonds, red connectors with 45° forks, a trunk between clusters and each cluster's emblem, laid out with the game's proportions.", "#/skills", "tree"], ["Specialization tooltips follow your gear: Loyalty's Mantle (matching Spirit Hall), Spirit Potency tempers, The Hemat Stone and more, in the numbers and listed.", "#/skills", "spec"], ["Shorter share links, and COPY FOR DISCORD in the Sandbox: posts as a tidy named link instead of a long URL.", "#/sandbox"], ["Sandbox: one build per class, saved in your browser. Switch class and that class's build comes back; click a class picture below to jump in.", "#/sandbox"], ["Specialization panels in the game's own art: Soul Shard crystals, Oath cards, Book of the Dead sigils, Spirit crests, Weapon Expertise disks.", "#/skills", "spec"], ["Class specializations: Rogue Specializations, Barbarian Weapon Expertise (ranks 0–10), Spiritborn Spirit Hall (Loyalty's Mantle), Druid Spirit Boons, Necromancer Book of the Dead, Sorcerer Enchantments, Paladin Oaths, Warlock Soul Shards.", "#/skills", "spec"],
       ["Skill tags use the game's names: Judicator, Pyromancy, Darkness, Jaguar… so \"+N to Judicator Skills\" gear counts.", "#/skills", "tree"]]],
     ["19 Nov 2026", [["Search finds skills, Paragon boards and glyphs; skill tooltips show tags, chosen upgrades and gear ranks.", "#/database"],
       ["Sandbox: 6-slot skill bar, crafted Mythic toggle on gear slots, Season 15 Soul Splinters, Leoric's Crown gem boost, masterwork as item quality.", "#/sandbox"]]],
