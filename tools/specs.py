@@ -46,6 +46,20 @@ def _level(cond):
 
 TAG_NAMES = {"Skill_Bone": "Bone", "Skill_Blood": "Blood", "Skill_Shadow": "Shadow"}
 
+# Book of the Dead: the game labels the upgrades only "Upgrade A" / "Upgrade B". Short names of our own, from what each
+# does (the tooltip still says which one it is in game); Sacrifice keeps its name, with what it gives as a subtitle.
+NECRO_NAMES = {
+    "SkeletonWarrior_Skirmisher": ("Leap Attack", "Crippling Cuts", "Crit Chance"),
+    "SkeletonWarrior_Defender": ("Thorned Taunt", "Blood Orbs", "Resistances"),
+    "SkeletonWarrior_Reaper": ("Reaping Corpses", "Stunning Blows", "Damage"),
+    "SkeletonMage_Shadow": ("Corrupting Bolts", "Shadow Barrier", "Essence"),
+    "SkeletonMage_Cold": ("Forking Frost", "Blizzard", "Vulnerable Damage"),
+    "SkeletonMage_Sacrifice": ("Bone Volley", "Fortifying Bones", "Overpower Damage"),  # the Bone Mage
+    "Golem_Bone": ("Corpse Maker", "Bone Spikes", "Attack Speed"),
+    "Golem_Blood": ("Blood Drain", "Fortifying Drain", "Maximum Life"),
+    "Golem_Iron": ("Shockwave", "Pulling Slam", "Critical Damage"),
+}
+
 
 def extract_specs(meta_dir, stl_dir, skill_text, icons, skills):
     from skills_paragon import tag_display_names
@@ -164,10 +178,13 @@ def extract_specs(meta_dir, stl_dir, skill_text, icons, skills):
             for ux, up in enumerate(sp.get("arUpgradeOptions") or []):
                 p = _sno(up.get("snoUpgradePower"))
                 if p:
-                    ups.append(opt(p, f"Upgrade {'AB'[ux] if ux < 2 else ux + 1}", p, g=label))
+                    game = f"Upgrade {'AB'[ux] if ux < 2 else ux + 1}"
+                    nn = NECRO_NAMES.get(re.sub(r"^Necromancer_|_Passive_.*$", "", p))
+                    ups.append(opt(p, nn[ux] if nn and ux < 2 else game, p, g=label, game=game, ab="AB"[ux] if ux < 2 else None))
             sac = _sno((sp.get("tSacrifice") or {}).get("snoSacrificePower"))
             if sac:
-                ups.append(opt(sac, names.get("UnitTypeSacrifice", "Sacrifice"), sac, g=label))
+                nn = NECRO_NAMES.get(re.sub(r"^Necromancer_|_Passive_.*$", "", sac))
+                ups.append(opt(sac, names.get("UnitTypeSacrifice", "Sacrifice"), sac, g=label, sub=nn[2] if nn else None))
         unit = names.get(f"UnitType_{key}" if key != "Golem" else "UnitType_Golem", key)
         slots.append({"id": key.lower(), "n": unit, "lv": d.get("nUnlockLevel"), "skill": skill, "o": specs})
         slots.append({"id": key.lower() + "_up", "n": f"{unit}: {names.get('Upgrades', 'Upgrades')[:-1]} or Sacrifice", "lv": d.get("nUnlockLevel"), "dep": key.lower(), "o": ups})

@@ -4110,6 +4110,7 @@
       ["SLOT", slot.n + (slot.lv ? ` (level ${slot.lv})` : "")],
       o.lv ? ["LEVEL", `Needs level ${o.lv}`] : null,
       slot.dep && o.g ? ["OF", o.g] : null,
+      o.game ? ["IN GAME", `${o.game} (short name ours)`] : null,
       tags ? ["TAGS", tags] : null,
       def.expertise ? ["RANK", `${spRank(o)} / 10${spRank(o) >= 10 ? " (rank 10 bonus active)" : ""}`] : null,
       ["STATUS", on ? (why && !/^Already/.test(why) ? `Chosen, inactive: ${why}` : "Chosen") : why || "Click to choose"],
@@ -4150,10 +4151,10 @@
     const tile = (slot, o, on, why) => {
       const small = slot.dep && cls === "Warlock", fr = small ? (on ? ui.fragOn : ui.frag) || ui.frame : (on && ui.frameOn) || ui.frame;
       const ic = on ? o.ic : o.ic0 || o.ic;
-      const sub = /^Upgrade [A-Z]$/.test(o.n) ? o.n.slice(-1) : "";
+      const sub = o.ab || (/^Upgrade [A-Z]$/.test(o.n) ? o.n.slice(-1) : "");
       return `<button type="button" class="sp-opt${on ? " is-on" : ""}${why && !on ? " is-locked" : ""}${o.ic0 ? " has-dim" : ""}" data-spopt="${esc(slot.id)}|${esc(o.id)}" data-key="spec:${esc(slot.id)}|${esc(o.id)}" aria-pressed="${on}">
         <span class="sp-opt__art${small ? " sp-opt__art--sm" : ""}" aria-hidden="true">${img(fr, "sp-opt__fr")}${ic ? img(ic, "sp-opt__ic") : `<span class="sp-opt__ic sp-opt__ic--none">${esc(o.n.replace(/^Upgrade /, "")[0])}</span>`}${sub ? `<span class="sp-opt__sub">${sub}</span>` : ""}</span>
-        <span class="sp-opt__n">${esc(o.n)}</span>${o.lv ? `<span class="sp-opt__lv mono">LEVEL ${o.lv}</span>` : ""}</button>`;
+        <span class="sp-opt__n">${esc(o.n)}</span>${o.sub ? `<span class="sp-opt__lv mono">${esc(o.sub.toUpperCase())}</span>` : ""}${o.lv ? `<span class="sp-opt__lv mono">LEVEL ${o.lv}</span>` : ""}</button>`;
     };
     const part = (slot) => {
       const opts = spOptions(def, slot, v), cur = v[slot.id], curO = cur && opts.find((o) => o.id === cur);
