@@ -1485,10 +1485,11 @@ select option:disabled { color: var(--faint); }
 .ench-table .ing { margin-right: 6px; }
 .mods__tag--ench { color: #c9a0ff; border-color: #8a5fd0; }
 
-/* Phones / narrow screens: the character sheet (BUILD) comes first, above PARAMETERS; the list's other panels follow. */
+/* Phones / narrow screens: the character sheet (BUILD) and the SKILL BAR come first, then PARAMETERS, then the other panels. */
 @media (max-width: 880px) {
   .sandbox__list { display: contents; }
-  .sb-build { order: -1; }
+  .sb-build--main { order: -2; }
+  #sb-skillbar { order: -1; }
 }
 /* Touch on equipped items: tap = tooltip, tap again = change, hold = remove (app.js). No iOS image callout / selection on hold. */
 .pd__slot, .tal__sock { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }

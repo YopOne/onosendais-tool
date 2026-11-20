@@ -2590,7 +2590,7 @@
         ${tot ? `<p class="sb-build__sub mono">GEM TOTALS</p><ul class="sk__tot">${tot}</ul>` : ""}
         ${runeProblems()}<p class="hint">Click a socket under an item to add a gem or rune. Helm, Chest, Pants and 2H weapons have 2 sockets; 1H weapons, off-hands, the Amulet and Rings 1; Gloves and Boots none. A gem's bonus depends on the item: weapon (an x damage multiplier: these multiply with each other), armor, including shields (a main stat, barrier, healing) or jewelry (resistance). Runes need a 2-socket item: one Rune of Ritual plus one Rune of Invocation make a runeword (see Runes &amp; Recipes). An item holds gems or a runeword, not both; each rune can be used once; at most 2 runewords.</p></div>`;
     }
-    const build = `<section class="sb-build">
+    const build = `<section class="sb-build sb-build--main">
       <div class="sb-build__head"><h3 class="sb-loadout__title mono">BUILD // ${esc(cls || "any class")}</h3>
         <nav class="sb-sknav" aria-label="Talisman, Skills &amp; Paragon"><button type="button" class="btn btn--ghost mono" data-sb-jump="sb-skillbar" title="Scroll down to the Skill Bar">SKILL BAR ↓</button><button type="button" class="btn btn--ghost mono" data-sb-jump="sb-talisman" title="Scroll down to the Talisman (seal and charms)">TALISMAN ↓</button>${[["tree", "SKILL TREE"], ["paragon", "PARAGON"], ["spec", (HOME_SPEC[cls] || "Specialization").toUpperCase()]].map(([k, l]) => `<a class="btn btn--ghost mono" href="#/skills" data-sktab-go="${k}" title="${esc(cls || "This build")}: ${esc(l.toLowerCase())} in Skills &amp; Paragon">${esc(l)} →</a>`).join("")}</nav>
         <span class="hint">${esc(rule.text.replace(/^[a-z]/, (c) => c.toUpperCase()))}.${state.sandbox.cls ? "" : cls ? " Class taken from your items." : " Set a class to use its weapon rules."}</span></div>
@@ -4787,9 +4787,13 @@
     $h("home-news").innerHTML = HOME_NEWS.map(([d, xs]) => `<div class="home-news__item"><p class="home-news__d mono">${esc(d)}</p><ul>${xs.map(([t, href, tab]) => `<li><a href="${href}"${tab ? ` data-hometab="${tab}"` : ""}>${esc(t)}</a></li>`).join("")}</ul></div>`).join("");
   }
 
+  let lastView = null;
   function render() {
     hideTooltip();
     const view = route();
+    // A different page starts at the top (otherwise it keeps the scroll position of the page you came from).
+    if (lastView !== null && view !== lastView) window.scrollTo(0, 0);
+    lastView = view;
     // CSS hooks for the portrait sparkle: which page, and whether the Database shows Ancestral 900 uniques.
     document.documentElement.dataset.route = view;
     document.documentElement.dataset.dbView = viewName();
