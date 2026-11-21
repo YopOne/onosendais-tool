@@ -14,6 +14,12 @@
 /database1.json
 /untitled folder/
 
+# Personal Claude Code settings
+.claude/settings.local.json
+
+# Node (Playwright, dev-only browser testing)
+node_modules/
+
 # OS / Python clutter
 .DS_Store
 __pycache__/

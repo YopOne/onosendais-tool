@@ -35,7 +35,8 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 - **What's uploaded:** site files, `data/index/`, `data/sources/`, `tools/` and the docs (~1.2 MB). `.gitignore` excludes `d4data/` (31 GB), raw `data/Item`, `data/Power`, `data/StringList`, and the old scraper files.
 - **After a data rebuild:** commit the new `data/index/codex.json` too, or the live site keeps the old data.
 - **Cache busting:** GitHub Pages sends `Cache-Control: max-age=600`, so browsers may keep an old `app.js`/`style.css` for 10 minutes. `index.html` loads them as `app.js?v=…` / `style.css?v=…`: **bump the `v=` value in `index.html` whenever `app.js` or `style.css` change.** (`codex.json` is fetched with `cache: "no-cache"`.)
-- **Browser testing:** `tools/webshot.swift` is a headless WebKit tool that loads a page, runs JS, reports JS errors and saves a screenshot (usage at the top of the file). Python's `http.server` lets WebKit cache `app.js` between runs, so when re-testing edits serve with a `Cache-Control: no-store` header. `requestAnimationFrame` and CSS transitions don't run in its hidden window.
+- **Browser testing (Windows / any OS):** `node tools/webshot.mjs "#/sandbox" out.png 1400 1000 "<js>" [--full] [--touch]` (Playwright Chromium; setup `npm i -D playwright && npx playwright install chromium`). A `#/route` target is served from the repo by a built-in `no-store` server, so no `http.server` or cache problems; prints JS errors, `console.error`, failed / 4xx requests and exits 1 on a JS error. `--touch` = phone emulation (touch, 2× DPR), `--full` = full-page shot. `package.json` / `node_modules/` are dev-only; the site still has no build step.
+- **Browser testing (macOS):** `tools/webshot.swift` is a headless WebKit tool that loads a page, runs JS, reports JS errors and saves a screenshot (usage at the top of the file). Python's `http.server` lets WebKit cache `app.js` between runs, so when re-testing edits serve with a `Cache-Control: no-store` header. `requestAnimationFrame` and CSS transitions don't run in its hidden window.
 
 ## Game rules used (confirmed by the user, 17–18 Nov)
 
@@ -201,6 +202,7 @@ evaluates formulas · renders game text · applies game rules · filters · UI
 | `data/skilltree/` | Each class's skill tree background panel (cut from `2DUI/`) |
 | `data/icons/` | The icons the site shows (`<image handle>.webp`) |
 | `webp_icons/` | Raw icon export, all atlases (not in git) |
+| `tools/webshot.mjs` | Headless Chromium screenshot and JS-error check (Playwright, any OS) |
 | `tools/webshot.swift` | Headless WebKit screenshot and JS-error check (macOS) |
 | `data/index/codex.json` | The built index the site loads |
 | `data/sources/boss_loot.json` | Boss drop table (from Maxroll; hand-maintained) |
